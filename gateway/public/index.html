@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AtlasRAG - Persistent Memory Engine for AI Agents</title>
+  <title>AtlasRAG</title>
   <link rel="stylesheet" href="styles.css">
   <script src="app.js" defer></script>
 </head>
@@ -14,10 +14,12 @@
   <div class="wrap">
     <header class="topbar">
       <div class="brand">
-        <h1>AtlasRAG - Persistent Memory Engine for AI Agents</h1>
+        <h1>AtlasRAG</h1>
+        <p class="lead">Persistent Memory Engine for AI Agents</p>
         <p>
-          Index documents, run semantic search, and ask questions with RAG.
-          The gateway calls OpenAI for embeddings/answers while the C++ TCP service stores vectors.
+          AtlasRAG provides durable memory APIs, multi-tenant governance, and retrieval workflows so teams can
+          store, recall, and operationalize knowledge for agents in production. It combines a fast C++ vector
+          store with a secure gateway that orchestrates embeddings, recall, and background jobs.
         </p>
       </div>
       <div class="status">
@@ -28,160 +30,305 @@
         <div class="pill">
           <span>Protected endpoints use</span>
           <span class="mono">Authorization: Bearer</span>
+          <span class="mono">/ X-API-Key</span>
         </div>
       </div>
     </header>
 
     <main class="shell">
       <nav class="nav" role="tablist" aria-label="Gateway sections">
-        <button class="tab active" id="tabIndex" role="tab" aria-selected="true">Index</button>
-        <button class="tab" id="tabSearch" role="tab" aria-selected="false">Search</button>
-        <button class="tab" id="tabAsk" role="tab" aria-selected="false">Ask</button>
+        <button class="tab" id="tabProduct" role="tab" aria-selected="false">Product</button>
+        <button class="tab active" id="tabPlayground" role="tab" aria-selected="true">Playground</button>
         <button class="tab" id="tabMetrics" role="tab" aria-selected="false">Metrics</button>
+        <button class="tab" id="tabUsage" role="tab" aria-selected="false">Usage</button>
+        <button class="tab" id="tabJobs" role="tab" aria-selected="false">Jobs</button>
+        <button class="tab" id="tabCollections" role="tab" aria-selected="false">Collections</button>
         <button class="tab" id="tabDocs" role="tab" aria-selected="false">Documentation</button>
-        <button class="tab" id="tabSettings" role="tab" aria-selected="false">Settings</button>
+        <button class="tab" id="tabSettings" role="tab" aria-selected="false">Login</button>
+        <button class="tab" id="tabApiKeys" role="tab" aria-selected="false">API Keys</button>
       </nav>
 
       <div class="content">
-        <!-- PAGE: INDEX -->
-        <section class="page active" id="pageIndex" role="tabpanel">
-          <div class="row">
-          <div class="field">
-            <label for="docId">Doc ID</label>
-            <input id="docId" placeholder="example: onboarding-notes">
-            <div class="hint">Use letters, numbers, dot, dash, or underscore (no spaces). Chunks become <span class="mono">docId#0</span>, <span class="mono">docId#1</span>...</div>
-          </div>
-            <div class="field">
-              <label>Indexing pipeline</label>
-              <div class="hint">
-                We split the text into chunks, embed each chunk, store vectors in the C++ TCP service,
-                and store chunk text in Postgres for previews and citations.
+        <!-- PAGE: PRODUCT -->
+        <section class="page" id="pageProduct" role="tabpanel">
+          <article class="docs-article">
+            <h2>AtlasRAG Product Overview</h2>
+            <p class="lead">
+              AtlasRAG is a persistent memory engine for AI agents. It combines a fast vector index with
+              structured memory APIs, multi-tenant governance, and developer-grade observability so teams
+              can ship reliable, long-lived agents.
+            </p>
+
+            <div class="doc-grid">
+              <div class="doc-card">
+                <h3>Memory API</h3>
+                <p>
+                  Write durable memories with clear types (artifact, semantic, procedural, summary). Each
+                  memory is attributed to a tenant, collection, and principal for safe isolation.
+                </p>
+              </div>
+              <div class="doc-card">
+                <h3>Recall API</h3>
+                <p>
+                  Query memories by vector similarity plus filters like type, time range, and collection.
+                  Recall respects visibility and ACLs for enterprise-grade access control.
+                </p>
+              </div>
+              <div class="doc-card">
+                <h3>Reflection & Summarization</h3>
+                <p>
+                  Convert artifacts into semantic/procedural/summary memories using asynchronous jobs,
+                  with provenance links back to original sources.
+                </p>
               </div>
             </div>
-          </div>
 
-          <div class="field" style="margin-top:16px;">
-            <label for="docText">Document Text</label>
-            <textarea id="docText" placeholder="Paste a document here..."></textarea>
-            <div class="hint">You can also load a local file or index directly from a URL.</div>
-          </div>
-
-          <div class="row" style="margin-top:16px;">
-            <div class="field">
-              <label for="docFile">Upload file (text/markdown/json)</label>
-              <input type="file" id="docFile" accept=".txt,.md,.markdown,.json,.csv,.log,text/*,application/json">
-              <div class="hint">We read the file in your browser and fill Document Text.</div>
-            </div>
-            <div class="field">
-              <label for="docUrl">Index from URL</label>
-              <input id="docUrl" placeholder="https://example.com/article">
-              <div class="actions" style="margin-top:10px;">
-                <button class="btn secondary" id="indexUrlBtn">Index URL</button>
-                <button class="btn secondary" id="clearUrlBtn">Clear URL</button>
+            <div class="doc-grid">
+              <div class="doc-card">
+                <h3>Collections</h3>
+                <p>
+                  Segment knowledge by product, team, or environment. Collections scope indexing, recall,
+                  and governance without creating separate deployments.
+                </p>
               </div>
-              <div class="hint">Server fetches the link and extracts readable text.</div>
+              <div class="doc-card">
+                <h3>Multi-tenant Architecture</h3>
+                <p>
+                  Tenant IDs are enforced at the API layer and in storage namespaces. Every vector and
+                  memory item is isolated and query-safe by default.
+                </p>
+              </div>
+              <div class="doc-card">
+                <h3>Governance</h3>
+                <p>
+                  Fine-grained ACLs and visibility modes (tenant, private, ACL) keep sensitive knowledge
+                  constrained to the right users or service principals.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div class="actions">
-            <button class="btn" id="indexBtn">Index document</button>
-            <button class="btn secondary" id="indexClearBtn">Clear</button>
-          </div>
+            <div class="doc-grid">
+              <div class="doc-card">
+                <h3>Metrics</h3>
+                <p>
+                  Track ingestion throughput, vector-store performance, and gateway latency percentiles
+                  per tenant. Developers can spot hotspots before they impact production traffic.
+                </p>
+              </div>
+              <div class="doc-card">
+                <h3>Reliability Features</h3>
+                <p>
+                  Idempotency keys, TTL cleanup, and compaction jobs reduce operational risk and keep memory
+                  stores healthy over time.
+                </p>
+              </div>
+              <div class="doc-card">
+                <h3>Developer Ready</h3>
+                <p>
+                  OpenAPI docs, Swagger UI, and a Node SDK make it easy to integrate AtlasRAG into agents,
+                  applications, or internal platforms.
+                </p>
+              </div>
+            </div>
 
-          <div class="banner" id="indexBanner"></div>
+            <h3>Typical Flow</h3>
+            <ol>
+              <li>Index or upload artifacts into a collection.</li>
+              <li>Trigger reflection jobs to produce durable memories.</li>
+              <li>Recall memories with filters and ACL-aware access.</li>
+              <li>Monitor metrics for latency, throughput, and quality.</li>
+            </ol>
 
-          <details class="details">
-            <summary>Raw response (debug)</summary>
-            <pre id="indexRaw">(no output)</pre>
-          </details>
+            <h3>Built for Teams</h3>
+            <p>
+              AtlasRAG supports multi-tenant workflows, SSO-ready authentication, and service tokens for
+              automation. Organizations can onboard new teams without standing up separate stacks.
+            </p>
+          </article>
         </section>
 
-        <!-- PAGE: SEARCH -->
-        <section class="page" id="pageSearch" role="tabpanel">
-          <div class="row">
-            <div class="field">
-              <label for="searchQ">Query</label>
-              <input id="searchQ" placeholder="example: write-ahead logging">
-            </div>
-            <div class="field">
-              <label for="searchK">Top K</label>
-              <input id="searchK" value="5" placeholder="example: 5">
-              <div class="hint">Higher K returns more chunks (slower + more context).</div>
-            </div>
-          </div>
-
-          <div class="row" style="margin-top:12px;">
-            <div class="field">
-              <label for="searchDocs">Docs to search (optional)</label>
-              <select id="searchDocs" multiple size="6"></select>
-              <div class="hint">Leave empty to search all docs. Use Cmd/Ctrl to multi-select.</div>
-            </div>
-            <div class="field">
-              <label>Docs list</label>
-              <div class="actions">
-                <button class="btn secondary" id="searchDocsRefreshBtn">Refresh list</button>
-                <button class="btn secondary" id="searchDocsAllBtn">All docs</button>
+        <!-- PAGE: PLAYGROUND -->
+        <section class="page active" id="pagePlayground" role="tabpanel">
+          <div class="playground">
+            <div class="playground-head">
+              <div>
+                <h2>Playground</h2>
+                <p>Ingest content, then search or ask with the same context — all in one place.</p>
               </div>
-              <div class="hint" id="searchDocsStatus">-</div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn" id="searchBtn">Search</button>
-            <button class="btn secondary" id="searchClearBtn">Clear</button>
-          </div>
-
-          <div class="banner" id="searchBanner"></div>
-          <div class="cards" id="searchCards"></div>
-
-          <details class="details">
-            <summary>Raw response (debug)</summary>
-            <pre id="searchRaw">(no output)</pre>
-          </details>
-        </section>
-
-        <!-- PAGE: ASK -->
-        <section class="page" id="pageAsk" role="tabpanel">
-          <div class="row">
-            <div class="field">
-              <label for="askQ">Question</label>
-              <input id="askQ" placeholder="example: Explain WAL and why it matters">
-            </div>
-            <div class="field">
-              <label for="askK">Top K sources</label>
-              <input id="askK" value="5" placeholder="example: 5">
-              <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
-            </div>
-          </div>
-
-          <div class="row" style="margin-top:12px;">
-            <div class="field">
-              <label for="askDocs">Docs to query (optional)</label>
-              <select id="askDocs" multiple size="6"></select>
-              <div class="hint">Leave empty to query all docs. Use Cmd/Ctrl to multi-select.</div>
-            </div>
-            <div class="field">
-              <label>Docs list</label>
-              <div class="actions">
-                <button class="btn secondary" id="askDocsRefreshBtn">Refresh list</button>
-                <button class="btn secondary" id="askDocsAllBtn">All docs</button>
+              <div class="play-steps">
+                <div class="play-step"><span>1</span>Ingest</div>
+                <div class="play-step"><span>2</span>Search</div>
+                <div class="play-step"><span>3</span>Ask</div>
               </div>
-              <div class="hint" id="askDocsStatus">-</div>
+            </div>
+
+            <div class="play-tabs" role="tablist" aria-label="Playground sections">
+              <button class="play-tab active" id="playTabIngest" role="tab" aria-selected="true">Ingest</button>
+              <button class="play-tab" id="playTabSearch" role="tab" aria-selected="false">Search</button>
+              <button class="play-tab" id="playTabAsk" role="tab" aria-selected="false">Ask</button>
+            </div>
+
+            <div class="play-pane active" id="playPaneIngest" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Ingest</h3>
+                  <p>Paste text, upload a file, or index a link.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="docId">Doc ID</label>
+                    <input id="docId" placeholder="example: onboarding-notes">
+                    <div class="hint">Use letters, numbers, dot, dash, or underscore (no spaces).</div>
+                  </div>
+                  <div class="field">
+                    <label>Indexing pipeline</label>
+                    <div class="hint">
+                      We split the text into chunks, embed each chunk, store vectors in the C++ TCP service,
+                      and store chunk text in Postgres for previews and citations.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="field" style="margin-top:16px;">
+                  <label for="docText">Document Text</label>
+                  <textarea id="docText" placeholder="Paste a document here..."></textarea>
+                  <div class="hint">You can also load a local file or index directly from a URL.</div>
+                </div>
+
+                <div class="row" style="margin-top:16px;">
+                  <div class="field">
+                    <label for="docFile">Upload file (text/markdown/json)</label>
+                    <input type="file" id="docFile" accept=".txt,.md,.markdown,.json,.csv,.log,text/*,application/json">
+                    <div class="hint">We read the file in your browser and fill Document Text.</div>
+                  </div>
+                  <div class="field">
+                  <label for="docUrl">Index from URL</label>
+                  <input id="docUrl" placeholder="https://example.com/article">
+                  <div class="hint">If a URL is provided, the server fetches and indexes it.</div>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn" id="indexBtn">Index content</button>
+                <button class="btn secondary" id="indexClearBtn">Reset</button>
+              </div>
+
+                <div class="banner" id="indexBanner"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="indexRaw">(no output)</pre>
+                </details>
+              </div>
+            </div>
+
+            <div class="play-pane" id="playPaneSearch" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Search</h3>
+                  <p>Semantic search across your indexed documents.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="searchQ">Query</label>
+                    <input id="searchQ" placeholder="example: write-ahead logging">
+                  </div>
+                  <div class="field">
+                    <label for="searchK">Top K</label>
+                    <input id="searchK" value="5" placeholder="example: 5">
+                    <div class="hint">Higher K returns more chunks (slower + more context).</div>
+                  </div>
+                </div>
+
+                <details class="details play-scope">
+                  <summary>Doc scope (optional)</summary>
+                  <div class="row" style="margin-top:12px;">
+                    <div class="field">
+                      <label for="searchDocs">Docs to search</label>
+                      <select id="searchDocs" multiple size="6"></select>
+                      <div class="hint">Leave empty to search all accessible docs. Use Cmd/Ctrl to multi-select.</div>
+                    </div>
+                    <div class="field">
+                      <label>Docs list</label>
+                      <div class="actions">
+                        <button class="btn secondary" id="searchDocsRefreshBtn">Refresh list</button>
+                        <button class="btn secondary" id="searchDocsAllBtn">All docs</button>
+                      </div>
+                      <div class="hint" id="searchDocsStatus">-</div>
+                    </div>
+                  </div>
+                </details>
+
+                <div class="actions">
+                  <button class="btn" id="searchBtn">Search</button>
+                  <button class="btn secondary" id="searchClearBtn">Clear</button>
+                </div>
+
+                <div class="banner" id="searchBanner"></div>
+                <div class="cards" id="searchCards"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="searchRaw">(no output)</pre>
+                </details>
+              </div>
+            </div>
+
+            <div class="play-pane" id="playPaneAsk" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Ask</h3>
+                  <p>RAG answer grounded in your indexed sources.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="askQ">Question</label>
+                    <input id="askQ" placeholder="example: Explain WAL and why it matters">
+                  </div>
+                  <div class="field">
+                    <label for="askK">Top K sources</label>
+                    <input id="askK" value="5" placeholder="example: 5">
+                    <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
+                  </div>
+                </div>
+
+                <details class="details play-scope">
+                  <summary>Doc scope (optional)</summary>
+                  <div class="row" style="margin-top:12px;">
+                    <div class="field">
+                      <label for="askDocs">Docs to query</label>
+                      <select id="askDocs" multiple size="6"></select>
+                      <div class="hint">Leave empty to query all accessible docs. Use Cmd/Ctrl to multi-select.</div>
+                    </div>
+                    <div class="field">
+                      <label>Docs list</label>
+                      <div class="actions">
+                        <button class="btn secondary" id="askDocsRefreshBtn">Refresh list</button>
+                        <button class="btn secondary" id="askDocsAllBtn">All docs</button>
+                      </div>
+                      <div class="hint" id="askDocsStatus">-</div>
+                    </div>
+                  </div>
+                </details>
+
+                <div class="actions">
+                  <button class="btn" id="askBtn">Generate answer</button>
+                  <button class="btn secondary" id="askClearBtn">Clear</button>
+                </div>
+
+                <div class="banner" id="askBanner"></div>
+                <div class="cards" id="askAnswerCard"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="askRaw">(no output)</pre>
+                </details>
+              </div>
             </div>
           </div>
-
-          <div class="actions">
-            <button class="btn" id="askBtn">Generate answer</button>
-            <button class="btn secondary" id="askClearBtn">Clear</button>
-          </div>
-
-          <div class="banner" id="askBanner"></div>
-          <div class="cards" id="askAnswerCard"></div>
-
-          <details class="details">
-            <summary>Raw response (debug)</summary>
-            <pre id="askRaw">(no output)</pre>
-          </details>
         </section>
 
         <!-- PAGE: METRICS -->
@@ -210,48 +357,201 @@
           </details>
         </section>
 
+        <!-- PAGE: USAGE (ORG ADMIN) -->
+        <section class="page" id="pageUsage" role="tabpanel">
+          <div class="metrics">
+            <div class="metrics-head">
+              <div>
+                <h3>Organization usage</h3>
+                <p>Admin view of request volume, error rates, and latency for your tenant.</p>
+              </div>
+              <div class="metrics-meta">Updated: <span id="usageUpdated">-</span></div>
+            </div>
+
+            <p class="hint" style="margin-top:6px;">Requires admin or owner privileges.</p>
+
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn secondary" id="usageRefreshBtn">Refresh usage</button>
+            </div>
+
+            <div class="metrics-grid" id="usageCards"></div>
+          </div>
+
+          <div class="doc-block" style="margin-top:16px;">
+            <div class="doc-label">Per-route usage</div>
+            <div id="usageRoutesTable">(no data)</div>
+          </div>
+
+          <details class="details">
+            <summary>Usage JSON</summary>
+            <pre id="usageRaw">(no output)</pre>
+          </details>
+
+          <div class="banner" id="usageBanner"></div>
+        </section>
+
+        <!-- PAGE: JOBS -->
+        <section class="page" id="pageJobs" role="tabpanel">
+          <div class="row">
+            <div class="field">
+              <label for="jobIdInput">Job ID (optional)</label>
+              <input id="jobIdInput" placeholder="123">
+              <div class="hint">Leave empty to load all in‑progress jobs for your tenant.</div>
+            </div>
+            <div class="field">
+              <label>Actions</label>
+              <div class="actions">
+                <button class="btn" id="jobFetchBtn">Fetch by ID</button>
+                <button class="btn secondary" id="jobListBtn">Load in‑progress</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-block">
+            <div class="doc-label">Job details</div>
+            <pre class="doc-code" id="jobDetails">(no job loaded)</pre>
+          </div>
+
+          <div class="doc-block">
+            <div class="doc-label">Recent jobs</div>
+            <div id="jobListTable">(no data)</div>
+          </div>
+
+          <div class="banner" id="jobsBanner"></div>
+        </section>
+
+        <!-- PAGE: COLLECTIONS -->
+        <section class="page" id="pageCollections" role="tabpanel">
+          <div class="metrics">
+            <div class="metrics-head">
+              <div>
+                <h3>Collections</h3>
+                <p>All collections for your tenant, with document titles and delete controls.</p>
+              </div>
+              <div class="metrics-meta">Updated: <span id="collectionsUpdated">-</span></div>
+            </div>
+
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn secondary" id="collectionsRefreshBtn">Refresh collections</button>
+            </div>
+
+            <div class="doc-block" style="margin-top:16px;">
+              <div class="doc-label">Collection list</div>
+              <div id="collectionsTable">(no data)</div>
+              <p class="hint">Deleting a collection removes stored chunk text and memory items. Vector deletion is not yet supported.</p>
+            </div>
+          </div>
+
+          <div class="banner" id="collectionsBanner"></div>
+        </section>
+
         <!-- PAGE: DOCUMENTATION -->
         <section class="page" id="pageDocs" role="tabpanel">
           <article class="docs-article">
             <header class="docs-header">
-              <h3>Gateway documentation</h3>
-              <p>Technical usage guide for the AtlasRAG semantic gateway, including setup, API usage, and operations.</p>
+              <h3>Developer documentation</h3>
+              <p>Everything you need to go from zero to production: quickstart, auth, APIs, SDKs, Python examples, and deployment guidance.</p>
             </header>
 
-            <h4>Overview</h4>
-            <p>
-              AtlasRAG lets you index documents, run semantic search, and ask questions across your
-              knowledge base. Search and Ask return the most relevant chunks and provide citations.
-            </p>
-
-            <h4>Quick start (users)</h4>
+            <h4>Quickstart</h4>
             <ol>
-              <li>Open the AtlasRAG web app in your browser.</li>
-              <li>Sign in using your organization’s login method.</li>
-              <li>Index a document, then use Search or Ask.</li>
+              <li>Start the stack: <span class="mono">docker compose up -d</span></li>
+              <li>Create an admin user (first time only):</li>
             </ol>
+            <div class="doc-block">
+              <pre class="doc-code">docker compose exec gateway node scripts/create_user.js \
+  --username admin \
+  --password changeme \
+  --tenant acme \
+  --role admin</pre>
+            </div>
+            <ol start="3">
+              <li>Login to get a JWT (required to create API keys):</li>
+            </ol>
+            <div class="doc-block">
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/login \
+  -H "Content-Type: application/json" \
+  -d '{ "username": "admin", "password": "changeme" }'</pre>
+            </div>
+            <ol start="4">
+              <li>Create a service token (API key) for your app:</li>
+            </ol>
+            <div class="doc-block">
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
+  -H "Authorization: Bearer YOUR_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "app-server",
+    "principalId": "svc:app",
+    "roles": ["writer"],
+    "expiresAt": "2026-12-31T00:00:00Z"
+  }'</pre>
+            </div>
+            <ol start="5">
+              <li>Index your first document:</li>
+            </ol>
+            <div class="doc-block">
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN" \
+  -H "Idempotency-Key: idx-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId": "swe_notes",
+    "collection": "default",
+    "text": "Your document text..."
+  }'</pre>
+            </div>
+            <ol start="6">
+              <li>Search or Ask with <span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span>.</li>
+            </ol>
+            <div class="doc-block mono">GET /v1/health</div>
+            <div class="doc-block mono">POST /v1/login</div>
+            <div class="doc-block mono">POST /v1/docs</div>
 
             <h4>Authentication</h4>
             <p>
-              Protected endpoints require a Bearer token in the <span class="mono">Authorization</span> header.
-              The UI stores the token in <span class="mono">localStorage</span> only.
+              Protected endpoints require either a JWT or a service token. Send
+              <span class="mono">Authorization: Bearer &lt;jwt&gt;</span> or <span class="mono">X-API-Key: &lt;token&gt;</span>
+              (also supports <span class="mono">Authorization: ApiKey &lt;token&gt;</span>).
             </p>
             <p>
-              Multi-tenant isolation is enforced by the JWT. Include a tenant identifier in the token
+              Multi-tenant isolation is enforced by the auth token. JWTs must include a tenant identifier
               using one of these claims: <span class="mono">tenant</span>, <span class="mono">tid</span>, or <span class="mono">sub</span>.
-              All data is namespaced by that value.
+              Service tokens inherit the tenant from the admin who created them.
             </p>
             <p>
-              If your organization uses SSO (Google, Microsoft, Okta), choose the SSO option on the Settings page.
-              Admins control which providers are enabled.
+              Admins or org owners can issue service tokens via <span class="mono">POST /v1/admin/service-tokens</span>.
+              Store the returned token securely; it is shown only once.
             </p>
-            <p>
-              API routes are versioned under <span class="mono">/v1</span>. Unversioned routes remain available
-              for backward compatibility.
-            </p>
+            <div class="doc-block">
+              <div class="doc-label">Create API key (admin)</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
+  -H "Authorization: Bearer YOUR_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ci-pipeline",
+    "principalId": "svc:ci",
+    "roles": ["writer"],
+    "expiresAt": "2026-12-31T00:00:00Z"
+  }'</pre>
+            </div>
+            <p class="hint">Requires role <span class="mono">admin</span> or <span class="mono">owner</span> (or a token whose principal matches the tenant).</p>
 
-            <h4>Response format (v1)</h4>
-            <p>All <span class="mono">/v1</span> endpoints return a consistent envelope:</p>
+            <h4>API Reference</h4>
+            <p>
+              Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.
+              All versioned routes live under <span class="mono">/v1</span>; legacy routes remain as aliases.
+            </p>
+            <ul>
+              <li><span class="mono">/v1/docs</span> index + list documents</li>
+              <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
+              <li><span class="mono">/v1/ask</span> RAG answers with citations</li>
+              <li><span class="mono">/v1/memory/write</span> durable memory items</li>
+              <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
+              <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
+              <li><span class="mono">/v1/jobs/:id</span> job status</li>
+            </ul>
+            <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
             <div class="doc-block">
               <div class="doc-label">Success</div>
               <pre class="doc-code">{
@@ -273,154 +573,302 @@
 }</pre>
             </div>
 
+            <h4>SDKs</h4>
+            <p>
+              Official SDK: <span class="mono">sdk/node</span> (Node.js). It supports JWT or API key auth,
+              idempotency headers, and memory APIs. Additional SDKs can be added using the OpenAPI schema.
+            </p>
+
+            <h4>Examples</h4>
+            <p>cURL:</p>
             <div class="doc-block">
-              <div class="doc-label">POST /v1/login</div>
-              <pre class="doc-code">{
-  "username": "admin",
-  "password": "changeme"
-}</pre>
+              <div class="doc-label">Index text</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Idempotency-Key: idx-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId": "swe_notes",
+    "collection": "default",
+    "text": "Your document text..."
+  }'</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Search</div>
+              <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default" \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Ask</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "question": "How is durability handled?", "k": 5 }'</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Memory write + recall</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/write \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Idempotency-Key: mem-001" \
+  -H "Content-Type: application/json" \
+  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default" }'
+
+curl -X POST http://localhost:3000/v1/memory/recall \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "query": "release day", "types": ["semantic"], "k": 5 }'</pre>
             </div>
 
-            <div class="doc-block mono">
-              curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/v1/stats
+            <h4>Client examples (Python + Node.js)</h4>
+            <div class="doc-tabs" data-doc-tabs="clients">
+              <button class="doc-tab active" data-doc-tab="python" type="button">Python</button>
+              <button class="doc-tab" data-doc-tab="node" type="button">Node.js</button>
             </div>
+            <div class="doc-panels" data-doc-panels="clients">
+              <div class="doc-panel active" data-doc-panel="python">
+                <div class="doc-block">
+                  <div class="doc-label">Install + env</div>
+                  <pre class="doc-code">pip install requests
+export ATLASRAG_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">End-to-end flow</div>
+                  <pre class="doc-code">import os
+import time
+import requests
 
-            <h4>Indexing workflow (users)</h4>
-            <p>
-              Indexing splits text into chunks, embeds each chunk, stores vectors in the C++ TCP service,
-              and stores chunk text in Postgres. Doc IDs must use only letters, numbers, dot, dash, or underscore.
-            </p>
-            <p>
-              Collections let you group documents. If omitted, <span class="mono">collection</span> defaults to
-              <span class="mono">default</span>.
-            </p>
-            <ul>
-              <li>Use <span class="mono">POST /v1/docs</span> to index raw text.</li>
-              <li>Use <span class="mono">POST /v1/docs/url</span> to fetch and index a URL.</li>
-              <li>Use <span class="mono">GET /v1/docs</span> to list your indexed docs.</li>
-              <li>Use <span class="mono">DELETE /v1/docs/:docId</span> to remove stored chunk text.</li>
-            </ul>
+BASE = os.getenv("ATLASRAG_URL", "http://localhost:3000")
+API_KEY = os.getenv("ATLASRAG_API_KEY")  # or use JWT
 
-            <div class="doc-block">
-              <div class="doc-label">POST /v1/docs</div>
-              <pre class="doc-code">{
+headers = {
+  "Content-Type": "application/json",
+  "X-API-Key": API_KEY
+}
+
+# 1) Index
+doc = {
   "docId": "swe_notes",
   "collection": "default",
-  "text": "Your document text..."
-}</pre>
-            </div>
+  "text": "WAL keeps vectors durable across restarts."
+}
+res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "idx-001"}, json=doc)
+res.raise_for_status()
+print(res.json())
 
-            <div class="doc-block">
-              <div class="doc-label">POST /v1/docs/url</div>
-              <pre class="doc-code">{
-  "docId": "swe_docs",
-  "collection": "default",
-  "url": "https://example.com/article"
-}</pre>
-            </div>
-            <div class="doc-block mono">
-              GET /v1/docs?collection=default
-            </div>
-            <div class="doc-block mono">
-              DELETE /v1/docs/swe_docs?collection=default
-            </div>
-            <p>
-              Note: delete removes stored chunk text; vector deletion is a future improvement.
-            </p>
-            <p>
-              The docs list is tenant-scoped and returns doc IDs with chunk counts for the selected collection. The UI uses this list to
-              populate doc filters for Search and Ask.
-            </p>
-
-            <h4>Search</h4>
-            <p>
-              Search embeds your query and returns the Top K most similar chunks by cosine similarity.
-              Higher K increases recall but can reduce precision and add latency.
-            </p>
-            <p>Optionally pass <span class="mono">docIds</span> to restrict search to specific docs.</p>
-            <div class="doc-block mono">
-              GET /v1/search?q=write-ahead%20logging&amp;k=5&amp;collection=default
-            </div>
-            <div class="doc-block mono">
-              GET /v1/search?q=write-ahead%20logging&amp;k=5&amp;collection=default&amp;docIds=onboarding,design-notes
-            </div>
-
-            <h4>Ask (RAG)</h4>
-            <p>
-              Ask retrieves the Top K chunks, then generates a response using only those sources.
-              The response is concise and avoids speculation.
-            </p>
-            <p>Provide <span class="mono">docIds</span> to answer using a subset of docs, or omit to use all.</p>
-            <p>
-              Source text is sanitized to reduce prompt injection risk.
-            </p>
-            <div class="doc-block">
-              <div class="doc-label">POST /v1/ask</div>
-              <pre class="doc-code">{
-  "question": "Explain WAL and why it matters",
+# 2) Search
+res = requests.get(f"{BASE}/v1/search", headers=headers, params={
+  "q": "durability",
   "k": 5,
+  "collection": "default"
+})
+res.raise_for_status()
+print(res.json())
+
+# 3) Ask
+res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
+  "question": "How do we persist vectors?",
+  "k": 5
+})
+res.raise_for_status()
+print(res.json())
+
+# 4) Memory write
+res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-Key": "mem-001"}, json={
+  "type": "semantic",
   "collection": "default",
-  "docIds": ["onboarding", "design-notes"]
+  "text": "Vector WAL is enabled in production."
+})
+res.raise_for_status()
+
+# 5) Recall
+res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
+  "query": "WAL enabled",
+  "types": ["semantic"],
+  "k": 5
+})
+res.raise_for_status()
+print(res.json())
+
+# 6) Reflect (async job)
+res = requests.post(f"{BASE}/v1/memory/reflect", headers={**headers, "Idempotency-Key": "reflect-001"}, json={
+  "docId": "swe_notes",
+  "types": ["semantic", "summary"],
+  "collection": "default"
+})
+res.raise_for_status()
+job_id = res.json()["data"]["job"]["id"]
+
+# 7) Poll job
+while True:
+  job = requests.get(f"{BASE}/v1/jobs/{job_id}", headers=headers).json()
+  status = job["data"]["job"]["status"]
+  if status in ("succeeded", "failed"):
+    print(job)
+    break
+  time.sleep(2)</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Collections + ACL visibility</div>
+                  <pre class="doc-code"># Restrict a document to an ACL list (inside the tenant)
+res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "idx-002"}, json={
+  "docId": "private_notes",
+  "collection": "finance",
+  "text": "Confidential budget details...",
+  "visibility": "acl",
+  "acl": ["user:alice", "user:bob"]
+})</pre>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="node">
+                <div class="doc-block">
+                  <div class="doc-label">Install + env (Node 18+)</div>
+                  <pre class="doc-code">export ATLASRAG_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+node app.mjs</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">End-to-end flow</div>
+                  <pre class="doc-code">const BASE = process.env.ATLASRAG_URL || "http://localhost:3000";
+const API_KEY = process.env.ATLASRAG_API_KEY;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const headers = {
+  "Content-Type": "application/json",
+  "X-API-Key": API_KEY
+};
+
+const post = async (path, body, extra = {}) => {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { ...headers, ...extra },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data;
+};
+
+const get = async (path, params = {}) => {
+  const url = new URL(`${BASE}${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, { headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data;
+};
+
+// 1) Index
+await post("/v1/docs", {
+  docId: "swe_notes",
+  collection: "default",
+  text: "WAL keeps vectors durable across restarts."
+}, { "Idempotency-Key": "idx-001" });
+
+// 2) Search
+console.log(await get("/v1/search", { q: "durability", k: "5", collection: "default" }));
+
+// 3) Ask
+console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5 }));
+
+// 4) Memory write
+await post("/v1/memory/write", {
+  type: "semantic",
+  collection: "default",
+  text: "Vector WAL is enabled in production."
+}, { "Idempotency-Key": "mem-001" });
+
+// 5) Recall
+console.log(await post("/v1/memory/recall", { query: "WAL enabled", types: ["semantic"], k: 5 }));
+
+// 6) Reflect + job polling
+const reflect = await post("/v1/memory/reflect", {
+  docId: "swe_notes",
+  types: ["semantic", "summary"],
+  collection: "default"
+}, { "Idempotency-Key": "reflect-001" });
+
+const jobId = reflect.data.job.id;
+while (true) {
+  const job = await get(`/v1/jobs/${jobId}`);
+  const status = job.data.job.status;
+  if (status === "succeeded" || status === "failed") {
+    console.log(job);
+    break;
+  }
+  await sleep(2000);
 }</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Collections + ACL visibility</div>
+                  <pre class="doc-code">await post("/v1/docs", {
+  docId: "private_notes",
+  collection: "finance",
+  text: "Confidential budget details...",
+  visibility: "acl",
+  acl: ["user:alice", "user:bob"]
+}, { "Idempotency-Key": "idx-002" });</pre>
+                </div>
+              </div>
             </div>
+            <p class="hint">Visibility can be <span class="mono">tenant</span>, <span class="mono">private</span>, or <span class="mono">acl</span>. For ACL, include a list of allowed principals.</p>
 
-            <h4>Metrics (developers)</h4>
-            <p>
-              Metrics show vector-store stats plus gateway latency percentiles (p50/p90/p95/p99) for the
-              most recent samples.
-            </p>
-
-            <h4>Limits</h4>
+            <h4>Architecture</h4>
             <ul>
-              <li>Document size cap: 200,000 chars (server truncates).</li>
-              <li>URL fetch cap: 1,000,000 chars (server truncates).</li>
-              <li>Client file cap: 5 MB.</li>
-              <li>Embeddings are batched; chunk size is capped for embedding safety.</li>
+              <li>Gateway (Node) handles auth, routing, and orchestration.</li>
+              <li>Vector store (C++ TCP service) stores embeddings and serves similarity search.</li>
+              <li>Postgres stores chunks, memory items, links, jobs, and idempotency keys.</li>
+              <li>OpenAI (or compatible) provides embeddings and generation.</li>
+              <li>Background jobs handle reflection, summarization, and lifecycle tasks.</li>
             </ul>
 
-            <h4>Developer notes</h4>
+            <h4>Deployment</h4>
             <ul>
-              <li>Use concise doc IDs; avoid spaces to prevent TCP parsing errors.</li>
-              <li>Lower Top K if responses are slow or noisy.</li>
-              <li>Monitor Metrics for vector and command throughput.</li>
-            </ul>
-
-            <h4>Troubleshooting</h4>
-            <ul>
-              <li>401 Unauthorized: ensure a valid JWT is included in <span class="mono">Authorization</span>.</li>
-              <li>Timeouts during indexing: try smaller documents or lower Top K on retrieval.</li>
-              <li>Context length errors: re-index with smaller chunks or lower Top K.</li>
+              <li>Run with Docker Compose: <span class="mono">docker compose up -d</span></li>
+              <li>Set required env: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">JWT_SECRET</span>, Postgres credentials.</li>
+              <li>Expose gateway on <span class="mono">:3000</span> and front with HTTPS in production.</li>
+              <li>Optionally set <span class="mono">PUBLIC_BASE_URL</span> / <span class="mono">OPENAPI_BASE_URL</span> for correct docs links.</li>
             </ul>
           </article>
         </section>
 
-        <!-- PAGE: SETTINGS -->
+        <!-- PAGE: LOGIN -->
         <section class="page" id="pageSettings" role="tabpanel">
           <div class="row">
             <div class="field">
-              <label for="apiKey">JWT access token</label>
-              <input id="apiKey" placeholder="paste JWT (Bearer token)">
-              <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
+              <label for="authType">Auth type</label>
+              <select id="authType">
+                <option value="bearer">JWT (Bearer)</option>
+                <option value="api_key">Service token (API key)</option>
+              </select>
+              <div class="hint">Use service tokens for server-to-server integrations.</div>
             </div>
             <div class="field">
-              <label for="loginUser">Login (username)</label>
-              <input id="loginUser" placeholder="username">
-              <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+              <label for="apiKey">Access token / API key</label>
+              <input id="apiKey" placeholder="paste JWT or API key">
+              <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
             </div>
           </div>
 
           <div class="row" style="margin-top:12px;">
             <div class="field">
+              <label for="loginUser">Login (username)</label>
+              <input id="loginUser" placeholder="username">
+              <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+            </div>
+            <div class="field">
               <label for="loginPass">Login (password)</label>
               <input id="loginPass" type="password" placeholder="password">
             </div>
-            <div class="field">
-              <label>Tips</label>
-              <div class="hint">
-                - Index at least one document before searching or asking.<br>
-                - If you see Unauthorized, your JWT is invalid or expired.<br>
-                - Health check only verifies gateway to TCP reachability.
-              </div>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label>Tips</label>
+            <div class="hint">
+              - Index at least one document before searching or asking.<br>
+              - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
+              - Health check only verifies gateway to TCP reachability.<br>
+              - API keys are created by admins or org owners via <span class="mono">POST /v1/admin/service-tokens</span>.
             </div>
           </div>
 
@@ -434,6 +882,51 @@
           </div>
 
           <div class="banner" id="settingsBanner"></div>
+        </section>
+
+        <!-- PAGE: API KEYS -->
+        <section class="page" id="pageApiKeys" role="tabpanel">
+          <div class="row">
+            <div class="field">
+              <label for="apiKeyName">Create API key (admin/owner)</label>
+              <input id="apiKeyName" placeholder="ci-pipeline">
+              <div class="hint">Admins/owners can issue service tokens for server-to-server use.</div>
+            </div>
+          </div>
+
+          <details class="details" style="margin-top:12px;">
+            <summary>Advanced options</summary>
+            <div class="row" style="margin-top:12px;">
+              <div class="field">
+                <label for="apiKeyPrincipal">Principal ID (owner)</label>
+                <input id="apiKeyPrincipal" placeholder="svc:ci">
+                <div class="hint">Defaults to your token subject if omitted.</div>
+              </div>
+            </div>
+          </details>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label for="apiKeyRoles">Roles (comma separated)</label>
+              <input id="apiKeyRoles" placeholder="writer,reader">
+            </div>
+            <div class="field">
+              <label for="apiKeyExpires">Expires at</label>
+              <input id="apiKeyExpires" type="datetime-local">
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn secondary" id="createApiKeyBtn">Create API key</button>
+            <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this API key</button>
+            <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy API key</button>
+          </div>
+
+          <div class="doc-block">
+            <div class="doc-label">New API key (masked)</div>
+            <pre class="doc-code" id="createdApiKey">(not created)</pre>
+          </div>
+          <div class="banner" id="apiKeyBanner"></div>
         </section>
       </div>
     </main>

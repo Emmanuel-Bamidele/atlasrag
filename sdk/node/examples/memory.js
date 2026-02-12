@@ -1,0 +1,55 @@
+const { AtlasRAGClient } = require("../src");
+
+const client = new AtlasRAGClient({
+  baseUrl: process.env.ATLASRAG_URL || "http://localhost:3000",
+  collection: process.env.ATLASRAG_COLLECTION || "default"
+});
+
+async function main() {
+  const username = process.env.ATLASRAG_USER;
+  const password = process.env.ATLASRAG_PASS;
+  if (!username || !password) {
+    throw new Error("Set ATLASRAG_USER and ATLASRAG_PASS in your environment.");
+  }
+
+  await client.login(username, password);
+
+  const write = await client.memoryWrite({
+    text: "Use Redis for low-latency vector lookups.",
+    type: "memory",
+    title: "Vector lookup guidance",
+    visibility: "private",
+    acl: ["user:alice", "svc:agent-api"],
+    idempotencyKey: "mem-write-1"
+  });
+
+  console.log("memory write", write.data.memory.id);
+
+  const recall = await client.memoryRecall({
+    query: "How do we do low-latency vector search?",
+    k: 3,
+    types: ["memory"]
+  });
+
+  console.log("memory recall", recall.data.results.length);
+
+  await client.indexText("artifact_doc", "AtlasRAG keeps artifacts and reflects them into semantic memory.");
+  const reflect = await client.memoryReflect({
+    docId: "artifact_doc",
+    types: ["semantic", "summary"],
+    maxItems: 2,
+    visibility: "acl",
+    acl: ["user:alice", "svc:agent-api"],
+    idempotencyKey: "mem-reflect-1"
+  });
+
+  console.log("reflect job", reflect.data.job.id);
+
+  const job = await client.getJob(reflect.data.job.id);
+  console.log("job status", job.data.job.status);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

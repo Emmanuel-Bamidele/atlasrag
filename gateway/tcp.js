@@ -89,6 +89,11 @@ function buildVsearch(k, vec) {
   return `VSEARCH ${k} ${dim} ${floats}`;
 }
 
+// Build a VDEL command string
+function buildVdel(id) {
+  return `VDEL ${id}`;
+}
+
 // Parse VSEARCH reply:
 // "id1 score1|id2 score2|id3 score3"
 function parseVsearchReply(line) {
@@ -119,5 +124,6 @@ module.exports = {
   sendCmd,
   buildVset,
   buildVsearch,
+  buildVdel,
   parseVsearchReply
 };

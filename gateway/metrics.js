@@ -56,6 +56,7 @@ const overall = {
 };
 
 const routes = new Map();
+const tenants = new Map();
 
 function getRouteStat(key) {
   if (!routes.has(key)) {
@@ -68,7 +69,32 @@ function getRouteStat(key) {
   return routes.get(key);
 }
 
-function recordLatency(key, ms, status) {
+function getTenantStat(tenantId) {
+  if (!tenants.has(tenantId)) {
+    tenants.set(tenantId, {
+      overall: {
+        count: 0,
+        errorCount: 0,
+        ring: createRing(DEFAULT_WINDOW)
+      },
+      routes: new Map()
+    });
+  }
+  return tenants.get(tenantId);
+}
+
+function getTenantRouteStat(tenantStats, key) {
+  if (!tenantStats.routes.has(key)) {
+    tenantStats.routes.set(key, {
+      count: 0,
+      errorCount: 0,
+      ring: createRing(DEFAULT_WINDOW)
+    });
+  }
+  return tenantStats.routes.get(key);
+}
+
+function recordLatency(key, ms, status, tenantId) {
   const isError = Number(status) >= 500;
 
   overall.count += 1;
@@ -81,9 +107,42 @@ function recordLatency(key, ms, status) {
     if (isError) stat.errorCount += 1;
     recordValue(stat.ring, ms);
   }
+
+  if (tenantId) {
+    const tenantStats = getTenantStat(tenantId);
+    tenantStats.overall.count += 1;
+    if (isError) tenantStats.overall.errorCount += 1;
+    recordValue(tenantStats.overall.ring, ms);
+
+    if (key) {
+      const tenantRoute = getTenantRouteStat(tenantStats, key);
+      tenantRoute.count += 1;
+      if (isError) tenantRoute.errorCount += 1;
+      recordValue(tenantRoute.ring, ms);
+    }
+  }
 }
 
-function getLatencyStats() {
+function getLatencyStats(tenantId) {
+  if (tenantId) {
+    const tenantStats = tenants.get(tenantId);
+    if (!tenantStats) {
+      return { overall: summarize(createRing(DEFAULT_WINDOW), 0, 0), routes: {} };
+    }
+    const out = {
+      overall: summarize(
+        tenantStats.overall.ring,
+        tenantStats.overall.count,
+        tenantStats.overall.errorCount
+      ),
+      routes: {}
+    };
+    for (const [key, stat] of tenantStats.routes.entries()) {
+      out.routes[key] = summarize(stat.ring, stat.count, stat.errorCount);
+    }
+    return out;
+  }
+
   const out = {
     overall: summarize(overall.ring, overall.count, overall.errorCount),
     routes: {}

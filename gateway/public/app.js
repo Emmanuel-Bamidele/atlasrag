@@ -15,21 +15,64 @@ function clearBanner(el){
   el.textContent = "";
 }
 
-function getApiKey(){
-  return (localStorage.getItem("atlasragJwt") || "").trim();
-}
+const AUTH_TOKEN_KEY = "atlasragAuthToken";
+const AUTH_TYPE_KEY = "atlasragAuthType";
+const LEGACY_JWT_KEY = "atlasragJwt";
+let metricsLoaded = false;
+let usageLoaded = false;
+let metricsLoading = false;
+let usageLoading = false;
 
-function apiHeaders(){
-  const key = getApiKey();
+function loadStoredAuth(){
+  let token = localStorage.getItem(AUTH_TOKEN_KEY);
+  let type = localStorage.getItem(AUTH_TYPE_KEY);
+
+  if (!token){
+    const legacy = localStorage.getItem(LEGACY_JWT_KEY);
+    if (legacy){
+      token = legacy;
+      type = "bearer";
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+      localStorage.setItem(AUTH_TYPE_KEY, type);
+    }
+  }
+
   return {
-    "Content-Type":"application/json",
-    "Authorization": key ? `Bearer ${key}` : ""
+    token: (token || "").trim(),
+    type: (type || "bearer").trim()
   };
 }
 
+function saveStoredAuth(type, token){
+  localStorage.setItem(AUTH_TYPE_KEY, type);
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  if (type === "bearer"){
+    localStorage.setItem(LEGACY_JWT_KEY, token);
+  }
+}
+
+function clearStoredAuth(){
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_TYPE_KEY);
+  localStorage.removeItem(LEGACY_JWT_KEY);
+}
+
+function apiHeaders(){
+  const auth = loadStoredAuth();
+  const headers = { "Content-Type":"application/json" };
+  if (auth.token){
+    if (auth.type === "api_key"){
+      headers["X-API-Key"] = auth.token;
+    }else{
+      headers["Authorization"] = `Bearer ${auth.token}`;
+    }
+  }
+  return headers;
+}
+
 function requireKeyOrWarn(bannerEl){
-  if (!getApiKey()){
-    setBanner(bannerEl, "err", "No JWT saved. Go to Settings and paste your token.");
+  if (!loadStoredAuth().token){
+    setBanner(bannerEl, "err", "No token saved. Go to Settings and paste your token.");
     return false;
   }
   return true;
@@ -70,6 +113,15 @@ function formatDuration(totalSeconds){
   if (minutes || hours || days) parts.push(`${minutes}m`);
   parts.push(`${secs}s`);
   return parts.join(" ");
+}
+
+function maskToken(value){
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.length <= 8) return "****";
+  const head = raw.slice(0, 4);
+  const tail = raw.slice(-4);
+  return `${head}****${tail}`;
 }
 
 function slugifyDocId(value){
@@ -125,15 +177,15 @@ function setDocOptions(docs){
 }
 
 async function loadDocsList(){
-  if (!getApiKey()){
-    setDocsStatus("Save a JWT to load docs.");
+  if (!loadStoredAuth().token){
+    setDocsStatus("Save a token to load docs.");
     setDocOptions([]);
     return;
   }
 
   setDocsStatus("Loading docs...");
   try{
-    const res = await fetch("/docs", { headers: apiHeaders() });
+    const res = await fetch("/docs/list", { headers: apiHeaders() });
     const data = await res.json();
     if (res.ok && Array.isArray(data.docs)){
       setDocOptions(data.docs);
@@ -165,12 +217,15 @@ function suggestDocIdFromUrl(value){
 
 function showPage(pageId){
   const tabs = [
-    ["tabIndex","pageIndex"],
-    ["tabSearch","pageSearch"],
-    ["tabAsk","pageAsk"],
+    ["tabProduct","pageProduct"],
+    ["tabPlayground","pagePlayground"],
     ["tabMetrics","pageMetrics"],
+    ["tabUsage","pageUsage"],
+    ["tabJobs","pageJobs"],
+    ["tabCollections","pageCollections"],
     ["tabDocs","pageDocs"],
-    ["tabSettings","pageSettings"]
+    ["tabSettings","pageSettings"],
+    ["tabApiKeys","pageApiKeys"]
   ];
 
   for (const [t,p] of tabs){
@@ -185,6 +240,64 @@ function showPage(pageId){
     $(found[0]).setAttribute("aria-selected", "true");
     $(found[1]).classList.add("active");
   }
+
+  if (pageId === "pageMetrics" && !metricsLoaded){
+    loadStats();
+  }
+  if (pageId === "pageUsage" && !usageLoaded){
+    loadUsage();
+  }
+}
+
+function showPlayPane(paneId){
+  const tabs = [
+    ["playTabIngest","playPaneIngest"],
+    ["playTabSearch","playPaneSearch"],
+    ["playTabAsk","playPaneAsk"]
+  ];
+
+  for (const [t,p] of tabs){
+    $(t).classList.remove("active");
+    $(t).setAttribute("aria-selected", "false");
+    $(p).classList.remove("active");
+  }
+
+  const found = tabs.find(x => x[1] === paneId);
+  if (found){
+    $(found[0]).classList.add("active");
+    $(found[0]).setAttribute("aria-selected", "true");
+    $(found[1]).classList.add("active");
+  }
+}
+
+function initDocTabs(){
+  const groups = document.querySelectorAll(".doc-tabs[data-doc-tabs]");
+  groups.forEach((group) => {
+    const groupId = group.dataset.docTabs;
+    const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
+    if (!panelWrap) return;
+    const buttons = Array.from(group.querySelectorAll(".doc-tab"));
+    const panels = Array.from(panelWrap.querySelectorAll(".doc-panel"));
+
+    const activate = (name) => {
+      buttons.forEach((btn) => {
+        const isActive = btn.dataset.docTab === name;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      panels.forEach((panel) => {
+        const isActive = panel.dataset.docPanel === name;
+        panel.classList.toggle("active", isActive);
+      });
+    };
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => activate(btn.dataset.docTab));
+    });
+
+    const current = buttons.find((btn) => btn.classList.contains("active")) || buttons[0];
+    if (current) activate(current.dataset.docTab);
+  });
 }
 
 function renderSearch(results){
@@ -314,6 +427,321 @@ function renderStats(data){
   wrap.insertAdjacentHTML("beforeend", html);
 }
 
+function renderUsage(stats){
+  const wrap = $("usageCards");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  const gateway = stats?.gateway?.latency || {};
+  const overall = gateway.overall || {};
+  const count = Number(overall.count || 0);
+  const errRate = Number(overall.error_rate || 0);
+
+  const cards = [
+    { label: "Requests", value: formatNumber(count), meta: "total" },
+    { label: "Error rate", value: `${(errRate * 100).toFixed(2)}%`, meta: "gateway 5xx" },
+    { label: "Latency p50", value: formatMs(overall.p50_ms), meta: "overall" },
+    { label: "Latency p95", value: formatMs(overall.p95_ms), meta: "overall" },
+    { label: "Latency p99", value: formatMs(overall.p99_ms), meta: "overall" },
+    { label: "Vector ops", value: formatNumber((stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0)), meta: "total" }
+  ];
+
+  const html = cards.map((card) => {
+    return `
+      <div class="stat">
+        <div class="stat-label">${escapeHtml(card.label)}</div>
+        <div class="stat-value">${escapeHtml(card.value)}</div>
+        <div class="stat-meta">${escapeHtml(card.meta)}</div>
+      </div>
+    `;
+  }).join("");
+
+  wrap.insertAdjacentHTML("beforeend", html);
+}
+
+function renderUsageRoutes(routes){
+  const wrap = $("usageRoutesTable");
+  if (!wrap) return;
+  const entries = Object.entries(routes || {});
+  if (!entries.length){
+    wrap.textContent = "(no data)";
+    return;
+  }
+
+  entries.sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
+  const rows = entries.map(([route, stats]) => {
+    const count = Number(stats?.count || 0);
+    const errRate = Number(stats?.error_rate || 0);
+    return `
+      <tr>
+        <td class="mono">${escapeHtml(route)}</td>
+        <td>${escapeHtml(formatNumber(count))}</td>
+        <td>${escapeHtml((errRate * 100).toFixed(2))}%</td>
+        <td>${escapeHtml(formatMs(stats?.p50_ms))}</td>
+        <td>${escapeHtml(formatMs(stats?.p95_ms))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Route</th>
+          <th>Requests</th>
+          <th>Error rate</th>
+          <th>p50</th>
+          <th>p95</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function loadStats(){
+  if (metricsLoading) return;
+  clearBanner($("statsBanner"));
+  if (!requireKeyOrWarn($("statsBanner"))) return;
+
+  metricsLoading = true;
+  $("statsBtn").disabled = true;
+  $("statsBtn").textContent = "Loading...";
+
+  try{
+    const res = await fetch("/stats", { headers: apiHeaders() });
+    const data = await res.json();
+    $("statsRaw").textContent = JSON.stringify(data, null, 2);
+
+    if (res.ok){
+      setBanner($("statsBanner"), "ok", "Stats loaded.");
+      renderStats(data);
+      $("statsUpdated").textContent = new Date().toLocaleString();
+      metricsLoaded = true;
+    }else{
+      setBanner($("statsBanner"), "err", data.error || "Stats failed.");
+    }
+  }catch(e){
+    setBanner($("statsBanner"), "err", "Error: " + e);
+  }finally{
+    metricsLoading = false;
+    $("statsBtn").disabled = false;
+    $("statsBtn").textContent = "Refresh stats";
+  }
+}
+
+async function loadUsage(){
+  if (usageLoading) return;
+  clearBanner($("usageBanner"));
+  if (!requireKeyOrWarn($("usageBanner"))) return;
+
+  usageLoading = true;
+  $("usageRefreshBtn").disabled = true;
+  $("usageRefreshBtn").textContent = "Loading...";
+
+  try{
+    const res = await fetch("/v1/admin/usage", { headers: apiHeaders() });
+    const data = await res.json();
+    $("usageRaw").textContent = JSON.stringify(data, null, 2);
+
+    if (res.ok && data.ok){
+      renderUsage(data.data);
+      renderUsageRoutes(data.data?.gateway?.latency?.routes || {});
+      $("usageUpdated").textContent = new Date().toLocaleString();
+      setBanner($("usageBanner"), "ok", "Usage loaded.");
+      usageLoaded = true;
+    }else{
+      setBanner($("usageBanner"), "err", data?.error?.message || "Usage failed.");
+    }
+  }catch(e){
+    setBanner($("usageBanner"), "err", "Error loading usage.");
+  }finally{
+    usageLoading = false;
+    $("usageRefreshBtn").disabled = false;
+    $("usageRefreshBtn").textContent = "Refresh usage";
+  }
+}
+
+function renderJobDetails(job){
+  const target = $("jobDetails");
+  if (!target) return;
+  target.textContent = job ? JSON.stringify(job, null, 2) : "(no job loaded)";
+}
+
+function renderJobsTable(jobs){
+  const wrap = $("jobListTable");
+  if (!wrap) return;
+  if (!jobs || jobs.length === 0){
+    wrap.textContent = "(no data)";
+    return;
+  }
+
+  const rows = jobs.map((job) => {
+    return `
+      <tr>
+        <td class="mono">${escapeHtml(job.id)}</td>
+        <td>${escapeHtml(job.status || "-")}</td>
+        <td>${escapeHtml(job.jobType || job.job_type || "-")}</td>
+        <td>${escapeHtml(job.createdAt || job.created_at || "-")}</td>
+        <td>${escapeHtml(job.updatedAt || job.updated_at || "-")}</td>
+        <td><button class="btn secondary job-view-btn" data-id="${escapeHtml(job.id)}">View</button></td>
+      </tr>
+    `;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Type</th>
+          <th>Created</th>
+          <th>Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll(".job-view-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      if (!id) return;
+      $("jobIdInput").value = id;
+      fetchJobById(id);
+    };
+  });
+}
+
+function renderCollections(collections){
+  const wrap = $("collectionsTable");
+  if (!wrap) return;
+  if (!collections || collections.length === 0){
+    wrap.textContent = "(no data)";
+    return;
+  }
+
+  const rows = collections.map((col) => {
+    const titles = Array.isArray(col.titles) ? col.titles : [];
+    const preview = titles.slice(0, 5).join(", ");
+    const extra = titles.length > 5 ? ` (+${titles.length - 5} more)` : "";
+    return `
+      <tr>
+        <td class="mono">${escapeHtml(col.collection)}</td>
+        <td>${escapeHtml(String(col.totalDocs || 0))}</td>
+        <td>${escapeHtml(preview)}${escapeHtml(extra)}</td>
+        <td><button class="btn danger collection-delete-btn" data-collection="${escapeHtml(col.collection)}">Delete</button></td>
+      </tr>
+    `;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Collection</th>
+          <th>Docs</th>
+          <th>Titles</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll(".collection-delete-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const name = btn.dataset.collection;
+      if (!name) return;
+      if (!confirm(`Delete collection "${name}"? This removes stored chunk text and memory items.`)) {
+        return;
+      }
+      clearBanner($("collectionsBanner"));
+      if (!requireKeyOrWarn($("collectionsBanner"))) return;
+      try{
+        const res = await fetch(`/v1/collections/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: apiHeaders()
+        });
+        const data = await res.json();
+        if (res.ok && data.ok){
+          setBanner($("collectionsBanner"), "ok", `Deleted collection "${name}".`);
+          await fetchCollections();
+        }else{
+          const msg = data?.error?.message || data?.error || "Delete failed.";
+          setBanner($("collectionsBanner"), "err", msg);
+        }
+      }catch(e){
+        setBanner($("collectionsBanner"), "err", "Error deleting collection.");
+      }
+    };
+  });
+}
+
+async function fetchJobById(id){
+  clearBanner($("jobsBanner"));
+  if (!requireKeyOrWarn($("jobsBanner"))) return;
+  if (!id){
+    setBanner($("jobsBanner"), "err", "Provide a job ID.");
+    return;
+  }
+  try{
+    const res = await fetch(`/v1/jobs/${encodeURIComponent(id)}`, { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && data.ok && data.data?.job){
+      renderJobDetails(data.data.job);
+      setBanner($("jobsBanner"), "ok", "Job loaded.");
+    }else{
+      renderJobDetails(null);
+      const msg = data?.error?.message || data?.error || "Job not found.";
+      setBanner($("jobsBanner"), "err", msg);
+    }
+  }catch(e){
+    setBanner($("jobsBanner"), "err", "Error loading job.");
+  }
+}
+
+async function fetchInProgressJobs(){
+  clearBanner($("jobsBanner"));
+  if (!requireKeyOrWarn($("jobsBanner"))) return;
+  try{
+    const res = await fetch("/v1/jobs?status=in_progress&limit=50", { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && data.ok && Array.isArray(data.data?.jobs)){
+      renderJobsTable(data.data.jobs);
+      setBanner($("jobsBanner"), "ok", "In-progress jobs loaded.");
+    }else{
+      renderJobsTable([]);
+      const msg = data?.error?.message || data?.error || "Failed to load jobs.";
+      setBanner($("jobsBanner"), "err", msg);
+    }
+  }catch(e){
+    setBanner($("jobsBanner"), "err", "Error loading jobs.");
+  }
+}
+
+async function fetchCollections(){
+  clearBanner($("collectionsBanner"));
+  if (!requireKeyOrWarn($("collectionsBanner"))) return;
+  try{
+    const res = await fetch("/v1/collections", { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && data.ok && Array.isArray(data.data?.collections)){
+      renderCollections(data.data.collections);
+      $("collectionsUpdated").textContent = new Date().toLocaleString();
+      setBanner($("collectionsBanner"), "ok", "Collections loaded.");
+    }else{
+      renderCollections([]);
+      const msg = data?.error?.message || data?.error || "Failed to load collections.";
+      setBanner($("collectionsBanner"), "err", msg);
+    }
+  }catch(e){
+    setBanner($("collectionsBanner"), "err", "Error loading collections.");
+  }
+}
+
 async function refreshHealth(){
   const dot = $("healthDot");
   const text = $("healthText");
@@ -337,25 +765,33 @@ async function refreshHealth(){
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  $("tabIndex").onclick = () => showPage("pageIndex");
-  $("tabSearch").onclick = () => showPage("pageSearch");
-  $("tabAsk").onclick = () => showPage("pageAsk");
+  initDocTabs();
+  $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");
+  $("tabUsage").onclick = () => showPage("pageUsage");
   $("tabDocs").onclick = () => showPage("pageDocs");
   $("tabSettings").onclick = () => showPage("pageSettings");
+  $("tabApiKeys").onclick = () => showPage("pageApiKeys");
+  $("tabProduct").onclick = () => showPage("pageProduct");
+  $("playTabIngest").onclick = () => showPlayPane("playPaneIngest");
+  $("playTabSearch").onclick = () => showPlayPane("playPaneSearch");
+  $("playTabAsk").onclick = () => showPlayPane("playPaneAsk");
 
   refreshHealth();
   setInterval(refreshHealth, 12000);
 
-  $("apiKey").value = getApiKey();
+  const auth = loadStoredAuth();
+  $("apiKey").value = auth.token;
+  if ($("authType")) $("authType").value = auth.type || "bearer";
 
   $("saveKeyBtn").onclick = () => {
+    const authType = $("authType") ? $("authType").value : "bearer";
     const key = $("apiKey").value.trim();
     if (!key){
-      setBanner($("settingsBanner"), "err", "Please paste a JWT first.");
+      setBanner($("settingsBanner"), "err", "Please paste a token first.");
       return;
     }
-    localStorage.setItem("atlasragJwt", key);
+    saveStoredAuth(authType, key);
     setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
     loadDocsList();
   };
@@ -381,8 +817,9 @@ window.addEventListener("DOMContentLoaded", () => {
       });
       const data = await res.json();
       if (res.ok && data.token){
-        localStorage.setItem("atlasragJwt", data.token);
+        saveStoredAuth("bearer", data.token);
         $("apiKey").value = data.token;
+        if ($("authType")) $("authType").value = "bearer";
         $("loginPass").value = "";
         setBanner($("settingsBanner"), "ok", "Token saved. You can now Index, Search, and Ask.");
         loadDocsList();
@@ -398,11 +835,118 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   $("clearKeyBtn").onclick = () => {
-    localStorage.removeItem("atlasragJwt");
+    clearStoredAuth();
     $("apiKey").value = "";
+    if ($("authType")) $("authType").value = "bearer";
     setBanner($("settingsBanner"), "ok", "Removed saved token.");
-    setDocsStatus("Save a JWT to load docs.");
+    setDocsStatus("Save a token to load docs.");
     setDocOptions([]);
+  };
+
+  $("createApiKeyBtn").onclick = async () => {
+    clearBanner($("apiKeyBanner"));
+    $("copyCreatedApiKeyBtn").disabled = true;
+    $("useCreatedApiKeyBtn").disabled = true;
+    const auth = loadStoredAuth();
+    if (!auth.token){
+      setBanner($("apiKeyBanner"), "err", "Save a token first (admin/owner required).");
+      return;
+    }
+
+    const name = $("apiKeyName").value.trim();
+    if (!name){
+      setBanner($("apiKeyBanner"), "err", "API key name is required.");
+      return;
+    }
+
+    const principalId = $("apiKeyPrincipal").value.trim();
+    const rolesRaw = $("apiKeyRoles").value.trim();
+    const roles = rolesRaw
+      ? rolesRaw.split(",").map(r => r.trim()).filter(Boolean)
+      : [];
+    const expiresRaw = $("apiKeyExpires").value;
+    let expiresAt = null;
+    if (expiresRaw){
+      const dt = new Date(expiresRaw);
+      if (Number.isNaN(dt.getTime())){
+        setBanner($("apiKeyBanner"), "err", "Invalid expiration date.");
+        return;
+      }
+      expiresAt = dt.toISOString();
+    }
+
+    const body = { name };
+    if (principalId) body.principalId = principalId;
+    if (roles.length) body.roles = roles;
+    if (expiresAt) body.expiresAt = expiresAt;
+
+    $("createApiKeyBtn").disabled = true;
+    $("createApiKeyBtn").textContent = "Creating...";
+
+    try{
+      const res = await fetch("/v1/admin/service-tokens", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok && data.ok && data.data?.token){
+        const token = data.data.token;
+        $("createdApiKey").textContent = maskToken(token);
+        $("useCreatedApiKeyBtn").disabled = false;
+        $("copyCreatedApiKeyBtn").disabled = false;
+        $("useCreatedApiKeyBtn").dataset.token = token;
+        $("copyCreatedApiKeyBtn").dataset.token = token;
+        setBanner($("apiKeyBanner"), "ok", "API key created. Save it now.");
+      }else{
+        const msg = data?.error?.message || data?.error || "Failed to create API key.";
+        setBanner($("apiKeyBanner"), "err", msg);
+      }
+    }catch(e){
+      setBanner($("apiKeyBanner"), "err", "Error creating API key.");
+    }finally{
+      $("createApiKeyBtn").disabled = false;
+      $("createApiKeyBtn").textContent = "Create API key";
+    }
+  };
+
+  $("useCreatedApiKeyBtn").onclick = () => {
+    const token = $("useCreatedApiKeyBtn").dataset.token;
+    if (!token){
+      setBanner($("apiKeyBanner"), "err", "No API key to use yet.");
+      return;
+    }
+    if ($("authType")) $("authType").value = "api_key";
+    $("apiKey").value = token;
+    saveStoredAuth("api_key", token);
+    setBanner($("apiKeyBanner"), "ok", "API key saved. You can now Index, Search, and Ask.");
+    loadDocsList();
+  };
+
+  $("copyCreatedApiKeyBtn").onclick = async () => {
+    const token = $("copyCreatedApiKeyBtn").dataset.token;
+    if (!token){
+      setBanner($("apiKeyBanner"), "err", "No API key to copy yet.");
+      return;
+    }
+    try{
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(token);
+      } else {
+        const tmp = document.createElement("textarea");
+        tmp.value = token;
+        tmp.setAttribute("readonly", "true");
+        tmp.style.position = "absolute";
+        tmp.style.left = "-9999px";
+        document.body.appendChild(tmp);
+        tmp.select();
+        document.execCommand("copy");
+        document.body.removeChild(tmp);
+      }
+      setBanner($("apiKeyBanner"), "ok", "API key copied to clipboard.");
+    }catch(e){
+      setBanner($("apiKeyBanner"), "err", "Failed to copy API key.");
+    }
   };
 
   $("indexClearBtn").onclick = () => {
@@ -418,11 +962,6 @@ window.addEventListener("DOMContentLoaded", () => {
   $("searchDocsAllBtn").onclick = () => clearDocSelection($("searchDocs"));
   $("askDocsRefreshBtn").onclick = () => loadDocsList();
   $("askDocsAllBtn").onclick = () => clearDocSelection($("askDocs"));
-
-  $("clearUrlBtn").onclick = () => {
-    $("docUrl").value = "";
-    clearBanner($("indexBanner"));
-  };
 
   $("docUrl").addEventListener("blur", () => {
     if ($("docId").value.trim()) return;
@@ -458,11 +997,17 @@ window.addEventListener("DOMContentLoaded", () => {
     clearBanner($("indexBanner"));
     if (!requireKeyOrWarn($("indexBanner"))) return;
 
-    const docId = $("docId").value.trim();
-    const text = $("docText").value;
+    let docId = $("docId").value.trim();
+    const text = $("docText").value.trim();
+    const url = $("docUrl").value.trim();
 
-    if (!docId || !text.trim()){
-      setBanner($("indexBanner"), "err", "Please provide Doc ID and document text.");
+    if (!docId && url) {
+      docId = suggestDocIdFromUrl(url);
+      if (docId) $("docId").value = docId;
+    }
+
+    if (!docId){
+      setBanner($("indexBanner"), "err", "Please provide a Doc ID.");
       return;
     }
     if (!isValidDocId(docId)){
@@ -474,19 +1019,34 @@ window.addEventListener("DOMContentLoaded", () => {
     $("indexBtn").textContent = "Indexing...";
 
     try{
-      const res = await fetch("/docs", {
-        method:"POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ docId, text })
-      });
+      let res;
+      if (url){
+        res = await fetch("/docs/url", {
+          method:"POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ docId, url })
+        });
+      }else{
+        if (!text.trim()){
+          setBanner($("indexBanner"), "err", "Paste text or provide a URL.");
+          return;
+        }
+        res = await fetch("/docs", {
+          method:"POST",
+          headers: apiHeaders(),
+          body: JSON.stringify({ docId, text })
+        });
+      }
 
       const data = await res.json();
       $("indexRaw").textContent = JSON.stringify(data, null, 2);
 
       if (res.ok && data.ok){
-        const extra = data.truncated ? " (truncated)" : "";
-        setBanner($("indexBanner"), "ok", `Indexed "${docId}"${extra} (${data.chunksIndexed} chunks).`);
-        showPage("pageSearch");
+        const extra = data.truncated || data.docTruncated ? " (truncated)" : "";
+        const sourceLabel = url ? " from URL" : "";
+        setBanner($("indexBanner"), "ok", `Indexed "${docId}"${sourceLabel}${extra} (${data.chunksIndexed} chunks).`);
+        showPage("pagePlayground");
+        showPlayPane("playPaneSearch");
         loadDocsList();
       }else{
         setBanner($("indexBanner"), "err", data.error || "Index failed.");
@@ -495,57 +1055,7 @@ window.addEventListener("DOMContentLoaded", () => {
       setBanner($("indexBanner"), "err", "Error: " + e);
     }finally{
       $("indexBtn").disabled = false;
-      $("indexBtn").textContent = "Index document";
-    }
-  };
-
-  $("indexUrlBtn").onclick = async () => {
-    clearBanner($("indexBanner"));
-    if (!requireKeyOrWarn($("indexBanner"))) return;
-
-    const url = $("docUrl").value.trim();
-    let docId = $("docId").value.trim();
-
-    if (!docId) {
-      docId = suggestDocIdFromUrl(url);
-      if (docId) $("docId").value = docId;
-    }
-
-    if (!docId || !url) {
-      setBanner($("indexBanner"), "err", "Please provide Doc ID and URL.");
-      return;
-    }
-    if (!isValidDocId(docId)){
-      setBanner($("indexBanner"), "err", "Doc ID must use only letters, numbers, dot, dash, or underscore (no spaces).");
-      return;
-    }
-
-    $("indexUrlBtn").disabled = true;
-    $("indexUrlBtn").textContent = "Indexing URL...";
-
-    try{
-      const res = await fetch("/docs/url", {
-        method:"POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ docId, url })
-      });
-
-      const data = await res.json();
-      $("indexRaw").textContent = JSON.stringify(data, null, 2);
-
-      if (res.ok && data.ok){
-        const extra = data.docTruncated ? " (truncated)" : "";
-        setBanner($("indexBanner"), "ok", `Indexed "${docId}" from URL${extra} (${data.chunksIndexed} chunks).`);
-        showPage("pageSearch");
-        loadDocsList();
-      }else{
-        setBanner($("indexBanner"), "err", data.error || "Index URL failed.");
-      }
-    }catch(e){
-      setBanner($("indexBanner"), "err", "Error: " + e);
-    }finally{
-      $("indexUrlBtn").disabled = false;
-      $("indexUrlBtn").textContent = "Index URL";
+      $("indexBtn").textContent = "Index content";
     }
   };
 
@@ -645,33 +1155,42 @@ window.addEventListener("DOMContentLoaded", () => {
     $("statsCards").innerHTML = "";
     $("statsUpdated").textContent = "-";
     clearBanner($("statsBanner"));
+    metricsLoaded = false;
   };
 
   $("statsBtn").onclick = async () => {
-    clearBanner($("statsBanner"));
-    if (!requireKeyOrWarn($("statsBanner"))) return;
+    loadStats();
+  };
 
-    $("statsBtn").disabled = true;
-    $("statsBtn").textContent = "Loading...";
+  $("usageRefreshBtn").onclick = async () => {
+    loadUsage();
+  };
 
-    try{
-      const res = await fetch("/stats", { headers: apiHeaders() });
-      const data = await res.json();
-      $("statsRaw").textContent = JSON.stringify(data, null, 2);
-
-      if (res.ok){
-        setBanner($("statsBanner"), "ok", "Stats loaded.");
-        renderStats(data);
-        $("statsUpdated").textContent = new Date().toLocaleString();
-      }else{
-        setBanner($("statsBanner"), "err", data.error || "Stats failed.");
-      }
-    }catch(e){
-      setBanner($("statsBanner"), "err", "Error: " + e);
-    }finally{
-      $("statsBtn").disabled = false;
-      $("statsBtn").textContent = "Refresh stats";
+  $("jobFetchBtn").onclick = () => {
+    const id = $("jobIdInput").value.trim();
+    if (!id) {
+      fetchInProgressJobs();
+      return;
     }
+    fetchJobById(id);
+  };
+
+  $("jobListBtn").onclick = () => {
+    fetchInProgressJobs();
+  };
+
+  $("tabJobs").onclick = () => {
+    showPage("pageJobs");
+    fetchInProgressJobs();
+  };
+
+  $("collectionsRefreshBtn").onclick = () => {
+    fetchCollections();
+  };
+
+  $("tabCollections").onclick = () => {
+    showPage("pageCollections");
+    fetchCollections();
   };
 
   loadDocsList();

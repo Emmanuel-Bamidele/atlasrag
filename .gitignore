@@ -9,3 +9,6 @@
 .envrc
 .direnv/
 .env
+
+# Backups
+backups/

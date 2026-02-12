@@ -464,7 +464,12 @@ int main()
 {
   DB db;                 // string KV store
   VectorDB vdb;          // NEW: vector store
-  WAL wal("wal.log");    // durability log file
+  const char* wal_path_env = std::getenv("WAL_PATH");
+  const std::string wal_path =
+      (wal_path_env && std::string(wal_path_env).size())
+          ? std::string(wal_path_env)
+          : "wal.log";
+  WAL wal(wal_path);     // durability log file
 
   // VECTOR_WAL=0 disables vector WAL to speed up indexing
   const char* vector_wal_env = std::getenv("VECTOR_WAL");
