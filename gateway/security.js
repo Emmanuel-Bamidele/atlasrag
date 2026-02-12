@@ -11,6 +11,26 @@
 const rateLimit = require("express-rate-limit");
 const jwt = require("jsonwebtoken");
 
+function buildMeta() {
+  return {
+    tenantId: null,
+    collection: null,
+    timestamp: new Date().toISOString()
+  };
+}
+
+function sendAuthError(res, status, message, req) {
+  const path = req?.path || "";
+  if (path.startsWith("/v1")) {
+    return res.status(status).json({
+      ok: false,
+      error: { message, code: "AUTH_ERROR" },
+      meta: buildMeta()
+    });
+  }
+  return res.status(status).json({ error: message, tenantId: null, collection: null });
+}
+
 function buildVerifyOptions() {
   const opts = { algorithms: ["HS256"] };
   if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
@@ -24,13 +44,13 @@ function requireJwt(req, res, next) {
 
   // If no JWT_SECRET set, we refuse (safer than accidentally public)
   if (!secret) {
-    return res.status(500).json({ error: "JWT_SECRET not set on server" });
+    return sendAuthError(res, 500, "JWT_SECRET not set on server", req);
   }
 
   const auth = req.header("authorization") || "";
   const [scheme, token] = auth.split(" ");
   if (scheme !== "Bearer" || !token) {
-    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+    return sendAuthError(res, 401, "Missing or invalid Authorization header", req);
   }
 
   try {
@@ -38,7 +58,7 @@ function requireJwt(req, res, next) {
     req.user = payload;
     next();
   } catch (err) {
-    return res.status(401).json({ error: "Invalid token" });
+    return sendAuthError(res, 401, "Invalid token", req);
   }
 }
 

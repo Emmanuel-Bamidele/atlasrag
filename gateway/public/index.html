@@ -245,9 +245,36 @@
               If your organization uses SSO (Google, Microsoft, Okta), choose the SSO option on the Settings page.
               Admins control which providers are enabled.
             </p>
+            <p>
+              API routes are versioned under <span class="mono">/v1</span>. Unversioned routes remain available
+              for backward compatibility.
+            </p>
+
+            <h4>Response format (v1)</h4>
+            <p>All <span class="mono">/v1</span> endpoints return a consistent envelope:</p>
+            <div class="doc-block">
+              <div class="doc-label">Success</div>
+              <pre class="doc-code">{
+  "ok": true,
+  "data": { ... },
+  "meta": {
+    "tenantId": "acme",
+    "collection": "default",
+    "timestamp": "2026-02-12T12:00:00.000Z"
+  }
+}</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Error</div>
+              <pre class="doc-code">{
+  "ok": false,
+  "error": { "message": "Invalid request", "code": "INVALID_REQUEST" },
+  "meta": { "tenantId": "acme", "collection": "default", "timestamp": "..." }
+}</pre>
+            </div>
 
             <div class="doc-block">
-              <div class="doc-label">POST /login</div>
+              <div class="doc-label">POST /v1/login</div>
               <pre class="doc-code">{
   "username": "admin",
   "password": "changeme"
@@ -255,7 +282,7 @@
             </div>
 
             <div class="doc-block mono">
-              curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/stats
+              curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/v1/stats
             </div>
 
             <h4>Indexing workflow (users)</h4>
@@ -263,39 +290,45 @@
               Indexing splits text into chunks, embeds each chunk, stores vectors in the C++ TCP service,
               and stores chunk text in Postgres. Doc IDs must use only letters, numbers, dot, dash, or underscore.
             </p>
+            <p>
+              Collections let you group documents. If omitted, <span class="mono">collection</span> defaults to
+              <span class="mono">default</span>.
+            </p>
             <ul>
-              <li>Use <span class="mono">POST /docs</span> to index raw text.</li>
-              <li>Use <span class="mono">POST /docs/url</span> to fetch and index a URL.</li>
-              <li>Use <span class="mono">GET /docs</span> to list your indexed docs.</li>
-              <li>Use <span class="mono">DELETE /docs/:docId</span> to remove stored chunk text.</li>
+              <li>Use <span class="mono">POST /v1/docs</span> to index raw text.</li>
+              <li>Use <span class="mono">POST /v1/docs/url</span> to fetch and index a URL.</li>
+              <li>Use <span class="mono">GET /v1/docs</span> to list your indexed docs.</li>
+              <li>Use <span class="mono">DELETE /v1/docs/:docId</span> to remove stored chunk text.</li>
             </ul>
 
             <div class="doc-block">
-              <div class="doc-label">POST /docs</div>
+              <div class="doc-label">POST /v1/docs</div>
               <pre class="doc-code">{
   "docId": "swe_notes",
+  "collection": "default",
   "text": "Your document text..."
 }</pre>
             </div>
 
             <div class="doc-block">
-              <div class="doc-label">POST /docs/url</div>
+              <div class="doc-label">POST /v1/docs/url</div>
               <pre class="doc-code">{
   "docId": "swe_docs",
+  "collection": "default",
   "url": "https://example.com/article"
 }</pre>
             </div>
             <div class="doc-block mono">
-              GET /docs
+              GET /v1/docs?collection=default
             </div>
             <div class="doc-block mono">
-              DELETE /docs/swe_docs
+              DELETE /v1/docs/swe_docs?collection=default
             </div>
             <p>
               Note: delete removes stored chunk text; vector deletion is a future improvement.
             </p>
             <p>
-              The docs list is tenant-scoped and returns doc IDs with chunk counts. The UI uses this list to
+              The docs list is tenant-scoped and returns doc IDs with chunk counts for the selected collection. The UI uses this list to
               populate doc filters for Search and Ask.
             </p>
 
@@ -306,10 +339,10 @@
             </p>
             <p>Optionally pass <span class="mono">docIds</span> to restrict search to specific docs.</p>
             <div class="doc-block mono">
-              GET /search?q=write-ahead%20logging&amp;k=5
+              GET /v1/search?q=write-ahead%20logging&amp;k=5&amp;collection=default
             </div>
             <div class="doc-block mono">
-              GET /search?q=write-ahead%20logging&amp;k=5&amp;docIds=onboarding,design-notes
+              GET /v1/search?q=write-ahead%20logging&amp;k=5&amp;collection=default&amp;docIds=onboarding,design-notes
             </div>
 
             <h4>Ask (RAG)</h4>
@@ -319,14 +352,14 @@
             </p>
             <p>Provide <span class="mono">docIds</span> to answer using a subset of docs, or omit to use all.</p>
             <p>
-              Source text is sanitized to reduce prompt injection risk. Set
-              <span class="mono">PROMPT_INJECTION_GUARD=0</span> to disable.
+              Source text is sanitized to reduce prompt injection risk.
             </p>
             <div class="doc-block">
-              <div class="doc-label">POST /ask</div>
+              <div class="doc-label">POST /v1/ask</div>
               <pre class="doc-code">{
   "question": "Explain WAL and why it matters",
   "k": 5,
+  "collection": "default",
   "docIds": ["onboarding", "design-notes"]
 }</pre>
             </div>
