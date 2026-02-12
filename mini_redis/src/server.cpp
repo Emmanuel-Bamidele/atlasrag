@@ -167,7 +167,7 @@ static std::string handle_command(
   }
 
   // ========================================================
-  // STRING KV COMMANDS (your existing mini-redis)
+  // STRING KV COMMANDS (core KV layer)
   // ========================================================
 
   // --------------------------------
@@ -485,7 +485,7 @@ int main()
       io,
       tcp::endpoint(tcp::v4(), 6379));
 
-  std::cout << "mini-redis listening on port 6379...\n";
+  std::cout << "AtlasRAG listening on port 6379...\n";
 
   // Accept clients forever
   while (true) {

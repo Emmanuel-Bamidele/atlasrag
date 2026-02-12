@@ -1,6 +1,6 @@
 //
 //  ai.js
-//  mini_redis
+//  AtlasRAG
 //
 //  Created by Emmanuel Bamidele on 2/11/26.
 //

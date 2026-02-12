@@ -164,7 +164,7 @@ int main() {
       tcp::endpoint(tcp::v4(), 6379));
 
   std::cout
-      << "mini-redis listening on port 6379...\n";
+      << "AtlasRAG listening on port 6379...\n";
 
   // Accept clients forever
   while (true) {

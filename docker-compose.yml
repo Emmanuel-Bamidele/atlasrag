@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.redis
+    image: atlasrag/vector-store
     environment:
       VECTOR_WAL: "0"
     # keep internal in production; for local debugging you can uncomment:
@@ -25,6 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
+    image: atlasrag/gateway
     environment:
       TCP_TIMEOUT_MS: "30000"
       TCP_HOST: redis
