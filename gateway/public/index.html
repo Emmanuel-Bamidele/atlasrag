@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AtlasRAG - Semantic Memory Engine</title>
+  <title>AtlasRAG - Persistent Memory Engine for AI Agents</title>
   <link rel="stylesheet" href="styles.css">
   <script src="app.js" defer></script>
 </head>
@@ -14,7 +14,7 @@
   <div class="wrap">
     <header class="topbar">
       <div class="brand">
-        <h1>AtlasRAG - Semantic Memory Engine</h1>
+        <h1>AtlasRAG - Persistent Memory Engine for AI Agents</h1>
         <p>
           Index documents, run semantic search, and ask questions with RAG.
           The gateway calls OpenAI for embeddings/answers while the C++ TCP service stores vectors.
@@ -27,7 +27,7 @@
         </div>
         <div class="pill">
           <span>Protected endpoints use</span>
-          <span class="mono">x-api-key</span>
+          <span class="mono">Authorization: Bearer</span>
         </div>
       </div>
     </header>
@@ -110,6 +110,22 @@
             </div>
           </div>
 
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label for="searchDocs">Docs to search (optional)</label>
+              <select id="searchDocs" multiple size="6"></select>
+              <div class="hint">Leave empty to search all docs. Use Cmd/Ctrl to multi-select.</div>
+            </div>
+            <div class="field">
+              <label>Docs list</label>
+              <div class="actions">
+                <button class="btn secondary" id="searchDocsRefreshBtn">Refresh list</button>
+                <button class="btn secondary" id="searchDocsAllBtn">All docs</button>
+              </div>
+              <div class="hint" id="searchDocsStatus">-</div>
+            </div>
+          </div>
+
           <div class="actions">
             <button class="btn" id="searchBtn">Search</button>
             <button class="btn secondary" id="searchClearBtn">Clear</button>
@@ -135,6 +151,22 @@
               <label for="askK">Top K sources</label>
               <input id="askK" value="5" placeholder="example: 5">
               <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label for="askDocs">Docs to query (optional)</label>
+              <select id="askDocs" multiple size="6"></select>
+              <div class="hint">Leave empty to query all docs. Use Cmd/Ctrl to multi-select.</div>
+            </div>
+            <div class="field">
+              <label>Docs list</label>
+              <div class="actions">
+                <button class="btn secondary" id="askDocsRefreshBtn">Refresh list</button>
+                <button class="btn secondary" id="askDocsAllBtn">All docs</button>
+              </div>
+              <div class="hint" id="askDocsStatus">-</div>
             </div>
           </div>
 
@@ -186,33 +218,47 @@
               <p>Technical usage guide for the AtlasRAG semantic gateway, including setup, API usage, and operations.</p>
             </header>
 
-            <h4>Architecture</h4>
+            <h4>Overview</h4>
             <p>
-              The gateway is a Node.js service that exposes HTTP endpoints for indexing and retrieval.
-              It calls OpenAI to generate embeddings and answers, stores vectors in the C++ TCP service,
-              and stores chunk text in Postgres for previews and citations.
+              AtlasRAG lets you index documents, run semantic search, and ask questions across your
+              knowledge base. Search and Ask return the most relevant chunks and provide citations.
             </p>
 
-            <h4>Quick start</h4>
+            <h4>Quick start (users)</h4>
             <ol>
-              <li>Start services: <span class="mono">docker compose up -d</span></li>
-              <li>Open the UI: <span class="mono">http://localhost:3000</span></li>
-              <li>Go to Settings and save your <span class="mono">API_KEY</span>.</li>
-              <li>Index a document, then Search or Ask.</li>
+              <li>Open the AtlasRAG web app in your browser.</li>
+              <li>Sign in using your organization’s login method.</li>
+              <li>Index a document, then use Search or Ask.</li>
             </ol>
 
             <h4>Authentication</h4>
             <p>
-              Protected endpoints require the header <span class="mono">x-api-key</span> to match the
-              server's <span class="mono">API_KEY</span> environment variable. The UI stores the key in
-              <span class="mono">localStorage</span> only.
+              Protected endpoints require a Bearer token in the <span class="mono">Authorization</span> header.
+              The UI stores the token in <span class="mono">localStorage</span> only.
+            </p>
+            <p>
+              Multi-tenant isolation is enforced by the JWT. Include a tenant identifier in the token
+              using one of these claims: <span class="mono">tenant</span>, <span class="mono">tid</span>, or <span class="mono">sub</span>.
+              All data is namespaced by that value.
+            </p>
+            <p>
+              If your organization uses SSO (Google, Microsoft, Okta), choose the SSO option on the Settings page.
+              Admins control which providers are enabled.
             </p>
 
-            <div class="doc-block mono">
-              curl -H "x-api-key: YOUR_KEY" http://localhost:3000/stats
+            <div class="doc-block">
+              <div class="doc-label">POST /login</div>
+              <pre class="doc-code">{
+  "username": "admin",
+  "password": "changeme"
+}</pre>
             </div>
 
-            <h4>Indexing workflow</h4>
+            <div class="doc-block mono">
+              curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/stats
+            </div>
+
+            <h4>Indexing workflow (users)</h4>
             <p>
               Indexing splits text into chunks, embeds each chunk, stores vectors in the C++ TCP service,
               and stores chunk text in Postgres. Doc IDs must use only letters, numbers, dot, dash, or underscore.
@@ -220,6 +266,8 @@
             <ul>
               <li>Use <span class="mono">POST /docs</span> to index raw text.</li>
               <li>Use <span class="mono">POST /docs/url</span> to fetch and index a URL.</li>
+              <li>Use <span class="mono">GET /docs</span> to list your indexed docs.</li>
+              <li>Use <span class="mono">DELETE /docs/:docId</span> to remove stored chunk text.</li>
             </ul>
 
             <div class="doc-block">
@@ -237,14 +285,31 @@
   "url": "https://example.com/article"
 }</pre>
             </div>
+            <div class="doc-block mono">
+              GET /docs
+            </div>
+            <div class="doc-block mono">
+              DELETE /docs/swe_docs
+            </div>
+            <p>
+              Note: delete removes stored chunk text; vector deletion is a future improvement.
+            </p>
+            <p>
+              The docs list is tenant-scoped and returns doc IDs with chunk counts. The UI uses this list to
+              populate doc filters for Search and Ask.
+            </p>
 
             <h4>Search</h4>
             <p>
               Search embeds your query and returns the Top K most similar chunks by cosine similarity.
               Higher K increases recall but can reduce precision and add latency.
             </p>
+            <p>Optionally pass <span class="mono">docIds</span> to restrict search to specific docs.</p>
             <div class="doc-block mono">
               GET /search?q=write-ahead%20logging&amp;k=5
+            </div>
+            <div class="doc-block mono">
+              GET /search?q=write-ahead%20logging&amp;k=5&amp;docIds=onboarding,design-notes
             </div>
 
             <h4>Ask (RAG)</h4>
@@ -252,15 +317,27 @@
               Ask retrieves the Top K chunks, then generates a response using only those sources.
               The response is concise and avoids speculation.
             </p>
+            <p>Provide <span class="mono">docIds</span> to answer using a subset of docs, or omit to use all.</p>
+            <p>
+              Source text is sanitized to reduce prompt injection risk. Set
+              <span class="mono">PROMPT_INJECTION_GUARD=0</span> to disable.
+            </p>
             <div class="doc-block">
               <div class="doc-label">POST /ask</div>
               <pre class="doc-code">{
   "question": "Explain WAL and why it matters",
-  "k": 5
+  "k": 5,
+  "docIds": ["onboarding", "design-notes"]
 }</pre>
             </div>
 
-            <h4>Limits and defaults</h4>
+            <h4>Metrics (developers)</h4>
+            <p>
+              Metrics show vector-store stats plus gateway latency percentiles (p50/p90/p95/p99) for the
+              most recent samples.
+            </p>
+
+            <h4>Limits</h4>
             <ul>
               <li>Document size cap: 200,000 chars (server truncates).</li>
               <li>URL fetch cap: 1,000,000 chars (server truncates).</li>
@@ -268,7 +345,7 @@
               <li>Embeddings are batched; chunk size is capped for embedding safety.</li>
             </ul>
 
-            <h4>Operational tips</h4>
+            <h4>Developer notes</h4>
             <ul>
               <li>Use concise doc IDs; avoid spaces to prevent TCP parsing errors.</li>
               <li>Lower Top K if responses are slow or noisy.</li>
@@ -277,8 +354,8 @@
 
             <h4>Troubleshooting</h4>
             <ul>
-              <li>401 Unauthorized: ensure <span class="mono">API_KEY</span> matches the header.</li>
-              <li>TCP timeout (VSET): ensure doc ID has no spaces, reduce load, or disable vector WAL.</li>
+              <li>401 Unauthorized: ensure a valid JWT is included in <span class="mono">Authorization</span>.</li>
+              <li>Timeouts during indexing: try smaller documents or lower Top K on retrieval.</li>
               <li>Context length errors: re-index with smaller chunks or lower Top K.</li>
             </ul>
           </article>
@@ -288,23 +365,39 @@
         <section class="page" id="pageSettings" role="tabpanel">
           <div class="row">
             <div class="field">
-              <label for="apiKey">API Key (x-api-key)</label>
-              <input id="apiKey" placeholder="paste API key (same as API_KEY env var)">
+              <label for="apiKey">JWT access token</label>
+              <input id="apiKey" placeholder="paste JWT (Bearer token)">
               <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
+            </div>
+            <div class="field">
+              <label for="loginUser">Login (username)</label>
+              <input id="loginUser" placeholder="username">
+              <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label for="loginPass">Login (password)</label>
+              <input id="loginPass" type="password" placeholder="password">
             </div>
             <div class="field">
               <label>Tips</label>
               <div class="hint">
                 - Index at least one document before searching or asking.<br>
-                - If you see Unauthorized, your API key is wrong.<br>
+                - If you see Unauthorized, your JWT is invalid or expired.<br>
                 - Health check only verifies gateway to TCP reachability.
               </div>
             </div>
           </div>
 
           <div class="actions">
-            <button class="btn" id="saveKeyBtn">Save API key</button>
-            <button class="btn danger" id="clearKeyBtn">Forget API key</button>
+            <button class="btn secondary" id="loginBtn">Login and save token</button>
+            <a class="btn secondary" href="/auth/google/login">Login with Google SSO</a>
+            <a class="btn secondary" href="/auth/azure/login">Login with Azure SSO</a>
+            <a class="btn secondary" href="/auth/okta/login">Login with Okta SSO</a>
+            <button class="btn" id="saveKeyBtn">Save token</button>
+            <button class="btn danger" id="clearKeyBtn">Forget token</button>
           </div>
 
           <div class="banner" id="settingsBanner"></div>

@@ -16,20 +16,20 @@ function clearBanner(el){
 }
 
 function getApiKey(){
-  return (localStorage.getItem("miniRedisApiKey") || "").trim();
+  return (localStorage.getItem("atlasragJwt") || "").trim();
 }
 
 function apiHeaders(){
   const key = getApiKey();
   return {
     "Content-Type":"application/json",
-    "x-api-key": key
+    "Authorization": key ? `Bearer ${key}` : ""
   };
 }
 
 function requireKeyOrWarn(bannerEl){
   if (!getApiKey()){
-    setBanner(bannerEl, "err", "No API key saved. Go to Settings and paste the API key.");
+    setBanner(bannerEl, "err", "No JWT saved. Go to Settings and paste your token.");
     return false;
   }
   return true;
@@ -50,6 +50,11 @@ function formatNumber(value){
 function formatRate(value){
   if (!Number.isFinite(value)) return "-";
   return value.toFixed(2);
+}
+
+function formatMs(value){
+  if (!Number.isFinite(value)) return "-";
+  return `${value.toFixed(1)} ms`;
 }
 
 function formatDuration(totalSeconds){
@@ -76,6 +81,71 @@ function slugifyDocId(value){
 
 function isValidDocId(value){
   return /^[a-zA-Z0-9._-]+$/.test(String(value || ""));
+}
+
+function getSelectedDocIds(selectEl){
+  if (!selectEl) return [];
+  return Array.from(selectEl.selectedOptions || [])
+    .map(opt => opt.value)
+    .filter(Boolean);
+}
+
+function clearDocSelection(selectEl){
+  if (!selectEl) return;
+  Array.from(selectEl.options || []).forEach(opt => { opt.selected = false; });
+  selectEl.selectedIndex = -1;
+}
+
+function setDocsStatus(message){
+  const targets = [$("searchDocsStatus"), $("askDocsStatus")].filter(Boolean);
+  targets.forEach(el => { el.textContent = message; });
+}
+
+function setDocOptions(docs){
+  const selects = [$("searchDocs"), $("askDocs")].filter(Boolean);
+  selects.forEach((selectEl) => {
+    selectEl.innerHTML = "";
+    selectEl.disabled = false;
+    if (!docs || docs.length === 0){
+      const opt = document.createElement("option");
+      opt.textContent = "No docs indexed yet";
+      opt.disabled = true;
+      selectEl.appendChild(opt);
+      selectEl.disabled = true;
+      return;
+    }
+    docs.forEach((doc) => {
+      const opt = document.createElement("option");
+      opt.value = doc.docId;
+      opt.textContent = `${doc.docId} (${doc.chunks})`;
+      selectEl.appendChild(opt);
+    });
+    clearDocSelection(selectEl);
+  });
+}
+
+async function loadDocsList(){
+  if (!getApiKey()){
+    setDocsStatus("Save a JWT to load docs.");
+    setDocOptions([]);
+    return;
+  }
+
+  setDocsStatus("Loading docs...");
+  try{
+    const res = await fetch("/docs", { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && Array.isArray(data.docs)){
+      setDocOptions(data.docs);
+      setDocsStatus(`${data.docs.length} doc(s) available.`);
+    }else{
+      setDocsStatus(data.error || "Failed to load docs.");
+      setDocOptions([]);
+    }
+  }catch(e){
+    setDocsStatus("Error loading docs.");
+    setDocOptions([]);
+  }
 }
 
 function suggestDocIdFromFilename(name){
@@ -213,6 +283,21 @@ function renderStats(data){
       label: "VSEARCH",
       value: formatNumber(vsearch),
       meta: "vector queries"
+    },
+    {
+      label: "Latency p50",
+      value: formatMs(stats.gateway?.latency?.overall?.p50_ms),
+      meta: "overall"
+    },
+    {
+      label: "Latency p95",
+      value: formatMs(stats.gateway?.latency?.overall?.p95_ms),
+      meta: "overall"
+    },
+    {
+      label: "Latency p99",
+      value: formatMs(stats.gateway?.latency?.overall?.p99_ms),
+      meta: "overall"
     }
   ];
 
@@ -267,17 +352,57 @@ window.addEventListener("DOMContentLoaded", () => {
   $("saveKeyBtn").onclick = () => {
     const key = $("apiKey").value.trim();
     if (!key){
-      setBanner($("settingsBanner"), "err", "Please paste an API key first.");
+      setBanner($("settingsBanner"), "err", "Please paste a JWT first.");
       return;
     }
-    localStorage.setItem("miniRedisApiKey", key);
+    localStorage.setItem("atlasragJwt", key);
     setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
+    loadDocsList();
+  };
+
+  $("loginBtn").onclick = async () => {
+    clearBanner($("settingsBanner"));
+    const username = $("loginUser").value.trim();
+    const password = $("loginPass").value;
+
+    if (!username || !password) {
+      setBanner($("settingsBanner"), "err", "Please enter username and password.");
+      return;
+    }
+
+    $("loginBtn").disabled = true;
+    $("loginBtn").textContent = "Logging in...";
+
+    try{
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (res.ok && data.token){
+        localStorage.setItem("atlasragJwt", data.token);
+        $("apiKey").value = data.token;
+        $("loginPass").value = "";
+        setBanner($("settingsBanner"), "ok", "Token saved. You can now Index, Search, and Ask.");
+        loadDocsList();
+      }else{
+        setBanner($("settingsBanner"), "err", data.error || "Login failed.");
+      }
+    }catch(e){
+      setBanner($("settingsBanner"), "err", "Error: " + e);
+    }finally{
+      $("loginBtn").disabled = false;
+      $("loginBtn").textContent = "Login and save token";
+    }
   };
 
   $("clearKeyBtn").onclick = () => {
-    localStorage.removeItem("miniRedisApiKey");
+    localStorage.removeItem("atlasragJwt");
     $("apiKey").value = "";
-    setBanner($("settingsBanner"), "ok", "Removed saved API key.");
+    setBanner($("settingsBanner"), "ok", "Removed saved token.");
+    setDocsStatus("Save a JWT to load docs.");
+    setDocOptions([]);
   };
 
   $("indexClearBtn").onclick = () => {
@@ -288,6 +413,11 @@ window.addEventListener("DOMContentLoaded", () => {
     $("indexRaw").textContent = "(no output)";
     clearBanner($("indexBanner"));
   };
+
+  $("searchDocsRefreshBtn").onclick = () => loadDocsList();
+  $("searchDocsAllBtn").onclick = () => clearDocSelection($("searchDocs"));
+  $("askDocsRefreshBtn").onclick = () => loadDocsList();
+  $("askDocsAllBtn").onclick = () => clearDocSelection($("askDocs"));
 
   $("clearUrlBtn").onclick = () => {
     $("docUrl").value = "";
@@ -357,6 +487,7 @@ window.addEventListener("DOMContentLoaded", () => {
         const extra = data.truncated ? " (truncated)" : "";
         setBanner($("indexBanner"), "ok", `Indexed "${docId}"${extra} (${data.chunksIndexed} chunks).`);
         showPage("pageSearch");
+        loadDocsList();
       }else{
         setBanner($("indexBanner"), "err", data.error || "Index failed.");
       }
@@ -406,6 +537,7 @@ window.addEventListener("DOMContentLoaded", () => {
         const extra = data.docTruncated ? " (truncated)" : "";
         setBanner($("indexBanner"), "ok", `Indexed "${docId}" from URL${extra} (${data.chunksIndexed} chunks).`);
         showPage("pageSearch");
+        loadDocsList();
       }else{
         setBanner($("indexBanner"), "err", data.error || "Index URL failed.");
       }
@@ -429,6 +561,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const q = $("searchQ").value.trim();
     const k = parseInt($("searchK").value || "5", 10);
+    const docIds = getSelectedDocIds($("searchDocs"));
 
     if (!q){
       setBanner($("searchBanner"), "err", "Please enter a search query.");
@@ -439,7 +572,8 @@ window.addEventListener("DOMContentLoaded", () => {
     $("searchBtn").textContent = "Searching...";
 
     try{
-      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}`, {
+      const docParam = docIds.length ? `&docIds=${encodeURIComponent(docIds.join(","))}` : "";
+      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}${docParam}`, {
         headers: apiHeaders()
       });
 
@@ -472,6 +606,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const question = $("askQ").value.trim();
     const k = parseInt($("askK").value || "5", 10);
+    const docIds = getSelectedDocIds($("askDocs"));
 
     if (!question){
       setBanner($("askBanner"), "err", "Please enter a question.");
@@ -485,7 +620,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/ask", {
         method:"POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ question, k })
+        body: JSON.stringify({ question, k, docIds })
       });
 
       const data = await res.json();
@@ -538,4 +673,6 @@ window.addEventListener("DOMContentLoaded", () => {
       $("statsBtn").textContent = "Refresh stats";
     }
   };
+
+  loadDocsList();
 });

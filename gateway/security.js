@@ -6,25 +6,40 @@
 //
 
 // security.js
-// API key auth + rate limiting (simple production protections)
+// JWT auth + rate limiting (simple production protections)
 
 const rateLimit = require("express-rate-limit");
+const jwt = require("jsonwebtoken");
 
-// Require x-api-key header for protected routes
-function requireApiKey(req, res, next) {
-  const required = process.env.API_KEY;
+function buildVerifyOptions() {
+  const opts = { algorithms: ["HS256"] };
+  if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
+  if (process.env.JWT_AUDIENCE) opts.audience = process.env.JWT_AUDIENCE;
+  return opts;
+}
 
-  // If no API_KEY set, we refuse (safer than accidentally public)
-  if (!required) {
-    return res.status(500).json({ error: "API_KEY not set on server" });
+// Require Bearer JWT for protected routes
+function requireJwt(req, res, next) {
+  const secret = process.env.JWT_SECRET;
+
+  // If no JWT_SECRET set, we refuse (safer than accidentally public)
+  if (!secret) {
+    return res.status(500).json({ error: "JWT_SECRET not set on server" });
   }
 
-  const got = req.header("x-api-key");
-  if (got !== required) {
-    return res.status(401).json({ error: "Unauthorized" });
+  const auth = req.header("authorization") || "";
+  const [scheme, token] = auth.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({ error: "Missing or invalid Authorization header" });
   }
 
-  next();
+  try {
+    const payload = jwt.verify(token, secret, buildVerifyOptions());
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
 }
 
 // Rate limiter: max requests per window per IP
@@ -35,4 +50,13 @@ const limiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { requireApiKey, limiter };
+const loginWindowMs = parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || "60000", 10);
+const loginMax = parseInt(process.env.LOGIN_RATE_LIMIT_MAX || "10", 10);
+const loginLimiter = rateLimit({
+  windowMs: Number.isFinite(loginWindowMs) && loginWindowMs > 0 ? loginWindowMs : 60000,
+  max: Number.isFinite(loginMax) && loginMax > 0 ? loginMax : 10,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+module.exports = { requireJwt, limiter, loginLimiter };

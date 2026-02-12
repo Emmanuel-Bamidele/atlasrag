@@ -109,9 +109,12 @@ body::before{
 
 .status{
   display:flex;
-  flex-direction:column;
-  gap:10px;
-  align-items:flex-end;
+  flex-direction:row;
+  flex-wrap:wrap;
+  gap:12px;
+  align-items:center;
+  justify-content:space-between;
+  flex: 1 1 100%;
 }
 
 .pill{
@@ -179,7 +182,7 @@ body::before{
 
 @media (max-width: 860px){
   .row{ grid-template-columns: 1fr; }
-  .status{ align-items:flex-start; }
+  .status{ justify-content:flex-start; }
 }
 
 .field label{
@@ -191,7 +194,7 @@ body::before{
   letter-spacing: 0.08em;
 }
 
-input, textarea{
+input, textarea, select{
   width:100%;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(226,232,240,0.15);
@@ -203,7 +206,7 @@ input, textarea{
   transition: border .2s ease, box-shadow .2s ease;
 }
 
-input:focus, textarea:focus{
+input:focus, textarea:focus, select:focus{
   border-color: rgba(61,213,200,0.7);
   box-shadow: 0 0 0 3px rgba(61,213,200,0.18);
 }
@@ -214,6 +217,17 @@ textarea{
   font-family: var(--mono);
   line-height: 1.55;
   font-size: 13px;
+}
+
+select[multiple]{
+  min-height: 140px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+select option{
+  background: rgba(10,18,20,0.98);
+  color: var(--text);
 }
 
 .hint{
