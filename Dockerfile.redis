@@ -1,24 +1,19 @@
-//
-//  Dockerfile.cpp
-//  mini_redis
-//
-//  Created by Emmanuel Bamidele on 2/11/26.
-//
-
-# Use official C++ build image
 FROM gcc:13
 
-# Create working directory inside container
+# Install standalone Asio headers on Debian-based image
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libasio-dev \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy C++ source files into container
-COPY mini_redis/ .
+# Copy your C++ project folder into the container
+COPY mini_redis/ ./mini_redis
 
-# Compile server
-RUN g++ -std=c++20 server.cpp -o server -pthread
+# Compile the server (Asio headers now exist in /usr/include)
+RUN g++ -std=c++20 mini_redis/src/server.cpp -o server -pthread
 
-# Expose Redis port
 EXPOSE 6379
 
-# Start server
 CMD ["./server"]
+

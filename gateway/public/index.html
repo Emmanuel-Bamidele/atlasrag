@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Semantic mini-redis</title>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#0f172a;
+      --card2:#111c36;
+      --text:#e5e7eb;
+      --muted:#94a3b8;
+      --border:rgba(148,163,184,.18);
+      --primary:#60a5fa;
+      --primary2:#3b82f6;
+      --good:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --shadow: 0 18px 60px rgba(0,0,0,.40);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 900px at 20% -20%, rgba(96,165,250,.25), transparent 55%),
+                  radial-gradient(1100px 800px at 90% 0%, rgba(34,197,94,.10), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+      font-family:var(--sans);
+      padding: 28px 18px 48px;
+    }
+
+    .wrap{
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .topbar{
+      display:flex;
+      gap:14px;
+      align-items:flex-start;
+      justify-content:space-between;
+      margin-bottom: 18px;
+    }
+    .title h1{
+      margin:0;
+      font-size: 22px;
+      letter-spacing: .2px;
+    }
+    .title p{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .status{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      gap:8px;
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(15,23,42,.75);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot{
+      width: 8px; height: 8px; border-radius: 999px;
+      background: var(--warn);
+      box-shadow: 0 0 0 3px rgba(245,158,11,.12);
+    }
+    .dot.good{ background: var(--good); box-shadow: 0 0 0 3px rgba(34,197,94,.14);}
+    .dot.bad{ background: var(--bad); box-shadow: 0 0 0 3px rgba(239,68,68,.14);}
+
+    /* Card shell */
+    .shell{
+      background: linear-gradient(180deg, rgba(15,23,42,.9), rgba(15,23,42,.72));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+
+    /* Nav */
+    .nav{
+      display:flex;
+      gap:10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(2,6,23,.25);
+      flex-wrap: wrap;
+    }
+
+    .tab{
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor:pointer;
+      font-size: 13px;
+      transition: all .15s ease;
+    }
+    .tab:hover{
+      color: var(--text);
+      background: rgba(96,165,250,.08);
+      border-color: rgba(96,165,250,.18);
+    }
+    .tab.active{
+      color: var(--text);
+      background: rgba(59,130,246,.15);
+      border-color: rgba(59,130,246,.28);
+    }
+
+    /* Content */
+    .content{
+      padding: 18px;
+    }
+
+    .row{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 780px){
+      .row{ grid-template-columns: 1fr; }
+      .status{ align-items:flex-start; }
+      .topbar{ flex-direction:column; align-items:flex-start; }
+    }
+
+    .field label{
+      display:block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 7px;
+    }
+    input, textarea{
+      width:100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(17,28,54,.65);
+      color: var(--text);
+      padding: 11px 12px;
+      outline: none;
+      font-size: 14px;
+    }
+    input::placeholder, textarea::placeholder{ color: rgba(148,163,184,.55); }
+    textarea{
+      min-height: 170px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .hint{
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.35;
+    }
+    .hint .mono{ font-family: var(--mono); color: rgba(229,231,235,.85); }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .btn{
+      border: 1px solid var(--border);
+      background: rgba(96,165,250,.14);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor:pointer;
+      font-size: 13px;
+      transition: all .15s ease;
+    }
+    .btn:hover{ background: rgba(96,165,250,.20); }
+    .btn.secondary{
+      background: rgba(148,163,184,.10);
+    }
+    .btn.secondary:hover{
+      background: rgba(148,163,184,.16);
+    }
+    .btn.danger{
+      background: rgba(239,68,68,.14);
+      border-color: rgba(239,68,68,.25);
+    }
+    .btn.danger:hover{
+      background: rgba(239,68,68,.20);
+    }
+    .btn:disabled{
+      opacity: .55;
+      cursor:not-allowed;
+    }
+
+    .banner{
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(2,6,23,.35);
+      color: var(--muted);
+      font-size: 13px;
+      display:none;
+      white-space: pre-wrap;
+    }
+    .banner.show{ display:block; }
+    .banner.ok{ border-color: rgba(34,197,94,.25); }
+    .banner.err{ border-color: rgba(239,68,68,.25); }
+
+    /* Results */
+    .cards{
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .card{
+      border: 1px solid var(--border);
+      background: rgba(17,28,54,.50);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .cardhead{
+      display:flex;
+      justify-content:space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(2,6,23,.28);
+      color: rgba(229,231,235,.88);
+      font-size: 12px;
+    }
+    .mono{ font-family: var(--mono); }
+    .preview{
+      color: rgba(229,231,235,.92);
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    details{
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(2,6,23,.22);
+    }
+    summary{
+      cursor:pointer;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    pre{
+      margin: 10px 0 0;
+      background: rgba(2,6,23,.55);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      overflow:auto;
+      font-size: 12px;
+      line-height: 1.45;
+      color: rgba(229,231,235,.92);
+      font-family: var(--mono);
+    }
+
+    .page{ display:none; }
+    .page.active{ display:block; }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="title">
+      <h1>Semantic mini-redis</h1>
+      <p>
+        Index documents → semantic search → ask questions (RAG).<br>
+        Gateway calls OpenAI for embeddings/answers; C++ TCP service stores vectors + searches.
+      </p>
+    </div>
+    <div class="status">
+      <div class="pill" id="healthPill">
+        <span class="dot" id="healthDot"></span>
+        <span id="healthText">Checking /health…</span>
+      </div>
+      <div class="pill">
+        <span>🔒 Protected endpoints use</span>
+        <span class="mono">x-api-key</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="shell">
+
+    <div class="nav">
+      <button class="tab active" id="tabIndex">Index</button>
+      <button class="tab" id="tabSearch">Search</button>
+      <button class="tab" id="tabAsk">Ask</button>
+      <button class="tab" id="tabMetrics">Metrics</button>
+      <button class="tab" id="tabSettings">Settings</button>
+    </div>
+
+    <div class="content">
+
+      <!-- PAGE: INDEX -->
+      <div class="page active" id="pageIndex">
+        <div class="row">
+          <div class="field">
+            <label>Doc ID</label>
+            <input id="docId" placeholder="example: onboarding-notes">
+            <div class="hint">Chunks will become IDs like <span class="mono">docId#0</span>, <span class="mono">docId#1</span>…</div>
+          </div>
+          <div class="field">
+            <label>What happens</label>
+            <div class="hint">
+              We split the text into chunks, embed each chunk, store vectors in the C++ TCP service,
+              and store chunk text in Postgres for previews/citations.
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Document Text</label>
+          <textarea id="docText" placeholder="Paste a document here…"></textarea>
+          <div class="hint">You can also load a local file or index directly from a URL.</div>
+        </div>
+
+        <div class="row" style="margin-top:14px;">
+          <div class="field">
+            <label>Upload file (text/markdown/json)</label>
+            <input type="file" id="docFile" accept=".txt,.md,.markdown,.json,.csv,.log,text/*,application/json">
+            <div class="hint">We read the file in your browser and fill Document Text.</div>
+          </div>
+          <div class="field">
+            <label>Index from URL</label>
+            <input id="docUrl" placeholder="https://example.com/article">
+            <div class="actions" style="margin-top:10px;">
+              <button class="btn secondary" id="indexUrlBtn">Index URL</button>
+              <button class="btn secondary" id="clearUrlBtn">Clear URL</button>
+            </div>
+            <div class="hint">Server fetches the link and extracts readable text.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="indexBtn">Index document</button>
+          <button class="btn secondary" id="indexClearBtn">Clear</button>
+        </div>
+
+        <div class="banner" id="indexBanner"></div>
+
+        <details>
+          <summary>Raw response (debug)</summary>
+          <pre id="indexRaw">(no output)</pre>
+        </details>
+      </div>
+
+      <!-- PAGE: SEARCH -->
+      <div class="page" id="pageSearch">
+        <div class="row">
+          <div class="field">
+            <label>Query</label>
+            <input id="searchQ" placeholder="example: what is write-ahead logging">
+          </div>
+          <div class="field">
+            <label>Top K</label>
+            <input id="searchK" value="5" placeholder="example: 5">
+            <div class="hint">Higher K returns more chunks (slower + more context).</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="searchBtn">Search</button>
+          <button class="btn secondary" id="searchClearBtn">Clear</button>
+        </div>
+
+        <div class="banner" id="searchBanner"></div>
+        <div class="cards" id="searchCards"></div>
+
+        <details>
+          <summary>Raw response (debug)</summary>
+          <pre id="searchRaw">(no output)</pre>
+        </details>
+      </div>
+
+      <!-- PAGE: ASK -->
+      <div class="page" id="pageAsk">
+        <div class="row">
+          <div class="field">
+            <label>Question</label>
+            <input id="askQ" placeholder="example: Explain WAL and why it matters">
+          </div>
+          <div class="field">
+            <label>Top K sources</label>
+            <input id="askK" value="5" placeholder="example: 5">
+            <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="askBtn">Generate answer</button>
+          <button class="btn secondary" id="askClearBtn">Clear</button>
+        </div>
+
+        <div class="banner" id="askBanner"></div>
+
+        <div class="cards" id="askAnswerCard"></div>
+
+        <details>
+          <summary>Raw response (debug)</summary>
+          <pre id="askRaw">(no output)</pre>
+        </details>
+      </div>
+
+      <!-- PAGE: METRICS -->
+      <div class="page" id="pageMetrics">
+        <div class="actions" style="margin-top:0;">
+          <button class="btn" id="statsBtn">Refresh stats</button>
+          <button class="btn secondary" id="statsClearBtn">Clear</button>
+        </div>
+
+        <div class="banner" id="statsBanner"></div>
+
+        <details open>
+          <summary>Stats JSON</summary>
+          <pre id="statsRaw">(no output)</pre>
+        </details>
+      </div>
+
+      <!-- PAGE: SETTINGS -->
+      <div class="page" id="pageSettings">
+        <div class="row">
+          <div class="field">
+            <label>API Key (x-api-key)</label>
+            <input id="apiKey" placeholder="paste API key (same as API_KEY env var)">
+            <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
+          </div>
+          <div class="field">
+            <label>Tips</label>
+            <div class="hint">
+              • Index at least one document before searching/asking.<br>
+              • If you see Unauthorized, your API key is wrong.<br>
+              • Health check only verifies gateway ↔ TCP reachability.
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="saveKeyBtn">Save API key</button>
+          <button class="btn danger" id="clearKeyBtn">Forget API key</button>
+        </div>
+
+        <div class="banner" id="settingsBanner"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---------------------------
+  // Small helpers
+  // ---------------------------
+  function $(id){ return document.getElementById(id); }
+
+  function setBanner(el, kind, msg){
+    el.classList.add("show");
+    el.classList.remove("ok","err");
+    if (kind === "ok") el.classList.add("ok");
+    if (kind === "err") el.classList.add("err");
+    el.textContent = msg;
+  }
+  function clearBanner(el){
+    el.classList.remove("show","ok","err");
+    el.textContent = "";
+  }
+
+  function getApiKey(){
+    return (localStorage.getItem("miniRedisApiKey") || "").trim();
+  }
+  function apiHeaders(){
+    const key = getApiKey();
+    return {
+      "Content-Type":"application/json",
+      "x-api-key": key
+    };
+  }
+  function requireKeyOrWarn(bannerEl){
+    if (!getApiKey()){
+      setBanner(bannerEl, "err", "No API key saved. Go to Settings → paste API key → Save.");
+      return false;
+    }
+    return true;
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;");
+  }
+
+  // ---------------------------
+  // Tabs
+  // ---------------------------
+  const tabs = [
+    ["tabIndex","pageIndex"],
+    ["tabSearch","pageSearch"],
+    ["tabAsk","pageAsk"],
+    ["tabMetrics","pageMetrics"],
+    ["tabSettings","pageSettings"]
+  ];
+
+  function showPage(pageId){
+    for (const [t,p] of tabs){
+      $(t).classList.remove("active");
+      $(p).classList.remove("active");
+    }
+    const found = tabs.find(x => x[1] === pageId);
+    if (found){
+      $(found[0]).classList.add("active");
+      $(found[1]).classList.add("active");
+    }
+  }
+
+  $("tabIndex").onclick = () => showPage("pageIndex");
+  $("tabSearch").onclick = () => showPage("pageSearch");
+  $("tabAsk").onclick = () => showPage("pageAsk");
+  $("tabMetrics").onclick = () => showPage("pageMetrics");
+  $("tabSettings").onclick = () => showPage("pageSettings");
+
+  // ---------------------------
+  // Health check pill
+  // ---------------------------
+  async function refreshHealth(){
+    const dot = $("healthDot");
+    const text = $("healthText");
+    dot.className = "dot";
+    text.textContent = "Checking /health…";
+
+    try{
+      const res = await fetch("/health");
+      const data = await res.json();
+      if (data.ok){
+        dot.classList.add("good");
+        text.textContent = "Healthy (gateway ↔ TCP OK)";
+      }else{
+        dot.classList.add("bad");
+        text.textContent = "Unhealthy (check logs)";
+      }
+    }catch(e){
+      dot.classList.add("bad");
+      text.textContent = "Health check failed";
+    }
+  }
+  refreshHealth();
+  setInterval(refreshHealth, 12000);
+
+  // ---------------------------
+  // Settings page (API key)
+  // ---------------------------
+  $("apiKey").value = getApiKey();
+
+  $("saveKeyBtn").onclick = () => {
+    const key = $("apiKey").value.trim();
+    if (!key){
+      setBanner($("settingsBanner"), "err", "Please paste an API key first.");
+      return;
+    }
+    localStorage.setItem("miniRedisApiKey", key);
+    setBanner($("settingsBanner"), "ok", "Saved. You can now Index/Search/Ask.");
+  };
+
+  $("clearKeyBtn").onclick = () => {
+    localStorage.removeItem("miniRedisApiKey");
+    $("apiKey").value = "";
+    setBanner($("settingsBanner"), "ok", "Removed saved API key.");
+  };
+
+  // ---------------------------
+  // Index page
+  // ---------------------------
+  $("indexClearBtn").onclick = () => {
+    $("docId").value = "";
+    $("docText").value = "";
+    $("indexRaw").textContent = "(no output)";
+    clearBanner($("indexBanner"));
+  };
+
+  $("indexBtn").onclick = async () => {
+    clearBanner($("indexBanner"));
+    if (!requireKeyOrWarn($("indexBanner"))) return;
+
+    const docId = $("docId").value.trim();
+    const text = $("docText").value;
+
+    if (!docId || !text.trim()){
+      setBanner($("indexBanner"), "err", "Please provide Doc ID and document text.");
+      return;
+    }
+
+    $("indexBtn").disabled = true;
+    $("indexBtn").textContent = "Indexing…";
+
+    try{
+      const res = await fetch("/docs", {
+        method:"POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ docId, text })
+      });
+
+      const data = await res.json();
+      $("indexRaw").textContent = JSON.stringify(data, null, 2);
+
+      if (res.ok && data.ok){
+        setBanner($("indexBanner"), "ok", `Indexed "${docId}" (${data.chunksIndexed} chunks).`);
+        // helpful UX: jump to Search
+        showPage("pageSearch");
+      }else{
+        setBanner($("indexBanner"), "err", data.error || "Index failed.");
+      }
+    }catch(e){
+      setBanner($("indexBanner"), "err", "Error: " + e);
+    }finally{
+      $("indexBtn").disabled = false;
+      $("indexBtn").textContent = "Index document";
+    }
+  };
+
+  // ---------------------------
+  // Search page
+  // ---------------------------
+  function renderSearch(results){
+    const wrap = $("searchCards");
+    wrap.innerHTML = "";
+    if (!results || results.length === 0){
+      wrap.innerHTML = `<div class="card"><div class="preview">No matches found.</div></div>`;
+      return;
+    }
+
+    for (const r of results){
+      const score = (typeof r.score === "number") ? r.score.toFixed(4) : String(r.score);
+      const html = `
+        <div class="card">
+          <div class="cardhead">
+            <span class="chip">Chunk <span class="mono">${escapeHtml(r.id)}</span></span>
+            <span class="chip">Score <span class="mono">${escapeHtml(score)}</span></span>
+            <span class="chip">Doc <span class="mono">${escapeHtml(r.docId || "?")}</span></span>
+          </div>
+          <div class="preview">${escapeHtml(r.preview || "")}</div>
+        </div>
+      `;
+      wrap.insertAdjacentHTML("beforeend", html);
+    }
+  }
+
+  $("searchClearBtn").onclick = () => {
+    $("searchCards").innerHTML = "";
+    $("searchRaw").textContent = "(no output)";
+    clearBanner($("searchBanner"));
+  };
+
+  $("searchBtn").onclick = async () => {
+    clearBanner($("searchBanner"));
+    if (!requireKeyOrWarn($("searchBanner"))) return;
+
+    const q = $("searchQ").value.trim();
+    const k = parseInt($("searchK").value || "5", 10);
+
+    if (!q){
+      setBanner($("searchBanner"), "err", "Please enter a search query.");
+      return;
+    }
+
+    $("searchBtn").disabled = true;
+    $("searchBtn").textContent = "Searching…";
+
+    try{
+      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}`, {
+        headers: apiHeaders()
+      });
+
+      const data = await res.json();
+      $("searchRaw").textContent = JSON.stringify(data, null, 2);
+
+      if (res.ok && data.results){
+        setBanner($("searchBanner"), "ok", `Found ${data.results.length} result(s).`);
+        renderSearch(data.results);
+      }else{
+        setBanner($("searchBanner"), "err", data.error || "Search failed.");
+      }
+    }catch(e){
+      setBanner($("searchBanner"), "err", "Error: " + e);
+    }finally{
+      $("searchBtn").disabled = false;
+      $("searchBtn").textContent = "Search";
+    }
+  };
+
+  // ---------------------------
+  // Ask page
+  // ---------------------------
+  function renderAnswer(data){
+    const wrap = $("askAnswerCard");
+    wrap.innerHTML = "";
+
+    const answerText = data?.answer || "(no answer)";
+    const citations = Array.isArray(data?.citations) ? data.citations : [];
+    const matches = Array.isArray(data?.matches) ? data.matches : [];
+
+    const citationLine = citations.length ? citations.join(", ") : "(none)";
+
+    const html = `
+      <div class="card">
+        <div class="cardhead">
+          <span class="chip">Answer</span>
+          <span class="chip">Citations <span class="mono">${escapeHtml(citationLine)}</span></span>
+        </div>
+        <div class="preview">${escapeHtml(answerText)}</div>
+      </div>
+      <div class="card">
+        <div class="cardhead">
+          <span class="chip">Retrieved chunks</span>
+          <span class="chip">Count <span class="mono">${matches.length}</span></span>
+        </div>
+        <div class="preview">${escapeHtml(matches.map(m => `${m.id} (${typeof m.score==="number" ? m.score.toFixed(4):m.score})`).join("\n"))}</div>
+      </div>
+    `;
+    wrap.insertAdjacentHTML("beforeend", html);
+  }
+
+  $("askClearBtn").onclick = () => {
+    $("askAnswerCard").innerHTML = "";
+    $("askRaw").textContent = "(no output)";
+    clearBanner($("askBanner"));
+  };
+
+  $("askBtn").onclick = async () => {
+    clearBanner($("askBanner"));
+    if (!requireKeyOrWarn($("askBanner"))) return;
+
+    const question = $("askQ").value.trim();
+    const k = parseInt($("askK").value || "5", 10);
+
+    if (!question){
+      setBanner($("askBanner"), "err", "Please enter a question.");
+      return;
+    }
+
+    $("askBtn").disabled = true;
+    $("askBtn").textContent = "Thinking…";
+
+    try{
+      const res = await fetch("/ask", {
+        method:"POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ question, k })
+      });
+
+      const data = await res.json();
+      $("askRaw").textContent = JSON.stringify(data, null, 2);
+
+      if (res.ok && data.answer){
+        setBanner($("askBanner"), "ok", "Answer generated.");
+        renderAnswer(data);
+      }else{
+        setBanner($("askBanner"), "err", data.error || "Ask failed.");
+      }
+    }catch(e){
+      setBanner($("askBanner"), "err", "Error: " + e);
+    }finally{
+      $("askBtn").disabled = false;
+      $("askBtn").textContent = "Generate answer";
+    }
+  };
+
+  // ---------------------------
+  // Metrics page
+  // ---------------------------
+  $("statsClearBtn").onclick = () => {
+    $("statsRaw").textContent = "(no output)";
+    clearBanner($("statsBanner"));
+  };
+
+  $("statsBtn").onclick = async () => {
+    clearBanner($("statsBanner"));
+    if (!requireKeyOrWarn($("statsBanner"))) return;
+
+    $("statsBtn").disabled = true;
+    $("statsBtn").textContent = "Loading…";
+
+    try{
+      const res = await fetch("/stats", { headers: apiHeaders() });
+      const data = await res.json();
+      $("statsRaw").textContent = JSON.stringify(data, null, 2);
+
+      if (res.ok){
+        setBanner($("statsBanner"), "ok", "Stats loaded.");
+      }else{
+        setBanner($("statsBanner"), "err", data.error || "Stats failed.");
+      }
+    }catch(e){
+      setBanner($("statsBanner"), "err", "Error: " + e);
+    }finally{
+      $("statsBtn").disabled = false;
+      $("statsBtn").textContent = "Refresh stats";
+    }
+  };
+</script>
+</body>
+</html>

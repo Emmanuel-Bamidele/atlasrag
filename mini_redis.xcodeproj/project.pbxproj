@@ -20,12 +20,34 @@
 
 /* Begin PBXFileReference section */
 		EFA2A0B82F3D543100AF71DF /* mini_redis */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mini_redis; sourceTree = BUILT_PRODUCTS_DIR; };
+		EFA2A3A12F3D7A4B00AF71DF /* Dockerfile.redis */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile.redis; sourceTree = "<group>"; };
+		EFA2A3A32F3D7A7100AF71DF /* Dockerfile.node */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile.node; sourceTree = "<group>"; };
+		EFA2A3A42F3D7A8E00AF71DF /* docker-compose.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "docker-compose.yml"; sourceTree = "<group>"; };
+		EFA2ABCB2F3D990F00AF71DF /* .env */ = {isa = PBXFileReference; lastKnownFileType = text; path = .env; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "mini_redis" folder in "mini_redis" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				src/main.cpp,
+			);
+			target = EFA2A0B72F3D543100AF71DF /* mini_redis */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EFA2A0BA2F3D543100AF71DF /* mini_redis */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "mini_redis" folder in "mini_redis" target */,
+			);
 			path = mini_redis;
+			sourceTree = "<group>";
+		};
+		EFA2A0D32F3D723C00AF71DF /* gateway */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = gateway;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -44,8 +66,13 @@
 		EFA2A0AF2F3D543100AF71DF = {
 			isa = PBXGroup;
 			children = (
+				EFA2A3A42F3D7A8E00AF71DF /* docker-compose.yml */,
+				EFA2A3A32F3D7A7100AF71DF /* Dockerfile.node */,
+				EFA2A3A12F3D7A4B00AF71DF /* Dockerfile.redis */,
 				EFA2A0BA2F3D543100AF71DF /* mini_redis */,
 				EFA2A0B92F3D543100AF71DF /* Products */,
+				EFA2A0D32F3D723C00AF71DF /* gateway */,
+				EFA2ABCB2F3D990F00AF71DF /* .env */,
 			);
 			sourceTree = "<group>";
 		};
@@ -74,6 +101,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				EFA2A0BA2F3D543100AF71DF /* mini_redis */,
+				EFA2A0D32F3D723C00AF71DF /* gateway */,
 			);
 			name = mini_redis;
 			packageProductDependencies = (
@@ -245,6 +273,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				"HEADER_SEARCH_PATHS[arch=*]" = /usr/local/include;
+				"LIBRARY_SEARCH_PATHS[arch=*]" = /usr/local/lib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -253,6 +283,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				"HEADER_SEARCH_PATHS[arch=*]" = /usr/local/include;
+				"LIBRARY_SEARCH_PATHS[arch=*]" = /usr/local/lib;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;

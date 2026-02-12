@@ -1,7 +1,8 @@
-//
-//  Dockerfile.node.h
-//  mini_redis
-//
-//  Created by Emmanuel Bamidele on 2/11/26.
-//
+FROM node:20
+WORKDIR /app
+COPY gateway/package*.json ./
+RUN npm install
+COPY gateway/ .
+EXPOSE 3000
+CMD ["node", "index.js"]
 
