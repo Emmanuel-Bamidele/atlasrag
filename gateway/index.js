@@ -11,7 +11,7 @@ const { generateAnswer } = require("./answer");
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 
 // Static UI is public (safe)
 app.use(express.static("public"));

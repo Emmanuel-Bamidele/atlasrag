@@ -527,6 +527,28 @@
       .replaceAll(">","&gt;");
   }
 
+  function slugifyDocId(value){
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function suggestDocIdFromFilename(name){
+    const base = String(name || "").replace(/\.[^/.]+$/, "");
+    return slugifyDocId(base);
+  }
+
+  function suggestDocIdFromUrl(value){
+    try{
+      const url = new URL(String(value || ""));
+      const path = url.pathname && url.pathname !== "/" ? url.pathname : "";
+      return slugifyDocId(`${url.hostname}${path}`);
+    }catch{
+      return "";
+    }
+  }
+
   // ---------------------------
   // Tabs
   // ---------------------------
@@ -610,9 +632,46 @@
   $("indexClearBtn").onclick = () => {
     $("docId").value = "";
     $("docText").value = "";
+    $("docUrl").value = "";
+    $("docFile").value = "";
     $("indexRaw").textContent = "(no output)";
     clearBanner($("indexBanner"));
   };
+
+  $("clearUrlBtn").onclick = () => {
+    $("docUrl").value = "";
+    clearBanner($("indexBanner"));
+  };
+
+  $("docUrl").addEventListener("blur", () => {
+    if ($("docId").value.trim()) return;
+    const suggested = suggestDocIdFromUrl($("docUrl").value.trim());
+    if (suggested) $("docId").value = suggested;
+  });
+
+  $("docFile").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setBanner($("indexBanner"), "err", "File too large. Max size is 5 MB.");
+      return;
+    }
+
+    try{
+      const text = await file.text();
+      $("docText").value = text;
+
+      if (!$("docId").value.trim()) {
+        const suggested = suggestDocIdFromFilename(file.name) || "upload";
+        $("docId").value = suggested;
+      }
+
+      setBanner($("indexBanner"), "ok", `Loaded "${file.name}" (${text.length} chars).`);
+    }catch(e){
+      setBanner($("indexBanner"), "err", "Failed to read file: " + e);
+    }
+  });
 
   $("indexBtn").onclick = async () => {
     clearBanner($("indexBanner"));
@@ -651,6 +710,51 @@
     }finally{
       $("indexBtn").disabled = false;
       $("indexBtn").textContent = "Index document";
+    }
+  };
+
+  $("indexUrlBtn").onclick = async () => {
+    clearBanner($("indexBanner"));
+    if (!requireKeyOrWarn($("indexBanner"))) return;
+
+    const url = $("docUrl").value.trim();
+    let docId = $("docId").value.trim();
+
+    if (!docId) {
+      docId = suggestDocIdFromUrl(url);
+      if (docId) $("docId").value = docId;
+    }
+
+    if (!docId || !url) {
+      setBanner($("indexBanner"), "err", "Please provide Doc ID and URL.");
+      return;
+    }
+
+    $("indexUrlBtn").disabled = true;
+    $("indexUrlBtn").textContent = "Indexing URL…";
+
+    try{
+      const res = await fetch("/docs/url", {
+        method:"POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ docId, url })
+      });
+
+      const data = await res.json();
+      $("indexRaw").textContent = JSON.stringify(data, null, 2);
+
+      if (res.ok && data.ok){
+        const extra = data.docTruncated ? " (truncated)" : "";
+        setBanner($("indexBanner"), "ok", `Indexed "${docId}" from URL${extra} (${data.chunksIndexed} chunks).`);
+        showPage("pageSearch");
+      }else{
+        setBanner($("indexBanner"), "err", data.error || "Index URL failed.");
+      }
+    }catch(e){
+      setBanner($("indexBanner"), "err", "Error: " + e);
+    }finally{
+      $("indexUrlBtn").disabled = false;
+      $("indexUrlBtn").textContent = "Index URL";
     }
   };
 
