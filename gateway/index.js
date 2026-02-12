@@ -21,6 +21,18 @@ app.use(limiter);
 
 const MAX_DOC_CHARS = 200000;
 const MAX_FETCH_CHARS = 1000000;
+const DEBUG_INDEX = process.env.DEBUG_INDEX === "1";
+const DOC_ID_RE = /^[a-zA-Z0-9._-]+$/;
+
+function logIndex(message) {
+  if (DEBUG_INDEX) {
+    console.log(`[index] ${message}`);
+  }
+}
+
+function isValidDocId(docId) {
+  return DOC_ID_RE.test(docId);
+}
 
 function normalizeWhitespace(text) {
   return String(text || "")
@@ -139,6 +151,7 @@ async function fetchUrlText(rawUrl) {
 }
 
 async function indexDocument(docId, text) {
+  const startAt = Date.now();
   let cleanText = String(text || "");
   cleanText = cleanText.trim();
   if (!cleanText) {
@@ -151,13 +164,19 @@ async function indexDocument(docId, text) {
     truncated = true;
   }
 
+  logIndex(`start docId=${docId} chars=${cleanText.length} truncated=${truncated}`);
+
   const chunks = chunkText(docId, cleanText);
   if (chunks.length === 0) {
     throw new Error("text produced no chunks");
   }
 
+  logIndex(`chunked docId=${docId} chunks=${chunks.length}`);
+
   const texts = chunks.map(c => c.text);
+  const embedStart = Date.now();
   const vectors = await embedTexts(texts);
+  logIndex(`embedded docId=${docId} vectors=${vectors.length} ms=${Date.now() - embedStart}`);
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkId = chunks[i].chunkId;
@@ -173,9 +192,14 @@ async function indexDocument(docId, text) {
 
     // Store embedding in C++ vector DB
     const cmd = buildVset(chunkId, vectors[i]);
+    const vsetStart = Date.now();
     await sendCmd(cmd);
+    if (DEBUG_INDEX) {
+      logIndex(`vset ${i + 1}/${chunks.length} chunkId=${chunkId} ms=${Date.now() - vsetStart}`);
+    }
   }
 
+  logIndex(`done docId=${docId} chunks=${chunks.length} totalMs=${Date.now() - startAt}`);
   return { chunksIndexed: chunks.length, truncated };
 }
 
@@ -216,6 +240,9 @@ app.post("/docs", requireApiKey, async (req, res) => {
   if (!cleanDocId || !text) {
     return res.status(400).json({ error: "docId and text required" });
   }
+  if (!isValidDocId(cleanDocId)) {
+    return res.status(400).json({ error: "docId must use only letters, numbers, dot, dash, or underscore (no spaces)" });
+  }
 
   try {
     const { chunksIndexed, truncated } = await indexDocument(cleanDocId, text);
@@ -236,6 +263,9 @@ app.post("/docs/url", requireApiKey, async (req, res) => {
 
   if (!cleanDocId || !cleanUrl) {
     return res.status(400).json({ error: "docId and url required" });
+  }
+  if (!isValidDocId(cleanDocId)) {
+    return res.status(400).json({ error: "docId must use only letters, numbers, dot, dash, or underscore (no spaces)" });
   }
 
   try {
@@ -298,12 +328,7 @@ app.post("/ask", requireApiKey, async (req, res) => {
   res.json({
     question,
     answer,
-    citations,     // chunk ids the model claims it used
-    matches: matches.map(m => ({
-      id: m.id,
-      score: m.score,
-      preview: chunkMap.get(m.id)?.text?.slice(0, 160) || null
-    }))
+    citations
   });
 });
 

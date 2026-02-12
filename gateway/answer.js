@@ -28,8 +28,11 @@ function buildPrompt(question, chunks) {
   return `
 You are an assistant answering questions using ONLY the sources below.
 If the sources do not contain the answer, say: "I don't know based on the provided sources."
+Be concise and avoid speculation.
 
-When you answer, add a "Citations:" line at the end listing the SOURCE ids you used.
+Output format:
+1) Answer text only (no bullet labels, no markdown headings).
+2) Final line: "Citations: <comma-separated SOURCE ids>"
 
 Question:
 ${question}
@@ -52,11 +55,12 @@ async function generateAnswer(question, chunks) {
 
   const input = buildPrompt(question, chunks);
 
-  // Use Responses API with a lightweight model
+  // Use Responses API with GPT-4o
   // The docs show using openai.responses.create({ model, input }) :contentReference[oaicite:1]{index=1}
   const resp = await client.responses.create({
-    model: "gpt-4o-mini",
-    input
+    model: "gpt-4o",
+    input,
+    temperature: 0.2
   });
 
   // openai SDK returns combined text via output_text
@@ -65,15 +69,17 @@ async function generateAnswer(question, chunks) {
   // Simple citation parsing:
   // We asked it to output: "Citations: doc#0, doc#3"
   let citations = [];
+  let answer = text;
   const match = text.match(/Citations:\s*(.*)$/i);
   if (match && match[1]) {
     citations = match[1]
       .split(/[,\s]+/)
       .map(s => s.trim())
       .filter(Boolean);
+    answer = text.replace(match[0], "").trim();
   }
 
-  return { answer: text, citations };
+  return { answer, citations };
 }
 
 module.exports = { generateAnswer };

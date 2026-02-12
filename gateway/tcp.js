@@ -14,11 +14,22 @@ const net = require("net");
 // If running locally without Docker, you can switch to "127.0.0.1"
 const TCP_HOST = process.env.TCP_HOST || "redis";
 const TCP_PORT = parseInt(process.env.TCP_PORT || "6379", 10);
+const TCP_TIMEOUT_MS = parseInt(process.env.TCP_TIMEOUT_MS || "8000", 10);
 
 // sendCmd sends ONE command and returns ONE line reply
 function sendCmd(cmd) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket();
+    let settled = false;
+    const timeoutMs = Number.isFinite(TCP_TIMEOUT_MS) && TCP_TIMEOUT_MS > 0 ? TCP_TIMEOUT_MS : 8000;
+    const parts = cmd.trim().split(/\s+/, 3);
+    const label = parts.length >= 2 ? `${parts[0]} ${parts[1]}` : (parts[0] || "CMD");
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      client.destroy();
+      reject(new Error(`TCP command timeout (${label})`));
+    }, timeoutMs);
 
     let data = "";
 
@@ -31,12 +42,28 @@ function sendCmd(cmd) {
 
       // Our C++ server replies with one line per command
       if (data.includes("\n")) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         client.destroy();
         resolve(data.trim());
       }
     });
 
-    client.on("error", reject);
+    client.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    client.on("timeout", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      client.destroy();
+      reject(new Error(`TCP command timeout (${label})`));
+    });
+    client.setTimeout(timeoutMs);
   });
 }
 

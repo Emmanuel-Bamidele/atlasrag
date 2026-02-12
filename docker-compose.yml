@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.redis
+    environment:
+      VECTOR_WAL: "0"
     # keep internal in production; for local debugging you can uncomment:
     # ports:
     #   - "6379:6379"
@@ -24,6 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile.node
     environment:
+      TCP_TIMEOUT_MS: "30000"
       TCP_HOST: redis
       TCP_PORT: "6379"
 
@@ -43,4 +46,3 @@ services:
 
 volumes:
   pgdata:
-

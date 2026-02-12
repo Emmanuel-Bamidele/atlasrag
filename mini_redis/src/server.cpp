@@ -98,6 +98,9 @@ static std::atomic<long long> g_vset_count{0};            // VSET commands
 static std::atomic<long long> g_vdel_count{0};            // VDEL commands
 static std::atomic<long long> g_vsearch_count{0};         // VSEARCH commands
 
+// Controls whether vector operations are written to WAL (durability vs speed)
+static bool g_vector_wal_enabled = true;
+
 // Start time for uptime calculation
 static auto g_start_time = std::chrono::steady_clock::now();
 
@@ -267,13 +270,15 @@ static std::string handle_command(
     // VectorDB itself enforces "one dims" behavior by storing dims_
     bool inserted = vdb.add_or_update(id, vec);
 
-    // Log to WAL (NOTE: this will make wal.log big; OK for MVP)
-    // Build line back exactly (dim + floats)
-    std::string wal_line = "VSET " + id + " " + std::to_string(dim);
-    for (float x : vec) {
-      wal_line += " " + std::to_string(x);
+    if (g_vector_wal_enabled) {
+      // Log to WAL (NOTE: this will make wal.log big; OK for MVP)
+      // Build line back exactly (dim + floats)
+      std::string wal_line = "VSET " + id + " " + std::to_string(dim);
+      for (float x : vec) {
+        wal_line += " " + std::to_string(x);
+      }
+      wal.append_line(wal_line);
     }
-    wal.append_line(wal_line);
 
     return inserted ? "OK new\n" : "OK updated\n";
   }
@@ -290,7 +295,9 @@ static std::string handle_command(
     bool removed = vdb.remove(id);
 
     // Log to WAL
-    wal.append_line("VDEL " + id);
+    if (g_vector_wal_enabled) {
+      wal.append_line("VDEL " + id);
+    }
 
     return removed ? "1\n" : "0\n";
   }
@@ -458,6 +465,12 @@ int main()
   DB db;                 // string KV store
   VectorDB vdb;          // NEW: vector store
   WAL wal("wal.log");    // durability log file
+
+  // VECTOR_WAL=0 disables vector WAL to speed up indexing
+  const char* vector_wal_env = std::getenv("VECTOR_WAL");
+  if (vector_wal_env && std::string(vector_wal_env) == "0") {
+    g_vector_wal_enabled = false;
+  }
 
   // Load previous data from wal.log
   replay_wal(db, wal, vdb);
