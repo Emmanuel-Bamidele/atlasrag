@@ -1,0 +1,24 @@
+//
+//  Dockerfile.cpp
+//  mini_redis
+//
+//  Created by Emmanuel Bamidele on 2/11/26.
+//
+
+# Use official C++ build image
+FROM gcc:13
+
+# Create working directory inside container
+WORKDIR /app
+
+# Copy C++ source files into container
+COPY mini_redis/ .
+
+# Compile server
+RUN g++ -std=c++20 server.cpp -o server -pthread
+
+# Expose Redis port
+EXPOSE 6379
+
+# Start server
+CMD ["./server"]
