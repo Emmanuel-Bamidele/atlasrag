@@ -12,16 +12,22 @@
 // We use the official OpenAI JS client
 const OpenAI = require("openai");
 
-// Create client using API key from environment variables
-// process.env = environment variables in Node
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let defaultClient = null;
+function getClient() {
+  if (defaultClient) return defaultClient;
+  const key = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("OPENAI_API_KEY not set on server");
+  }
+  defaultClient = new OpenAI({ apiKey: key });
+  return defaultClient;
+}
 
 const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 
 // embedTexts takes an array of strings and returns an array of vectors
 async function embedTexts(texts, batchSize = DEFAULT_BATCH_SIZE) {
+  const client = getClient();
   const out = [];
   const safeBatch = Number.isFinite(batchSize) && batchSize > 0 ? batchSize : 64;
 

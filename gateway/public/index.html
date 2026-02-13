@@ -44,8 +44,7 @@
         <button class="tab" id="tabJobs" role="tab" aria-selected="false">Jobs</button>
         <button class="tab" id="tabCollections" role="tab" aria-selected="false">Collections</button>
         <button class="tab" id="tabDocs" role="tab" aria-selected="false">Documentation</button>
-        <button class="tab" id="tabSettings" role="tab" aria-selected="false">Login</button>
-        <button class="tab" id="tabApiKeys" role="tab" aria-selected="false">API Keys</button>
+        <button class="tab" id="tabSettings" role="tab" aria-selected="false">Settings</button>
       </nav>
 
       <div class="content">
@@ -440,6 +439,7 @@
               <div id="collectionsTable">(no data)</div>
               <p class="hint">Deleting a collection removes stored chunk text and memory items. Vector deletion is not yet supported.</p>
             </div>
+
           </div>
 
           <div class="banner" id="collectionsBanner"></div>
@@ -537,6 +537,31 @@
             </div>
             <p class="hint">Requires role <span class="mono">admin</span> or <span class="mono">owner</span> (or a token whose principal matches the tenant).</p>
 
+            <h4>Security</h4>
+            <div class="doc-block">
+              <div class="doc-label">Built-in controls</div>
+              <ul>
+                <li><strong>Auth:</strong> JWTs or service tokens required for protected endpoints.</li>
+                <li><strong>Roles:</strong> <span class="mono">reader</span>/<span class="mono">writer</span>/<span class="mono">admin</span>/<span class="mono">owner</span> gate admin actions.</li>
+                <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> enforced on recall/search.</li>
+                <li><strong>Server-side principal:</strong> optional <span class="mono">principalId</span>/<span class="mono">privileges</span> allowed only with admin/owner API keys when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.</li>
+                <li><strong>Rate limits + lockout:</strong> login throttling + failed login lockout are enabled.</li>
+                <li><strong>Idempotency:</strong> write/index/reflect endpoints accept <span class="mono">Idempotency-Key</span> to avoid double writes.</li>
+                <li><strong>URL ingestion safety:</strong> private IP ranges are blocked (SSRF protection).</li>
+                <li><strong>Prompt injection guard:</strong> source sanitization is enabled by default.</li>
+              </ul>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Recommended hardening</div>
+              <ul>
+                <li><strong>TLS everywhere:</strong> terminate HTTPS in front of the gateway.</li>
+                <li><strong>Secrets management:</strong> store <span class="mono">OPENAI_API_KEY</span>, JWT, and cookie secrets in a vault.</li>
+                <li><strong>Network isolation:</strong> keep Postgres and the vector store on private networks.</li>
+                <li><strong>Token hygiene:</strong> rotate admin tokens and enforce short expirations for service tokens.</li>
+                <li><strong>Observability:</strong> ship logs/metrics and alert on auth failures + latency spikes.</li>
+              </ul>
+            </div>
+
             <h4>API Reference</h4>
             <p>
               Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.
@@ -544,12 +569,15 @@
             </p>
             <ul>
               <li><span class="mono">/v1/docs</span> index + list documents</li>
+              <li><span class="mono">/v1/docs/url</span> index content from a URL</li>
+              <li><span class="mono">/v1/docs/:docId</span> delete a document</li>
               <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
               <li><span class="mono">/v1/ask</span> RAG answers with citations</li>
               <li><span class="mono">/v1/memory/write</span> durable memory items</li>
               <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
               <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
               <li><span class="mono">/v1/jobs/:id</span> job status</li>
+              <li><span class="mono">/v1/admin/service-tokens</span> issue API keys (admin)</li>
             </ul>
             <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
             <div class="doc-block">
@@ -604,6 +632,11 @@
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "question": "How is durability handled?", "k": 5 }'</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Delete a document</div>
+              <pre class="doc-code">curl -X DELETE "http://localhost:3000/v1/docs/swe_notes?collection=default" \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
             </div>
             <div class="doc-block">
               <div class="doc-label">Memory write + recall</div>
@@ -719,6 +752,18 @@ res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "i
   "acl": ["user:alice", "user:bob"]
 })</pre>
                 </div>
+                <div class="doc-block">
+                  <div class="doc-label">Server-side privileges (no end-user login)</div>
+                  <pre class="doc-code"># Requires ALLOW_PRINCIPAL_OVERRIDE=1 and an admin/owner service token
+res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
+  "query": "policy details",
+  "collection": "internal",
+  "principalId": "user:alice",
+  "privileges": ["role:employee", "dept:hr"],
+  "types": ["semantic"],
+  "k": 5
+})</pre>
+                </div>
               </div>
               <div class="doc-panel" data-doc-panel="node">
                 <div class="doc-block">
@@ -731,7 +776,6 @@ node app.mjs</pre>
                   <div class="doc-label">End-to-end flow</div>
                   <pre class="doc-code">const BASE = process.env.ATLASRAG_URL || "http://localhost:3000";
 const API_KEY = process.env.ATLASRAG_API_KEY;
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const headers = {
   "Content-Type": "application/json",
@@ -809,9 +853,65 @@ while (true) {
   acl: ["user:alice", "user:bob"]
 }, { "Idempotency-Key": "idx-002" });</pre>
                 </div>
+                <div class="doc-block">
+                  <div class="doc-label">Server-side privileges (no end-user login)</div>
+                  <pre class="doc-code">await post("/v1/memory/recall", {
+  query: "policy details",
+  collection: "internal",
+  principalId: "user:alice",
+  privileges: ["role:employee", "dept:hr"],
+  types: ["semantic"],
+  k: 5
+});</pre>
+                </div>
               </div>
             </div>
             <p class="hint">Visibility can be <span class="mono">tenant</span>, <span class="mono">private</span>, or <span class="mono">acl</span>. For ACL, include a list of allowed principals.</p>
+
+            <h4>Visibility without end-user login</h4>
+            <p>
+              If your app does not want users to log in directly, you can still enforce visibility by having
+              your backend call AtlasRAG with a service token and pass <span class="mono">principalId</span> and/or
+              <span class="mono">privileges</span> in the payload. The server matches these against the item's
+              visibility and ACL list. Enable this by setting <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span> and
+              using an <span class="mono">admin</span>/<span class="mono">owner</span> service token. Never expose
+              this token to the browser.
+            </p>
+            <div class="doc-block">
+              <div class="doc-label">Write with ACL (server-side principal)</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+  -H "X-API-Key: ADMIN_SERVICE_TOKEN" \
+  -H "Idempotency-Key: idx-003" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId": "hr_policy",
+    "collection": "internal",
+    "text": "Confidential HR policy...",
+    "principalId": "user:alice",
+    "privileges": ["role:employee", "dept:hr"],
+    "visibility": "acl",
+    "acl": ["user:alice", "dept:hr"]
+  }'</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Recall as a principal (server-side)</div>
+              <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/recall \
+  -H "X-API-Key: ADMIN_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "policy details",
+    "collection": "internal",
+    "principalId": "user:alice",
+    "privileges": ["role:employee", "dept:hr"],
+    "types": ["semantic"],
+    "k": 5
+  }'</pre>
+            </div>
+            <p class="hint">
+              If you use JWTs, <span class="mono">principalId</span> is derived from the token and should not be
+              provided in the payload. <span class="mono">privileges</span> is only honored for admin/owner service
+              tokens when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.
+            </p>
 
             <h4>Architecture</h4>
             <ul>
@@ -832,101 +932,107 @@ while (true) {
           </article>
         </section>
 
-        <!-- PAGE: LOGIN -->
+        <!-- PAGE: SETTINGS -->
         <section class="page" id="pageSettings" role="tabpanel">
-          <div class="row">
-            <div class="field">
-              <label for="authType">Auth type</label>
-              <select id="authType">
-                <option value="bearer">JWT (Bearer)</option>
-                <option value="api_key">Service token (API key)</option>
-              </select>
-              <div class="hint">Use service tokens for server-to-server integrations.</div>
-            </div>
-            <div class="field">
-              <label for="apiKey">Access token / API key</label>
-              <input id="apiKey" placeholder="paste JWT or API key">
-              <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
-            </div>
+          <div class="doc-tabs" data-doc-tabs="settings">
+            <button class="doc-tab active" data-doc-tab="auth" type="button">Authenticate</button>
+            <button class="doc-tab" data-doc-tab="keys" type="button">API Keys</button>
           </div>
-
-          <div class="row" style="margin-top:12px;">
-            <div class="field">
-              <label for="loginUser">Login (username)</label>
-              <input id="loginUser" placeholder="username">
-              <div class="hint">Use /login to generate a JWT and save it automatically.</div>
-            </div>
-            <div class="field">
-              <label for="loginPass">Login (password)</label>
-              <input id="loginPass" type="password" placeholder="password">
-            </div>
-          </div>
-
-          <div class="field" style="margin-top:12px;">
-            <label>Tips</label>
-            <div class="hint">
-              - Index at least one document before searching or asking.<br>
-              - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
-              - Health check only verifies gateway to TCP reachability.<br>
-              - API keys are created by admins or org owners via <span class="mono">POST /v1/admin/service-tokens</span>.
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn secondary" id="loginBtn">Login and save token</button>
-            <a class="btn secondary" href="/auth/google/login">Login with Google SSO</a>
-            <a class="btn secondary" href="/auth/azure/login">Login with Azure SSO</a>
-            <a class="btn secondary" href="/auth/okta/login">Login with Okta SSO</a>
-            <button class="btn" id="saveKeyBtn">Save token</button>
-            <button class="btn danger" id="clearKeyBtn">Forget token</button>
-          </div>
-
-          <div class="banner" id="settingsBanner"></div>
-        </section>
-
-        <!-- PAGE: API KEYS -->
-        <section class="page" id="pageApiKeys" role="tabpanel">
-          <div class="row">
-            <div class="field">
-              <label for="apiKeyName">Create API key (admin/owner)</label>
-              <input id="apiKeyName" placeholder="ci-pipeline">
-              <div class="hint">Admins/owners can issue service tokens for server-to-server use.</div>
-            </div>
-          </div>
-
-          <details class="details" style="margin-top:12px;">
-            <summary>Advanced options</summary>
-            <div class="row" style="margin-top:12px;">
-              <div class="field">
-                <label for="apiKeyPrincipal">Principal ID (owner)</label>
-                <input id="apiKeyPrincipal" placeholder="svc:ci">
-                <div class="hint">Defaults to your token subject if omitted.</div>
+          <div class="doc-panels" data-doc-panels="settings">
+            <div class="doc-panel active" data-doc-panel="auth">
+              <div class="row">
+                <div class="field">
+                  <label for="authType">Auth type</label>
+                  <select id="authType">
+                    <option value="bearer">JWT (Bearer)</option>
+                    <option value="api_key">Service token (API key)</option>
+                  </select>
+                  <div class="hint">Use service tokens for server-to-server integrations.</div>
+                </div>
+                <div class="field">
+                  <label for="apiKey">Access token / API key</label>
+                  <input id="apiKey" placeholder="paste JWT or API key">
+                  <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
+                </div>
               </div>
-            </div>
-          </details>
 
-          <div class="row" style="margin-top:12px;">
-            <div class="field">
-              <label for="apiKeyRoles">Roles (comma separated)</label>
-              <input id="apiKeyRoles" placeholder="writer,reader">
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="loginUser">Login (username)</label>
+                  <input id="loginUser" placeholder="username">
+                  <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+                </div>
+                <div class="field">
+                  <label for="loginPass">Login (password)</label>
+                  <input id="loginPass" type="password" placeholder="password">
+                </div>
+              </div>
+
+              <div class="field" style="margin-top:12px;">
+                <label>Tips</label>
+                <div class="hint">
+                  - Index at least one document before searching or asking.<br>
+                  - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
+                  - Health check only verifies gateway to TCP reachability.<br>
+                  - API keys are created by admins or org owners via <span class="mono">POST /v1/admin/service-tokens</span>.
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="loginBtn">Login and save token</button>
+                <a class="btn secondary" href="/auth/google/login">Login with Google SSO</a>
+                <a class="btn secondary" href="/auth/azure/login">Login with Azure SSO</a>
+                <a class="btn secondary" href="/auth/okta/login">Login with Okta SSO</a>
+                <button class="btn" id="saveKeyBtn">Save token</button>
+                <button class="btn danger" id="clearKeyBtn">Forget token</button>
+              </div>
+
+              <div class="banner" id="settingsBanner"></div>
             </div>
-            <div class="field">
-              <label for="apiKeyExpires">Expires at</label>
-              <input id="apiKeyExpires" type="datetime-local">
+            <div class="doc-panel" data-doc-panel="keys">
+              <div class="row">
+                <div class="field">
+                  <label for="apiKeyName">Create API key (admin/owner)</label>
+                  <input id="apiKeyName" placeholder="ci-pipeline">
+                  <div class="hint">Admins/owners can issue service tokens for server-to-server use.</div>
+                </div>
+              </div>
+
+              <details class="details" style="margin-top:12px;">
+                <summary>Advanced options</summary>
+                <div class="row" style="margin-top:12px;">
+                  <div class="field">
+                    <label for="apiKeyPrincipal">Principal ID (owner)</label>
+                    <input id="apiKeyPrincipal" placeholder="svc:ci">
+                    <div class="hint">Defaults to your token subject if omitted.</div>
+                  </div>
+                </div>
+              </details>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="apiKeyRoles">Roles (comma separated)</label>
+                  <input id="apiKeyRoles" placeholder="writer,reader">
+                </div>
+                <div class="field">
+                  <label for="apiKeyExpires">Expires at</label>
+                  <input id="apiKeyExpires" type="datetime-local">
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="createApiKeyBtn">Create API key</button>
+                <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this API key</button>
+                <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy API key</button>
+              </div>
+
+              <div class="doc-block">
+                <div class="doc-label">New API key (masked)</div>
+                <pre class="doc-code" id="createdApiKey">(not created)</pre>
+              </div>
+              <div class="banner" id="apiKeyBanner"></div>
             </div>
           </div>
-
-          <div class="actions">
-            <button class="btn secondary" id="createApiKeyBtn">Create API key</button>
-            <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this API key</button>
-            <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy API key</button>
-          </div>
-
-          <div class="doc-block">
-            <div class="doc-label">New API key (masked)</div>
-            <pre class="doc-code" id="createdApiKey">(not created)</pre>
-          </div>
-          <div class="banner" id="apiKeyBanner"></div>
         </section>
       </div>
     </main>

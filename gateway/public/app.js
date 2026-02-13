@@ -224,8 +224,7 @@ function showPage(pageId){
     ["tabJobs","pageJobs"],
     ["tabCollections","pageCollections"],
     ["tabDocs","pageDocs"],
-    ["tabSettings","pageSettings"],
-    ["tabApiKeys","pageApiKeys"]
+    ["tabSettings","pageSettings"]
   ];
 
   for (const [t,p] of tabs){
@@ -625,13 +624,21 @@ function renderCollections(collections){
 
   const rows = collections.map((col) => {
     const titles = Array.isArray(col.titles) ? col.titles : [];
-    const preview = titles.slice(0, 5).join(", ");
-    const extra = titles.length > 5 ? ` (+${titles.length - 5} more)` : "";
+    const docList = titles.length
+      ? titles.map((title) => {
+          return `
+            <div class="doc-pill">
+              <span class="mono">${escapeHtml(title)}</span>
+              <button class="btn tiny danger doc-delete-btn" data-collection="${escapeHtml(col.collection)}" data-doc="${escapeHtml(title)}">Delete</button>
+            </div>
+          `;
+        }).join("")
+      : `<span class="muted">No docs</span>`;
     return `
       <tr>
         <td class="mono">${escapeHtml(col.collection)}</td>
         <td>${escapeHtml(String(col.totalDocs || 0))}</td>
-        <td>${escapeHtml(preview)}${escapeHtml(extra)}</td>
+        <td><div class="doc-list">${docList}</div></td>
         <td><button class="btn danger collection-delete-btn" data-collection="${escapeHtml(col.collection)}">Delete</button></td>
       </tr>
     `;
@@ -675,6 +682,36 @@ function renderCollections(collections){
         }
       }catch(e){
         setBanner($("collectionsBanner"), "err", "Error deleting collection.");
+      }
+    };
+  });
+
+  wrap.querySelectorAll(".doc-delete-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const docId = btn.dataset.doc;
+      const collection = btn.dataset.collection || "default";
+      if (!docId) return;
+      if (!confirm(`Delete document "${docId}" from "${collection}"?`)) {
+        return;
+      }
+      clearBanner($("collectionsBanner"));
+      if (!requireKeyOrWarn($("collectionsBanner"))) return;
+      try{
+        const res = await fetch(`/v1/docs/${encodeURIComponent(docId)}?collection=${encodeURIComponent(collection)}`, {
+          method: "DELETE",
+          headers: apiHeaders()
+        });
+        const data = await res.json();
+        if (res.ok && data.ok){
+          setBanner($("collectionsBanner"), "ok", `Deleted document "${docId}".`);
+          await fetchCollections();
+          loadDocsList();
+        }else{
+          const msg = data?.error?.message || data?.error || "Delete failed.";
+          setBanner($("collectionsBanner"), "err", msg);
+        }
+      }catch(e){
+        setBanner($("collectionsBanner"), "err", "Error deleting document.");
       }
     };
   });
@@ -771,7 +808,6 @@ window.addEventListener("DOMContentLoaded", () => {
   $("tabUsage").onclick = () => showPage("pageUsage");
   $("tabDocs").onclick = () => showPage("pageDocs");
   $("tabSettings").onclick = () => showPage("pageSettings");
-  $("tabApiKeys").onclick = () => showPage("pageApiKeys");
   $("tabProduct").onclick = () => showPage("pageProduct");
   $("playTabIngest").onclick = () => showPlayPane("playPaneIngest");
   $("playTabSearch").onclick = () => showPlayPane("playPaneSearch");

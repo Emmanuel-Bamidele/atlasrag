@@ -127,6 +127,9 @@ async function requireJwt(req, res, next) {
   try {
     const payload = jwt.verify(token, secret, buildVerifyOptions());
     req.user = payload;
+    if (req.user && !req.user.auth) {
+      req.user.auth = "jwt";
+    }
     next();
   } catch (err) {
     return sendAuthError(res, 401, "Invalid token", req);

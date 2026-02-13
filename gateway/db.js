@@ -187,11 +187,21 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
   return res.rows[0] || { id, namespace_id: namespaceId || id };
 }
 
-async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until, excludeExpired, principalId }) {
+async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until, excludeExpired, principalId, privileges }) {
   if (!namespaceIds || namespaceIds.length === 0) return new Map();
 
   const clauses = ["namespace_id = ANY($1)"];
   const params = [namespaceIds];
+  const aclPrincipals = new Set();
+  if (Array.isArray(privileges)) {
+    for (const item of privileges) {
+      const clean = String(item || "").trim();
+      if (clean) aclPrincipals.add(clean);
+    }
+  }
+  if (principalId) {
+    aclPrincipals.add(principalId);
+  }
 
   if (types && types.length) {
     params.push(types);
@@ -208,14 +218,22 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
   if (excludeExpired) {
     clauses.push(`(expires_at IS NULL OR expires_at > NOW())`);
   }
-  if (principalId) {
-    params.push(principalId);
-    clauses.push(`(
-      visibility IS NULL
-      OR visibility = 'tenant'
-      OR (visibility = 'private' AND principal_id = $${params.length})
-      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
-    )`);
+  if (principalId || aclPrincipals.size > 0) {
+    const visibilityClauses = [
+      "visibility IS NULL",
+      "visibility = 'tenant'"
+    ];
+    if (principalId) {
+      params.push(principalId);
+      const idx = params.length;
+      visibilityClauses.push(`(visibility = 'private' AND principal_id = $${idx})`);
+    }
+    if (aclPrincipals.size > 0) {
+      params.push(Array.from(aclPrincipals));
+      const idx = params.length;
+      visibilityClauses.push(`(visibility = 'acl' AND (principal_id = ANY($${idx}) OR COALESCE(acl_principals, ARRAY[]::TEXT[]) && $${idx}))`);
+    }
+    clauses.push(`(${visibilityClauses.join(" OR ")})`);
   }
 
   const res = await pool.query(
@@ -555,9 +573,9 @@ async function listMemoryJobs({ tenantId, limit, status, jobType }) {
 }
 
 // List documents for a tenant (distinct doc_id with chunk counts)
-async function listDocsByTenant(tenantId, principalId) {
+async function listDocsByTenant(tenantId, principalId, privileges) {
   const prefix = `${tenantId}::`;
-  if (!principalId) {
+  if (!principalId && (!Array.isArray(privileges) || privileges.length === 0)) {
     const res = await pool.query(
       `SELECT doc_id, COUNT(*)::int AS chunks
        FROM chunks
@@ -569,7 +587,31 @@ async function listDocsByTenant(tenantId, principalId) {
     return res.rows;
   }
 
-  const params = [prefix, prefix.length, tenantId, principalId];
+  const params = [prefix, prefix.length, tenantId];
+  const aclPrincipals = new Set();
+  if (Array.isArray(privileges)) {
+    for (const item of privileges) {
+      const clean = String(item || "").trim();
+      if (clean) aclPrincipals.add(clean);
+    }
+  }
+  if (principalId) {
+    aclPrincipals.add(principalId);
+  }
+  const visibilityClauses = [
+    "m.visibility IS NULL",
+    "m.visibility = 'tenant'"
+  ];
+  if (principalId) {
+    params.push(principalId);
+    const idx = params.length;
+    visibilityClauses.push(`(m.visibility = 'private' AND m.principal_id = $${idx})`);
+  }
+  if (aclPrincipals.size > 0) {
+    params.push(Array.from(aclPrincipals));
+    const idx = params.length;
+    visibilityClauses.push(`(m.visibility = 'acl' AND (m.principal_id = ANY($${idx}) OR COALESCE(m.acl_principals, ARRAY[]::TEXT[]) && $${idx}))`);
+  }
   const res = await pool.query(
     `SELECT c.doc_id, COUNT(*)::int AS chunks
      FROM chunks c
@@ -577,12 +619,7 @@ async function listDocsByTenant(tenantId, principalId) {
      WHERE LEFT(c.doc_id, $2) = $1
        AND m.tenant_id = $3
        AND (m.expires_at IS NULL OR m.expires_at > NOW())
-       AND (
-         m.visibility IS NULL
-         OR m.visibility = 'tenant'
-         OR (m.visibility = 'private' AND m.principal_id = $4)
-         OR (m.visibility = 'acl' AND (m.principal_id = $4 OR $4 = ANY(COALESCE(m.acl_principals, ARRAY[]::TEXT[]))))
-       )
+       AND (${visibilityClauses.join(" OR ")})
      GROUP BY c.doc_id
      ORDER BY c.doc_id`,
     params

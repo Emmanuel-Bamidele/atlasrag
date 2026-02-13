@@ -10,10 +10,16 @@
 
 const OpenAI = require("openai");
 
-// Create OpenAI client using OPENAI_API_KEY env var
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let defaultClient = null;
+function getClient() {
+  if (defaultClient) return defaultClient;
+  const key = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("OPENAI_API_KEY not set on server");
+  }
+  defaultClient = new OpenAI({ apiKey: key });
+  return defaultClient;
+}
 
 const PROMPT_GUARD = process.env.PROMPT_INJECTION_GUARD !== "0";
 const MIN_SOURCE_CHARS = 40;
@@ -109,7 +115,7 @@ async function generateAnswer(question, chunks) {
 
   // Use Responses API with GPT-4o
   // The docs show using openai.responses.create({ model, input }) :contentReference[oaicite:1]{index=1}
-  const resp = await client.responses.create({
+  const resp = await getClient().responses.create({
     model: "gpt-4o",
     input,
     temperature: 0.2

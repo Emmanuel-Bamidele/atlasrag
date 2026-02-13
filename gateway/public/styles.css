@@ -664,6 +664,28 @@ select option{
   background: rgba(61,213,200,0.06);
 }
 
+.doc-list{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10,22,24,0.6);
+}
+
+.btn.tiny{
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
 .stat{
   border:1px solid var(--line);
   background: rgba(10,22,24,0.6);

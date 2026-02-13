@@ -3,9 +3,16 @@
 
 const OpenAI = require("openai");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let defaultClient = null;
+function getClient() {
+  if (defaultClient) return defaultClient;
+  const key = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!key) {
+    throw new Error("OPENAI_API_KEY not set on server");
+  }
+  defaultClient = new OpenAI({ apiKey: key });
+  return defaultClient;
+}
 
 const DEFAULT_MODEL = process.env.REFLECT_MODEL || "gpt-4o-mini";
 const DEFAULT_MAX_ITEMS = parseInt(process.env.REFLECT_MAX_ITEMS || "5", 10);
@@ -41,7 +48,7 @@ async function reflectMemories({ text, types, maxItems }) {
   const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
   const input = buildPrompt(text, selected, limit);
 
-  const resp = await client.responses.create({
+  const resp = await getClient().responses.create({
     model: DEFAULT_MODEL,
     input,
     temperature: 0.2,
@@ -69,7 +76,7 @@ function buildCompactPrompt(text) {
 
 async function summarizeMemories({ text }) {
   const input = buildCompactPrompt(text);
-  const resp = await client.responses.create({
+  const resp = await getClient().responses.create({
     model: COMPACT_MODEL,
     input,
     temperature: 0.2,

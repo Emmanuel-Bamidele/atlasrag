@@ -105,6 +105,8 @@ const REINDEX_LOG_EVERY = parseInt(process.env.REINDEX_LOG_EVERY || "500", 10);
 const REINDEX_TCP_ATTEMPTS = parseInt(process.env.REINDEX_TCP_ATTEMPTS || "12", 10);
 const REINDEX_TCP_DELAY_MS = parseInt(process.env.REINDEX_TCP_DELAY_MS || "2000", 10);
 let reindexStarted = false;
+const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
+  || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const DOC_ID_RE = /^[a-zA-Z0-9._-]+$/;
 const TENANT_RE = /^[a-zA-Z0-9._-]+$/;
 const COLLECTION_RE = /^[a-zA-Z0-9._-]+$/;
@@ -269,10 +271,77 @@ function resolvePrincipalId(req) {
     throw new Error("Invalid principal in token");
   }
   const provided = req.body?.principalId || req.body?.principal_id || req.query?.principalId || req.query?.principal_id;
-  if (provided && String(provided).trim() !== clean) {
-    throw new Error("principalId mismatch");
+  if (provided) {
+    const candidate = String(provided).trim();
+    if (!PRINCIPAL_RE.test(candidate)) {
+      throw new Error("Invalid principal in request");
+    }
+    const roles = req.user?.roles || [];
+    const allowOverride = process.env.ALLOW_PRINCIPAL_OVERRIDE === "1"
+      && req.user?.auth === "api_key"
+      && Array.isArray(roles)
+      && (roles.includes("admin") || roles.includes("owner"));
+    if (allowOverride) {
+      return candidate;
+    }
+    if (candidate !== clean) {
+      throw new Error("principalId mismatch");
+    }
   }
   return clean;
+}
+
+function parsePrivilegesInput(raw) {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : String(raw).split(",");
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    const clean = String(item || "").trim();
+    if (!clean) continue;
+    if (!PRINCIPAL_RE.test(clean)) {
+      throw new Error("Invalid privilege value");
+    }
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  }
+  return out;
+}
+
+function hasAccessOverrideInput(req) {
+  const provided = req.body?.principalId || req.body?.principal_id || req.query?.principalId || req.query?.principal_id;
+  const privilegesRaw = req.body?.privileges ?? req.query?.privileges;
+  const privileges = parsePrivilegesInput(privilegesRaw);
+  return Boolean(provided) || privileges.length > 0;
+}
+
+function allowAccessOverride(req) {
+  const roles = req.user?.roles || [];
+  return process.env.ALLOW_PRINCIPAL_OVERRIDE === "1"
+    && req.user?.auth === "api_key"
+    && Array.isArray(roles)
+    && (roles.includes("admin") || roles.includes("owner"));
+}
+
+function resolveAccessContext(req) {
+  const provided = req.body?.principalId || req.body?.principal_id || req.query?.principalId || req.query?.principal_id;
+  const privileges = parsePrivilegesInput(req.body?.privileges ?? req.query?.privileges);
+  const hasOverride = Boolean(provided) || privileges.length > 0;
+
+  if (!hasOverride) {
+    return { principalId: resolvePrincipalId(req), privileges: [] };
+  }
+  if (!allowAccessOverride(req)) {
+    throw new Error("principal override not allowed");
+  }
+
+  let principalId = null;
+  if (provided) {
+    principalId = resolvePrincipalId(req);
+  }
+  return { principalId, privileges };
 }
 
 function normalizeRoles(input) {
@@ -746,7 +815,14 @@ async function fetchUrlText(rawUrl) {
     throw new Error("URL host is blocked for safety.");
   }
 
-  const res = await fetch(url.toString(), { redirect: "follow" });
+  const res = await fetch(url.toString(), {
+    redirect: "follow",
+    headers: {
+      "User-Agent": FETCH_USER_AGENT,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.8"
+    }
+  });
   if (!res.ok) {
     throw new Error(`Fetch failed with ${res.status} ${res.statusText}`);
   }
@@ -852,8 +928,8 @@ async function indexDocument(tenantId, collection, docId, text, source) {
   return { chunksIndexed: chunks.length, truncated };
 }
 
-async function listDocsForTenant(tenantId, collection, principalId) {
-  const rows = await listDocsByTenant(tenantId, principalId);
+async function listDocsForTenant(tenantId, collection, principalId, privileges) {
+  const rows = await listDocsByTenant(tenantId, principalId, privileges);
   const docs = [];
   for (const row of rows) {
     const parsed = parseNamespacedDocId(row.doc_id);
@@ -868,7 +944,7 @@ async function listDocsForTenant(tenantId, collection, principalId) {
   return docs;
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, enforceArtifactVisibility }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility }) {
   const [qvec] = await embedTexts([query]);
 
   const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
@@ -905,13 +981,14 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     if (results.length >= k) break;
   }
 
-  if (enforceArtifactVisibility && principalId) {
+  if (enforceArtifactVisibility && (principalId || (privileges && privileges.length))) {
     const namespaceIds = results.map(r => r._row.doc_id);
     const artifactMap = await getMemoryItemsByNamespaceIds({
       namespaceIds,
       types: ["artifact"],
       excludeExpired: true,
-      principalId
+      principalId,
+      privileges
     });
     return results.filter(r => artifactMap.has(r._row.doc_id));
   }
@@ -919,7 +996,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges }) {
   const results = await searchChunks({
     tenantId,
     collection,
@@ -927,6 +1004,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     k,
     docIds,
     principalId,
+    privileges,
     enforceArtifactVisibility: true
   });
   const chunks = results.map(r => r._row).filter(Boolean);
@@ -1111,11 +1189,7 @@ async function runReflectionJob(jobId, tenantId) {
       text = text.slice(0, MAX_REFLECT_CHARS);
     }
 
-    const reflection = await reflectMemories({
-      text,
-      types,
-      maxItems
-    });
+    const reflection = await reflectMemories({ text, types, maxItems });
 
     const ownerId = principalId || artifact.principal_id || null;
     const resolvedVisibility = requestedVisibility || artifact.visibility || "tenant";
@@ -1796,8 +1870,11 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
 app.get("/collections", requireJwt, async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
-    const principalId = hasTokenAdminAccess(req) ? null : resolvePrincipalId(req);
-    const docs = await listDocsForTenant(tenantId, null, principalId);
+    const overrideInput = hasAccessOverrideInput(req);
+    const access = (hasTokenAdminAccess(req) && !overrideInput)
+      ? { principalId: null, privileges: [] }
+      : resolveAccessContext(req);
+    const docs = await listDocsForTenant(tenantId, null, access.principalId, access.privileges);
     const collections = buildCollectionsFromDocs(docs);
     res.json({ collections, totalCollections: collections.length, tenantId, collection: null });
   } catch (e) {
@@ -1809,8 +1886,11 @@ app.get("/v1/collections", requireJwt, async (req, res) => {
   let tenantId = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = hasTokenAdminAccess(req) ? null : resolvePrincipalId(req);
-    const docs = await listDocsForTenant(tenantId, null, principalId);
+    const overrideInput = hasAccessOverrideInput(req);
+    const access = (hasTokenAdminAccess(req) && !overrideInput)
+      ? { principalId: null, privileges: [] }
+      : resolveAccessContext(req);
+    const docs = await listDocsForTenant(tenantId, null, access.principalId, access.privileges);
     const collections = buildCollectionsFromDocs(docs);
     sendOk(res, { collections, totalCollections: collections.length }, tenantId, null);
   } catch (e) {
@@ -1824,7 +1904,7 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
   try {
     tenantId = resolveTenantId(req);
     collection = normalizeCollection(req.params.collection);
-    const docs = await listDocsForTenant(tenantId, collection, null);
+    const docs = await listDocsForTenant(tenantId, collection, null, []);
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
       await deleteDoc(namespaced);
@@ -1855,7 +1935,7 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
   try {
     tenantId = resolveTenantId(req);
     collection = normalizeCollection(req.params.collection);
-    const docs = await listDocsForTenant(tenantId, collection, null);
+    const docs = await listDocsForTenant(tenantId, collection, null, []);
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
       await deleteDoc(namespaced);
@@ -1881,9 +1961,9 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
 app.get("/docs/list", requireJwt, async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     const collection = resolveCollection(req);
-    const docs = await listDocsForTenant(tenantId, collection, principalId);
+    const docs = await listDocsForTenant(tenantId, collection, access.principalId, access.privileges);
     res.json({ docs, totalDocs: docs.length, tenantId, collection });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
@@ -1895,9 +1975,9 @@ app.get("/v1/docs", requireJwt, async (req, res) => {
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     collection = resolveCollection(req);
-    const docs = await listDocsForTenant(tenantId, collection, principalId);
+    const docs = await listDocsForTenant(tenantId, collection, access.principalId, access.privileges);
     sendOk(res, { docs, totalDocs: docs.length }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "DOCS_LIST_FAILED", tenantId, collection);
@@ -2124,10 +2204,18 @@ app.post("/ask", requireJwt, async (req, res) => {
 
   try {
     const tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     const collection = resolveCollection(req);
 
-    const result = await answerQuestion({ tenantId, collection, question, k, docIds, principalId });
+    const result = await answerQuestion({
+      tenantId,
+      collection,
+      question,
+      k,
+      docIds,
+      principalId: access.principalId,
+      privileges: access.privileges
+    });
     const citationIds = result.citations.map(c => c.chunkId);
 
     res.json({
@@ -2156,9 +2244,17 @@ app.post("/v1/ask", requireJwt, async (req, res) => {
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     collection = resolveCollection(req);
-    const result = await answerQuestion({ tenantId, collection, question, k, docIds, principalId });
+    const result = await answerQuestion({
+      tenantId,
+      collection,
+      question,
+      k,
+      docIds,
+      principalId: access.principalId,
+      privileges: access.privileges
+    });
     sendOk(res, {
       question,
       answer: result.answer,
@@ -2243,7 +2339,7 @@ app.get("/search", requireJwt, async (req, res) => {
 
   try {
     const tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     const collection = resolveCollection(req);
 
     const results = await searchChunks({
@@ -2252,7 +2348,8 @@ app.get("/search", requireJwt, async (req, res) => {
       query: q,
       k,
       docIds,
-      principalId,
+      principalId: access.principalId,
+      privileges: access.privileges,
       enforceArtifactVisibility: true
     });
 
@@ -2284,7 +2381,7 @@ app.get("/v1/search", requireJwt, async (req, res) => {
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     collection = resolveCollection(req);
     const results = await searchChunks({
       tenantId,
@@ -2292,7 +2389,8 @@ app.get("/v1/search", requireJwt, async (req, res) => {
       query: q,
       k,
       docIds,
-      principalId,
+      principalId: access.principalId,
+      privileges: access.privileges,
       enforceArtifactVisibility: true
     });
     sendOk(res, {
@@ -2429,7 +2527,7 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     collection = resolveCollection(req);
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
@@ -2440,7 +2538,9 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
       collection,
       query,
       k: limit,
-      docIds: []
+      docIds: [],
+      principalId: access.principalId,
+      privileges: access.privileges
     });
 
     const namespaceIds = results.map(r => r._row.doc_id);
@@ -2450,7 +2550,8 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
       since: sinceTime,
       until: untilTime,
       excludeExpired: true,
-      principalId
+      principalId: access.principalId,
+      privileges: access.privileges
     });
 
     const recalled = [];
@@ -2505,7 +2606,7 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    const principalId = resolvePrincipalId(req);
+    const access = resolveAccessContext(req);
     collection = resolveCollection(req);
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
@@ -2516,7 +2617,9 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
       collection,
       query,
       k: limit,
-      docIds: []
+      docIds: [],
+      principalId: access.principalId,
+      privileges: access.privileges
     });
 
     const namespaceIds = results.map(r => r._row.doc_id);
@@ -2526,7 +2629,8 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
       since: sinceTime,
       until: untilTime,
       excludeExpired: true,
-      principalId
+      principalId: access.principalId,
+      privileges: access.privileges
     });
 
     const recalled = [];
