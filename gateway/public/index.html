@@ -362,7 +362,7 @@
             <div class="metrics-head">
               <div>
                 <h3>Organization usage</h3>
-                <p>Admin view of request volume, error rates, and latency for your tenant.</p>
+                <p>Admin view of requests, tokens, storage, and latency for your tenant.</p>
               </div>
               <div class="metrics-meta">Updated: <span id="usageUpdated">-</span></div>
             </div>
@@ -541,27 +541,16 @@
             <div class="doc-block">
               <div class="doc-label">Built-in controls</div>
               <ul>
-                <li><strong>Auth:</strong> JWTs or service tokens required for protected endpoints.</li>
-                <li><strong>Roles:</strong> <span class="mono">reader</span>/<span class="mono">writer</span>/<span class="mono">admin</span>/<span class="mono">owner</span> gate admin actions.</li>
-                <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> enforced on recall/search.</li>
-                <li><strong>Server-side principal:</strong> optional <span class="mono">principalId</span>/<span class="mono">privileges</span> allowed only with admin/owner API keys when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.</li>
-                <li><strong>Rate limits + lockout:</strong> login throttling + failed login lockout are enabled.</li>
-                <li><strong>Idempotency:</strong> write/index/reflect endpoints accept <span class="mono">Idempotency-Key</span> to avoid double writes.</li>
+                <li><strong>Auth required:</strong> JWTs or service tokens protect all sensitive endpoints.</li>
+                <li><strong>Tenant isolation:</strong> data is partitioned by tenant and enforced in every query.</li>
+                <li><strong>Role-based access:</strong> <span class="mono">reader</span>/<span class="mono">writer</span>/<span class="mono">admin</span>/<span class="mono">owner</span> control access to privileged actions.</li>
+                <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> rules apply to search/recall.</li>
+                <li><strong>Idempotency:</strong> write/index/reflect accept <span class="mono">Idempotency-Key</span> to prevent double writes.</li>
+                <li><strong>Rate limits + lockout:</strong> login throttling + failed-login lockout are enabled.</li>
                 <li><strong>URL ingestion safety:</strong> private IP ranges are blocked (SSRF protection).</li>
                 <li><strong>Prompt injection guard:</strong> source sanitization is enabled by default.</li>
               </ul>
             </div>
-            <div class="doc-block">
-              <div class="doc-label">Recommended hardening</div>
-              <ul>
-                <li><strong>TLS everywhere:</strong> terminate HTTPS in front of the gateway.</li>
-                <li><strong>Secrets management:</strong> store <span class="mono">OPENAI_API_KEY</span>, JWT, and cookie secrets in a vault.</li>
-                <li><strong>Network isolation:</strong> keep Postgres and the vector store on private networks.</li>
-                <li><strong>Token hygiene:</strong> rotate admin tokens and enforce short expirations for service tokens.</li>
-                <li><strong>Observability:</strong> ship logs/metrics and alert on auth failures + latency spikes.</li>
-              </ul>
-            </div>
-
             <h4>API Reference</h4>
             <p>
               Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.

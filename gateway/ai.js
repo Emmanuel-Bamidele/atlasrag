@@ -29,6 +29,7 @@ const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 async function embedTexts(texts, batchSize = DEFAULT_BATCH_SIZE) {
   const client = getClient();
   const out = [];
+  const usage = { prompt_tokens: 0, total_tokens: 0 };
   const safeBatch = Number.isFinite(batchSize) && batchSize > 0 ? batchSize : 64;
 
   for (let i = 0; i < texts.length; i += safeBatch) {
@@ -42,9 +43,13 @@ async function embedTexts(texts, batchSize = DEFAULT_BATCH_SIZE) {
 
     // resp.data is an array, each item has .embedding (float array)
     out.push(...resp.data.map(x => x.embedding));
+    if (resp.usage) {
+      usage.prompt_tokens += Number(resp.usage.prompt_tokens || 0);
+      usage.total_tokens += Number(resp.usage.total_tokens || 0);
+    }
   }
 
-  return out;
+  return { vectors: out, usage };
 }
 
 module.exports = { embedTexts };

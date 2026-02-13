@@ -710,6 +710,165 @@ async function recordSuccessfulLogin(userId) {
   );
 }
 
+async function recordTenantUsage({
+  tenantId,
+  embeddingTokens = 0,
+  embeddingRequests = 0,
+  generationInputTokens = 0,
+  generationOutputTokens = 0,
+  generationTotalTokens = 0,
+  generationRequests = 0
+}) {
+  await ensureTenant(tenantId);
+  const payload = [
+    tenantId,
+    Number(embeddingTokens || 0),
+    Number(embeddingRequests || 0),
+    Number(generationInputTokens || 0),
+    Number(generationOutputTokens || 0),
+    Number(generationTotalTokens || 0),
+    Number(generationRequests || 0)
+  ];
+
+  await pool.query(
+    `INSERT INTO tenant_usage(
+        tenant_id,
+        embedding_tokens,
+        embedding_requests,
+        generation_input_tokens,
+        generation_output_tokens,
+        generation_total_tokens,
+        generation_requests
+      )
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (tenant_id) DO UPDATE SET
+       embedding_tokens = tenant_usage.embedding_tokens + EXCLUDED.embedding_tokens,
+       embedding_requests = tenant_usage.embedding_requests + EXCLUDED.embedding_requests,
+       generation_input_tokens = tenant_usage.generation_input_tokens + EXCLUDED.generation_input_tokens,
+       generation_output_tokens = tenant_usage.generation_output_tokens + EXCLUDED.generation_output_tokens,
+       generation_total_tokens = tenant_usage.generation_total_tokens + EXCLUDED.generation_total_tokens,
+       generation_requests = tenant_usage.generation_requests + EXCLUDED.generation_requests,
+       updated_at = NOW()`,
+    payload
+  );
+
+  const rollupSql = `INSERT INTO tenant_usage_rollups(
+        tenant_id,
+        bucket_kind,
+        bucket_start,
+        embedding_tokens,
+        embedding_requests,
+        generation_input_tokens,
+        generation_output_tokens,
+        generation_total_tokens,
+        generation_requests
+      )
+      VALUES ($1, $2, date_trunc($3, NOW()), $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (tenant_id, bucket_kind, bucket_start) DO UPDATE SET
+        embedding_tokens = tenant_usage_rollups.embedding_tokens + EXCLUDED.embedding_tokens,
+        embedding_requests = tenant_usage_rollups.embedding_requests + EXCLUDED.embedding_requests,
+        generation_input_tokens = tenant_usage_rollups.generation_input_tokens + EXCLUDED.generation_input_tokens,
+        generation_output_tokens = tenant_usage_rollups.generation_output_tokens + EXCLUDED.generation_output_tokens,
+        generation_total_tokens = tenant_usage_rollups.generation_total_tokens + EXCLUDED.generation_total_tokens,
+        generation_requests = tenant_usage_rollups.generation_requests + EXCLUDED.generation_requests,
+        updated_at = NOW()`;
+
+  await pool.query(rollupSql, [tenantId, "hour", "hour", ...payload.slice(1)]);
+  await pool.query(rollupSql, [tenantId, "day", "day", ...payload.slice(1)]);
+}
+
+async function getTenantUsage(tenantId) {
+  const res = await pool.query(
+    `SELECT embedding_tokens,
+            embedding_requests,
+            generation_input_tokens,
+            generation_output_tokens,
+            generation_total_tokens,
+            generation_requests,
+            updated_at
+     FROM tenant_usage
+     WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (!res.rows.length) {
+    return {
+      embedding_tokens: 0,
+      embedding_requests: 0,
+      generation_input_tokens: 0,
+      generation_output_tokens: 0,
+      generation_total_tokens: 0,
+      generation_requests: 0,
+      updated_at: null
+    };
+  }
+  return res.rows[0];
+}
+
+async function getTenantUsageWindow(tenantId, window) {
+  const win = String(window || "all").toLowerCase();
+  if (win === "all") {
+    return getTenantUsage(tenantId);
+  }
+
+  let kind = null;
+  let interval = null;
+  if (win === "24h" || win === "24hr" || win === "1d") {
+    kind = "hour";
+    interval = "24 hours";
+  } else if (win === "7d" || win === "7day" || win === "7days") {
+    kind = "day";
+    interval = "7 days";
+  } else {
+    return getTenantUsage(tenantId);
+  }
+
+  const res = await pool.query(
+    `SELECT COALESCE(SUM(embedding_tokens), 0)::bigint AS embedding_tokens,
+            COALESCE(SUM(embedding_requests), 0)::bigint AS embedding_requests,
+            COALESCE(SUM(generation_input_tokens), 0)::bigint AS generation_input_tokens,
+            COALESCE(SUM(generation_output_tokens), 0)::bigint AS generation_output_tokens,
+            COALESCE(SUM(generation_total_tokens), 0)::bigint AS generation_total_tokens,
+            COALESCE(SUM(generation_requests), 0)::bigint AS generation_requests
+     FROM tenant_usage_rollups
+     WHERE tenant_id = $1
+       AND bucket_kind = $2
+       AND bucket_start >= NOW() - INTERVAL '${interval}'`,
+    [tenantId, kind]
+  );
+  return res.rows[0] || {
+    embedding_tokens: 0,
+    embedding_requests: 0,
+    generation_input_tokens: 0,
+    generation_output_tokens: 0,
+    generation_total_tokens: 0,
+    generation_requests: 0
+  };
+}
+
+async function getTenantStorageStats(tenantId) {
+  const pattern = `${tenantId}::%`;
+  const res = await pool.query(
+    `SELECT COUNT(*)::bigint AS chunks,
+            COALESCE(SUM(LENGTH(text)), 0)::bigint AS bytes
+     FROM chunks
+     WHERE doc_id LIKE $1`,
+    [pattern]
+  );
+  return res.rows[0] || { chunks: 0, bytes: 0 };
+}
+
+async function getTenantItemStats(tenantId) {
+  const res = await pool.query(
+    `SELECT COUNT(*) FILTER (WHERE item_type = 'artifact')::bigint AS documents,
+            COUNT(*)::bigint AS memory_items,
+            COUNT(DISTINCT collection)::bigint AS collections
+     FROM memory_items
+     WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  return res.rows[0] || { documents: 0, memory_items: 0, collections: 0 };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -761,6 +920,11 @@ module.exports = {
   upsertSsoUser,
   recordFailedLogin,
   recordSuccessfulLogin,
+  recordTenantUsage,
+  getTenantUsage,
+  getTenantUsageWindow,
+  getTenantStorageStats,
+  getTenantItemStats,
   getIdempotencyKey,
   beginIdempotencyKey,
   touchIdempotencyKey,

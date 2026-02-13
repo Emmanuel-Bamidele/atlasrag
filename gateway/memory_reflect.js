@@ -56,6 +56,7 @@ async function reflectMemories({ text, types, maxItems }) {
   });
 
   const raw = (resp.output_text || "").trim();
+  const usage = resp.usage || null;
   let payload;
   try {
     payload = JSON.parse(raw);
@@ -66,7 +67,8 @@ async function reflectMemories({ text, types, maxItems }) {
   return {
     semantic: Array.isArray(payload.semantic) ? payload.semantic : [],
     procedural: Array.isArray(payload.procedural) ? payload.procedural : [],
-    summary: Array.isArray(payload.summary) ? payload.summary : []
+    summary: Array.isArray(payload.summary) ? payload.summary : [],
+    usage
   };
 }
 
@@ -84,6 +86,7 @@ async function summarizeMemories({ text }) {
   });
 
   const raw = (resp.output_text || "").trim();
+  const usage = resp.usage || null;
   let payload;
   try {
     payload = JSON.parse(raw);
@@ -93,7 +96,8 @@ async function summarizeMemories({ text }) {
 
   return {
     title: String(payload.title || "").trim(),
-    content: String(payload.content || "").trim()
+    content: String(payload.content || "").trim(),
+    usage
   };
 }
 

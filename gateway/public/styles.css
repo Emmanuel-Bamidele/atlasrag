@@ -712,6 +712,31 @@ select option{
   font-size: 12px;
 }
 
+.stat-tabs{
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stat-tab{
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.stat-tab.active{
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.22);
+}
+
 .page{ display:none; }
 .page.active{ display:block; animation: fadeUp .35s ease; }
 

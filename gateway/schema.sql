@@ -123,6 +123,35 @@ CREATE TABLE IF NOT EXISTS service_tokens (
 CREATE INDEX IF NOT EXISTS service_tokens_tenant_idx ON service_tokens(tenant_id);
 CREATE INDEX IF NOT EXISTS service_tokens_principal_idx ON service_tokens(tenant_id, principal_id);
 
+-- Tenant usage counters (billing-ready)
+CREATE TABLE IF NOT EXISTS tenant_usage (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  embedding_tokens BIGINT DEFAULT 0,
+  embedding_requests BIGINT DEFAULT 0,
+  generation_input_tokens BIGINT DEFAULT 0,
+  generation_output_tokens BIGINT DEFAULT 0,
+  generation_total_tokens BIGINT DEFAULT 0,
+  generation_requests BIGINT DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_usage_rollups (
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  bucket_kind TEXT NOT NULL,
+  bucket_start TIMESTAMPTZ NOT NULL,
+  embedding_tokens BIGINT DEFAULT 0,
+  embedding_requests BIGINT DEFAULT 0,
+  generation_input_tokens BIGINT DEFAULT 0,
+  generation_output_tokens BIGINT DEFAULT 0,
+  generation_total_tokens BIGINT DEFAULT 0,
+  generation_requests BIGINT DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, bucket_kind, bucket_start)
+);
+
+CREATE INDEX IF NOT EXISTS tenant_usage_rollups_idx
+  ON tenant_usage_rollups(tenant_id, bucket_kind, bucket_start);
+
 -- Idempotent migrations for existing databases
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS failed_attempts INT DEFAULT 0;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ;

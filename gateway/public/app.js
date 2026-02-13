@@ -22,6 +22,10 @@ let metricsLoaded = false;
 let usageLoaded = false;
 let metricsLoading = false;
 let usageLoading = false;
+let lastUsageStats = null;
+const usageWindowByCard = {};
+const USAGE_WINDOWS = ["24h", "7d", "all"];
+const USAGE_WINDOW_LABELS = { "24h": "24h", "7d": "7d", "all": "All" };
 
 function loadStoredAuth(){
   let token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -113,6 +117,44 @@ function formatDuration(totalSeconds){
   if (minutes || hours || days) parts.push(`${minutes}m`);
   parts.push(`${secs}s`);
   return parts.join(" ");
+}
+
+function formatBytes(value){
+  if (!Number.isFinite(value)) return "-";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = Math.max(0, value);
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1){
+    size /= 1024;
+    idx += 1;
+  }
+  const precision = size >= 10 || idx === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[idx]}`;
+}
+
+function getUsageWindow(cardId){
+  return usageWindowByCard[cardId] || "7d";
+}
+
+function setUsageWindow(cardId, window){
+  usageWindowByCard[cardId] = window;
+  if (lastUsageStats){
+    renderUsage(lastUsageStats);
+  }
+}
+
+function bindUsageWindowClicks(){
+  const wrap = $("usageCards");
+  if (!wrap || wrap.dataset.bound === "1") return;
+  wrap.dataset.bound = "1";
+  wrap.addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-usage-window]");
+    if (!btn) return;
+    const cardId = btn.dataset.card;
+    const window = btn.dataset.usageWindow;
+    if (!cardId || !window) return;
+    setUsageWindow(cardId, window);
+  });
 }
 
 function maskToken(value){
@@ -435,27 +477,146 @@ function renderUsage(stats){
   const overall = gateway.overall || {};
   const count = Number(overall.count || 0);
   const errRate = Number(overall.error_rate || 0);
+  const usage = stats?.usage || {};
+  const windows = usage.windows || {};
+  const winAll = windows.all || {};
+  const win24 = windows["24h"] || {};
+  const win7 = windows["7d"] || {};
+  const storage = usage.storage || {};
+
+  const embedTotals = {
+    all: Number(winAll.tokens?.embedding?.total || 0),
+    "24h": Number(win24.tokens?.embedding?.total || 0),
+    "7d": Number(win7.tokens?.embedding?.total || 0)
+  };
+  const embedReqs = {
+    all: Number(winAll.tokens?.embedding?.requests || 0),
+    "24h": Number(win24.tokens?.embedding?.requests || 0),
+    "7d": Number(win7.tokens?.embedding?.requests || 0)
+  };
+  const genTotals = {
+    all: Number(winAll.tokens?.generation?.total || 0),
+    "24h": Number(win24.tokens?.generation?.total || 0),
+    "7d": Number(win7.tokens?.generation?.total || 0)
+  };
+  const genReqs = {
+    all: Number(winAll.tokens?.generation?.requests || 0),
+    "24h": Number(win24.tokens?.generation?.requests || 0),
+    "7d": Number(win7.tokens?.generation?.requests || 0)
+  };
+
+  const storageBytes = Number(storage.bytes || 0);
+  const storageChunks = Number(storage.chunks || 0);
+  const storageDocs = Number(storage.documents || 0);
+  const storageItems = Number(storage.memoryItems || 0);
+  const storageCollections = Number(storage.collections || 0);
 
   const cards = [
-    { label: "Requests", value: formatNumber(count), meta: "total" },
-    { label: "Error rate", value: `${(errRate * 100).toFixed(2)}%`, meta: "gateway 5xx" },
-    { label: "Latency p50", value: formatMs(overall.p50_ms), meta: "overall" },
-    { label: "Latency p95", value: formatMs(overall.p95_ms), meta: "overall" },
-    { label: "Latency p99", value: formatMs(overall.p99_ms), meta: "overall" },
-    { label: "Vector ops", value: formatNumber((stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0)), meta: "total" }
+    {
+      id: "requests",
+      label: "Requests",
+      values: { all: count, "24h": count, "7d": count },
+      meta: { all: "since restart", "24h": "since restart", "7d": "since restart" }
+    },
+    {
+      id: "error_rate",
+      label: "Error rate",
+      values: { all: errRate, "24h": errRate, "7d": errRate },
+      format: (value) => `${(Number(value || 0) * 100).toFixed(2)}%`,
+      meta: { all: "gateway 5xx", "24h": "gateway 5xx", "7d": "gateway 5xx" }
+    },
+    {
+      id: "embedding_tokens",
+      label: "Embedding tokens",
+      values: embedTotals,
+      meta: {
+        all: `${formatNumber(embedReqs.all)} calls`,
+        "24h": `${formatNumber(embedReqs["24h"])} calls`,
+        "7d": `${formatNumber(embedReqs["7d"])} calls`
+      }
+    },
+    {
+      id: "generation_tokens",
+      label: "Generation tokens",
+      values: genTotals,
+      meta: {
+        all: `${formatNumber(genReqs.all)} calls`,
+        "24h": `${formatNumber(genReqs["24h"])} calls`,
+        "7d": `${formatNumber(genReqs["7d"])} calls`
+      }
+    },
+    {
+      id: "storage_used",
+      label: "Storage used",
+      values: { all: storageBytes, "24h": storageBytes, "7d": storageBytes },
+      format: formatBytes,
+      meta: { all: `${formatNumber(storageChunks)} chunks`, "24h": "current", "7d": "current" }
+    },
+    {
+      id: "documents",
+      label: "Documents",
+      values: { all: storageDocs, "24h": storageDocs, "7d": storageDocs },
+      meta: { all: `${formatNumber(storageCollections)} collections`, "24h": "current", "7d": "current" }
+    },
+    {
+      id: "memory_items",
+      label: "Memory items",
+      values: { all: storageItems, "24h": storageItems, "7d": storageItems },
+      meta: { all: "total", "24h": "current", "7d": "current" }
+    },
+    {
+      id: "latency_p50",
+      label: "Latency p50",
+      values: { all: overall.p50_ms, "24h": overall.p50_ms, "7d": overall.p50_ms },
+      format: formatMs,
+      meta: { all: "overall", "24h": "rolling", "7d": "rolling" }
+    },
+    {
+      id: "latency_p95",
+      label: "Latency p95",
+      values: { all: overall.p95_ms, "24h": overall.p95_ms, "7d": overall.p95_ms },
+      format: formatMs,
+      meta: { all: "overall", "24h": "rolling", "7d": "rolling" }
+    },
+    {
+      id: "latency_p99",
+      label: "Latency p99",
+      values: { all: overall.p99_ms, "24h": overall.p99_ms, "7d": overall.p99_ms },
+      format: formatMs,
+      meta: { all: "overall", "24h": "rolling", "7d": "rolling" }
+    },
+    {
+      id: "vector_ops",
+      label: "Vector ops",
+      values: { all: (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "24h": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "7d": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0) },
+      meta: { all: "total", "24h": "since restart", "7d": "since restart" }
+    }
   ];
 
   const html = cards.map((card) => {
+    const selected = getUsageWindow(card.id);
+    const rawValue = card.values?.[selected] ?? card.value ?? "-";
+    const value = card.format ? card.format(rawValue) : formatNumber(rawValue);
+    const meta = typeof card.meta === "object"
+      ? (card.meta?.[selected] ?? card.meta?.all ?? "")
+      : (card.meta || "");
+    const tabs = USAGE_WINDOWS.map((window) => {
+      const label = USAGE_WINDOW_LABELS[window] || window;
+      const active = selected === window ? "active" : "";
+      return `<button class="stat-tab ${active}" type="button" data-usage-window="${window}" data-card="${card.id}">${label}</button>`;
+    }).join("");
     return `
       <div class="stat">
         <div class="stat-label">${escapeHtml(card.label)}</div>
-        <div class="stat-value">${escapeHtml(card.value)}</div>
-        <div class="stat-meta">${escapeHtml(card.meta)}</div>
+        <div class="stat-value">${escapeHtml(value)}</div>
+        <div class="stat-meta">${escapeHtml(meta)}</div>
+        <div class="stat-tabs">${tabs}</div>
       </div>
     `;
   }).join("");
 
   wrap.insertAdjacentHTML("beforeend", html);
+  bindUsageWindowClicks();
 }
 
 function renderUsageRoutes(routes){
@@ -544,8 +705,9 @@ async function loadUsage(){
     $("usageRaw").textContent = JSON.stringify(data, null, 2);
 
     if (res.ok && data.ok){
-      renderUsage(data.data);
-      renderUsageRoutes(data.data?.gateway?.latency?.routes || {});
+      lastUsageStats = data.data;
+      renderUsage(lastUsageStats);
+      renderUsageRoutes(lastUsageStats?.gateway?.latency?.routes || {});
       $("usageUpdated").textContent = new Date().toLocaleString();
       setBanner($("usageBanner"), "ok", "Usage loaded.");
       usageLoaded = true;

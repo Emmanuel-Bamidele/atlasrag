@@ -30,6 +30,11 @@ const {
   beginIdempotencyKey,
   touchIdempotencyKey,
   completeIdempotencyKey,
+  recordTenantUsage,
+  getTenantUsage,
+  getTenantUsageWindow,
+  getTenantStorageStats,
+  getTenantItemStats,
   recordFailedLogin,
   recordSuccessfulLogin,
   createServiceToken,
@@ -469,6 +474,56 @@ function buildErrorPayload(message, code, tenantId, collection) {
   };
 }
 
+function toPositiveInt(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  return Math.floor(num);
+}
+
+function parseEmbeddingUsage(usage) {
+  const total = toPositiveInt(usage?.total_tokens ?? usage?.prompt_tokens);
+  const prompt = toPositiveInt(usage?.prompt_tokens);
+  return { total, prompt };
+}
+
+function parseGenerationUsage(usage) {
+  const input = toPositiveInt(usage?.input_tokens ?? usage?.prompt_tokens);
+  const output = toPositiveInt(usage?.output_tokens ?? usage?.completion_tokens);
+  const total = toPositiveInt(usage?.total_tokens) || (input + output);
+  return { input, output, total };
+}
+
+function safeUsageRecord(promise) {
+  if (!promise || typeof promise.catch !== "function") return;
+  promise.catch((err) => {
+    console.warn("[usage] Failed to record usage:", err?.message || err);
+  });
+}
+
+function recordEmbeddingUsage(tenantId, usage) {
+  if (!tenantId) return;
+  const tokens = parseEmbeddingUsage(usage);
+  if (!tokens.total) return;
+  safeUsageRecord(recordTenantUsage({
+    tenantId,
+    embeddingTokens: tokens.total,
+    embeddingRequests: 1
+  }));
+}
+
+function recordGenerationUsage(tenantId, usage) {
+  if (!tenantId) return;
+  const tokens = parseGenerationUsage(usage);
+  if (!tokens.total) return;
+  safeUsageRecord(recordTenantUsage({
+    tenantId,
+    generationInputTokens: tokens.input,
+    generationOutputTokens: tokens.output,
+    generationTotalTokens: tokens.total,
+    generationRequests: 1
+  }));
+}
+
 function sendOk(res, data, tenantId, collection) {
   res.json(buildOkPayload(data, tenantId, collection));
 }
@@ -539,7 +594,7 @@ async function getVectorCount() {
 async function reindexChunkBatch(rows) {
   if (!rows.length) return;
   const texts = rows.map(r => r.text);
-  const vectors = await embedTexts(texts);
+  const { vectors } = await embedTexts(texts);
 
   for (let i = 0; i < rows.length; i += 1) {
     const chunkId = rows[i].chunk_id;
@@ -900,7 +955,8 @@ async function indexDocument(tenantId, collection, docId, text, source) {
 
   const texts = chunks.map(c => c.text);
   const embedStart = Date.now();
-  const vectors = await embedTexts(texts);
+  const { vectors, usage } = await embedTexts(texts);
+  recordEmbeddingUsage(tenantId, usage);
   logIndex(`embedded collection=${collection} docId=${docId} vectors=${vectors.length} ms=${Date.now() - embedStart}`);
 
   for (let i = 0; i < chunks.length; i++) {
@@ -945,7 +1001,8 @@ async function listDocsForTenant(tenantId, collection, principalId, privileges) 
 }
 
 async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility }) {
-  const [qvec] = await embedTexts([query]);
+  const { vectors: [qvec], usage } = await embedTexts([query]);
+  recordEmbeddingUsage(tenantId, usage);
 
   const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
   const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
@@ -1009,7 +1066,8 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   });
   const chunks = results.map(r => r._row).filter(Boolean);
 
-  const { answer, citations } = await generateAnswer(question, chunks);
+  const { answer, citations, usage } = await generateAnswer(question, chunks);
+  recordGenerationUsage(tenantId, usage);
   const mapped = citations.map((c) => {
     const parsed = parseChunkId(c);
     if (!parsed) {
@@ -1047,7 +1105,9 @@ async function indexMemoryText(namespaceId, text) {
   }
 
   const texts = chunks.map(c => c.text);
-  const vectors = await embedTexts(texts);
+  const { vectors, usage } = await embedTexts(texts);
+  const parsed = parseNamespacedDocId(namespaceId);
+  recordEmbeddingUsage(parsed?.tenantId, usage);
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkId = chunks[i].chunkId;
@@ -1190,6 +1250,7 @@ async function runReflectionJob(jobId, tenantId) {
     }
 
     const reflection = await reflectMemories({ text, types, maxItems });
+    recordGenerationUsage(tenantId, reflection?.usage);
 
     const ownerId = principalId || artifact.principal_id || null;
     const resolvedVisibility = requestedVisibility || artifact.visibility || "tenant";
@@ -1395,6 +1456,7 @@ async function runCompactionJob(jobId, tenantId) {
 
     const combined = parts.join("\n\n---\n\n");
     const summary = await summarizeMemories({ text: combined });
+    recordGenerationUsage(tenantId, summary?.usage);
     if (!summary.content) {
       await updateMemoryJob({
         id: jobId,
@@ -1849,10 +1911,49 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
     const gatewayStats = {
       latency: getLatencyStats(tenantId)
     };
+    const [usageAll, usage24h, usage7d, storageRow, itemRow] = await Promise.all([
+      getTenantUsage(tenantId),
+      getTenantUsageWindow(tenantId, "24h"),
+      getTenantUsageWindow(tenantId, "7d"),
+      getTenantStorageStats(tenantId),
+      getTenantItemStats(tenantId)
+    ]);
+
+    const buildUsageWindow = (row) => ({
+      tokens: {
+        embedding: {
+          total: Number(row?.embedding_tokens || 0),
+          requests: Number(row?.embedding_requests || 0)
+        },
+        generation: {
+          input: Number(row?.generation_input_tokens || 0),
+          output: Number(row?.generation_output_tokens || 0),
+          total: Number(row?.generation_total_tokens || 0),
+          requests: Number(row?.generation_requests || 0)
+        },
+        total: Number(row?.embedding_tokens || 0) + Number(row?.generation_total_tokens || 0)
+      }
+    });
+
+    const usage = {
+      windows: {
+        all: buildUsageWindow(usageAll),
+        "24h": buildUsageWindow(usage24h),
+        "7d": buildUsageWindow(usage7d)
+      },
+      storage: {
+        bytes: Number(storageRow.bytes || 0),
+        chunks: Number(storageRow.chunks || 0),
+        documents: Number(itemRow.documents || 0),
+        memoryItems: Number(itemRow.memory_items || 0),
+        collections: Number(itemRow.collections || 0)
+      },
+      updatedAt: usageAll?.updated_at || null
+    };
     if (req.path.startsWith("/v1")) {
-      return sendOk(res, { ...tcpStats, gateway: gatewayStats }, tenantId, collection);
+      return sendOk(res, { ...tcpStats, gateway: gatewayStats, usage }, tenantId, collection);
     }
-    return res.json({ ...tcpStats, gateway: gatewayStats, tenantId, collection });
+    return res.json({ ...tcpStats, gateway: gatewayStats, usage, tenantId, collection });
   } catch (e) {
     if (req.path.startsWith("/v1")) {
       return sendError(res, 500, e, "USAGE_FAILED", tenantId, collection);

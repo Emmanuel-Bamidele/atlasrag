@@ -123,6 +123,7 @@ async function generateAnswer(question, chunks) {
 
   // openai SDK returns combined text via output_text
   const text = (resp.output_text || "").trim();
+  const usage = resp.usage || null;
 
   // Simple citation parsing:
   // We asked it to output: "Citations: doc#0, doc#3"
@@ -137,7 +138,7 @@ async function generateAnswer(question, chunks) {
     answer = text.replace(match[0], "").trim();
   }
 
-  return { answer, citations };
+  return { answer, citations, usage };
 }
 
 module.exports = { generateAnswer };
