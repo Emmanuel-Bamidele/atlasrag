@@ -23,6 +23,11 @@ const {
   listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
   listMemoryItemsByExternalPrefix,
+  recordMemoryEvent,
+  updateMemoryItemMetrics,
+  listMemoryItemsForValueDecay,
+  listMemoryItemsForRedundancy,
+  listMemoryItemsForLifecycle,
   createAuditLog,
   createMemoryLink,
   createMemoryJob,
@@ -31,6 +36,7 @@ const {
   getMemoryJobById,
   listDueMemoryJobs,
   listMemoryJobs,
+  findActiveDeleteJob,
   deleteMemoryItemsByCollection,
   beginIdempotencyKey,
   touchIdempotencyKey,
@@ -53,6 +59,13 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
+const { computeValueScore, estimateTokensFromText } = require("./memory_value");
+const {
+  isBelowMinAgeForLifecycle,
+  createDeleteBudget,
+  consumeDeleteBudget,
+  canConsumeDeleteBudget
+} = require("./lifecycle_policy");
 const { verifyCredentials, issueToken, parseAuthMode, normalizeAuthMode, isSsoAllowed } = require("./auth");
 const { recordLatency, getLatencyStats, getAllTenantLatencyStats } = require("./metrics");
 const cookieParser = require("cookie-parser");
@@ -159,9 +172,38 @@ const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
 const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
 const JOB_SWEEP_INTERVAL_MS = parseInt(process.env.JOB_SWEEP_INTERVAL_MS || "5000", 10);
 const JOB_SWEEP_BATCH_SIZE = parseInt(process.env.JOB_SWEEP_BATCH_SIZE || "20", 10);
+const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
+const MEMORY_COST_SCALE_TOKENS = parseFloat(process.env.MEMORY_COST_SCALE_TOKENS || "2000");
+const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
+const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
+const MEMORY_VALUE_DECAY_INTERVAL_MS = parseInt(process.env.MEMORY_VALUE_DECAY_INTERVAL_MS || "3600000", 10);
+const MEMORY_VALUE_BATCH_SIZE = parseInt(process.env.MEMORY_VALUE_BATCH_SIZE || "200", 10);
+const MEMORY_VALUE_MAX_ITEMS = parseInt(process.env.MEMORY_VALUE_MAX_ITEMS || "0", 10);
+const MEMORY_VALUE_TEXT_FALLBACK = process.env.MEMORY_VALUE_TEXT_FALLBACK !== "0";
+const MEMORY_REDUNDANCY_INTERVAL_MS = parseInt(process.env.MEMORY_REDUNDANCY_INTERVAL_MS || "86400000", 10);
+const MEMORY_REDUNDANCY_BATCH_SIZE = parseInt(process.env.MEMORY_REDUNDANCY_BATCH_SIZE || "100", 10);
+const MEMORY_REDUNDANCY_TOP_K = parseInt(process.env.MEMORY_REDUNDANCY_TOP_K || "8", 10);
+const MEMORY_REDUNDANCY_QUERY_CHARS = parseInt(process.env.MEMORY_REDUNDANCY_QUERY_CHARS || "800", 10);
+const MEMORY_LIFECYCLE_INTERVAL_MS = parseInt(process.env.MEMORY_LIFECYCLE_INTERVAL_MS || "86400000", 10);
+const MEMORY_LIFECYCLE_BATCH_SIZE = parseInt(process.env.MEMORY_LIFECYCLE_BATCH_SIZE || "50", 10);
+const MEMORY_LIFECYCLE_MIN_AGE_HOURS = parseFloat(process.env.MEMORY_LIFECYCLE_MIN_AGE_HOURS || "24");
+const MEMORY_LIFECYCLE_MAX_DELETES = parseInt(process.env.MEMORY_LIFECYCLE_MAX_DELETES || "0", 10);
+const MEMORY_LIFECYCLE_DRY_RUN = process.env.MEMORY_LIFECYCLE_DRY_RUN === "1";
+const MEMORY_LIFECYCLE_DELETE_THRESHOLD = parseFloat(process.env.MEMORY_LIFECYCLE_DELETE_THRESHOLD || "0.25");
+const MEMORY_LIFECYCLE_SUMMARY_THRESHOLD = parseFloat(process.env.MEMORY_LIFECYCLE_SUMMARY_THRESHOLD || "0.45");
+const MEMORY_LIFECYCLE_PROMOTE_THRESHOLD = parseFloat(process.env.MEMORY_LIFECYCLE_PROMOTE_THRESHOLD || "0.70");
+const MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE = parseInt(process.env.MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE || "5", 10);
+const MEMORY_LIFECYCLE_COMPACT_DELETE_ORIGINALS = process.env.MEMORY_LIFECYCLE_COMPACT_DELETE_ORIGINALS !== "0";
+const MEMORY_PROMOTION_MAX_ITEMS = parseInt(process.env.MEMORY_PROMOTION_MAX_ITEMS || "3", 10);
+const MEMORY_PROMOTION_COOLDOWN_HOURS = parseInt(process.env.MEMORY_PROMOTION_COOLDOWN_HOURS || "24", 10);
+const MEMORY_COMPACT_COOLDOWN_HOURS = parseInt(process.env.MEMORY_COMPACT_COOLDOWN_HOURS || "24", 10);
 let reindexStarted = false;
 let ttlSweepRunning = false;
 let jobSweepRunning = false;
+let valueDecayRunning = false;
+let redundancyRunning = false;
+let lifecycleRunning = false;
+const redundancyPending = new Set();
 const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
   || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const DOC_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -187,6 +229,15 @@ const MEMORY_TYPES = ["artifact", "semantic", "procedural", "episodic", "convers
 const LEGACY_TYPE_ALIASES = new Map([
   ["memory", "semantic"]
 ]);
+const MEMORY_EVENT_DEFAULTS = {
+  retrieved: 0.1,
+  used_in_answer: 0.6,
+  user_positive: 1.0,
+  user_negative: -1.0,
+  task_success: 0.8,
+  task_fail: -0.8
+};
+const MEMORY_TASK_EVENT_TYPES = new Set(["task_success", "task_fail"]);
 
 function buildOpenApiDoc(req) {
   const envBase = process.env.OPENAPI_BASE_URL || process.env.PUBLIC_BASE_URL;
@@ -658,6 +709,70 @@ function buildErrorPayload(message, code, tenantId, collection) {
   };
 }
 
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function withTokenEstimate(metadata, text) {
+  const tokensEst = estimateTokensFromText(text);
+  const hasMeta = metadata && typeof metadata === "object" && !Array.isArray(metadata);
+  const base = hasMeta ? { ...metadata } : null;
+  if (Number.isFinite(tokensEst) && tokensEst > 0) {
+    const out = base || {};
+    out._tokens_est = tokensEst;
+    return out;
+  }
+  return base;
+}
+
+function getTokensEstimate(memory) {
+  const tokens = memory?.metadata?._tokens_est ?? memory?.metadata?.tokens_est ?? memory?.tokens_est ?? memory?.tokensEst;
+  const clean = Number(tokens);
+  return Number.isFinite(clean) ? clean : null;
+}
+
+function computeValueScoreForMemory(memory, tokensEst, now = new Date()) {
+  const merged = { ...memory };
+  if (tokensEst !== undefined && tokensEst !== null) {
+    merged.tokens_est = tokensEst;
+  }
+  return computeValueScore(merged, {
+    now,
+    recencyHalfLifeDays: MEMORY_RECENCY_HALFLIFE_DAYS,
+    costScaleTokens: MEMORY_COST_SCALE_TOKENS
+  });
+}
+
+function formatMemoryItem(memory) {
+  if (!memory) return null;
+  return {
+    id: memory.id,
+    namespaceId: memory.namespace_id,
+    type: memory.item_type,
+    externalId: memory.external_id || null,
+    principalId: memory.principal_id || null,
+    agentId: memory.agent_id || null,
+    tags: memory.tags || [],
+    visibility: memory.visibility || "tenant",
+    acl: memory.acl_principals || [],
+    title: memory.title || null,
+    sourceType: memory.source_type || null,
+    sourceUrl: memory.source_url || null,
+    metadata: memory.metadata || null,
+    createdAt: memory.created_at,
+    expiresAt: memory.expires_at || null,
+    valueScore: memory.value_score ?? null,
+    reuseCount: memory.reuse_count ?? 0,
+    lastUsedAt: memory.last_used_at || null,
+    utilityEma: memory.utility_ema ?? 0,
+    redundancyScore: memory.redundancy_score ?? 0,
+    trustScore: memory.trust_score ?? 0.5,
+    importanceHint: memory.importance_hint ?? null,
+    pinned: Boolean(memory.pinned)
+  };
+}
+
 function buildAuditActor(req) {
   const auth = req.user?.auth || "system";
   const actorId = req.user?.principal_id || req.user?.sub || null;
@@ -703,6 +818,93 @@ async function recordAudit(req, tenantId, { action, targetType, targetId, metada
     await createAuditLog(payload);
   } catch (err) {
     console.warn("[audit] Failed to record audit log:", err?.message || err);
+  }
+}
+
+function normalizeEventValue(eventType, eventValue) {
+  const fallback = MEMORY_EVENT_DEFAULTS[eventType] ?? 0;
+  if (eventValue === undefined || eventValue === null || eventValue === "") {
+    return clampNumber(fallback, -1, 1);
+  }
+  const value = Number(eventValue);
+  if (!Number.isFinite(value)) {
+    throw new Error("eventValue must be a number");
+  }
+  return clampNumber(value, -1, 1);
+}
+
+function shouldIncrementReuse(eventType) {
+  return eventType === "retrieved" || eventType === "used_in_answer";
+}
+
+function shouldUpdateUtility(eventType) {
+  return eventType in MEMORY_EVENT_DEFAULTS;
+}
+
+function updateUtilityEma(previous, eventValue) {
+  const prev = Number(previous || 0);
+  const alpha = Number.isFinite(MEMORY_UTILITY_ALPHA) ? MEMORY_UTILITY_ALPHA : 0.2;
+  return clampNumber(prev * (1 - alpha) + eventValue * alpha, -1, 1);
+}
+
+function updateTrustScore(previous, eventType, eventValue) {
+  if (!["user_positive", "user_negative", "task_success", "task_fail"].includes(eventType)) {
+    return clampNumber(Number(previous ?? 0.5), 0, 1);
+  }
+  const prev = Number(previous ?? 0.5);
+  const step = Number.isFinite(MEMORY_TRUST_STEP) ? MEMORY_TRUST_STEP : 0.05;
+  return clampNumber(prev + step * eventValue, 0, 1);
+}
+
+async function recordMemoryEventForItem(memory, eventType, eventValue) {
+  if (!memory || !memory.id || !memory.tenant_id) return null;
+  const normalizedValue = normalizeEventValue(eventType, eventValue);
+  const now = new Date();
+  await recordMemoryEvent({
+    memoryId: memory.id,
+    tenantId: memory.tenant_id,
+    eventType,
+    eventValue: normalizedValue,
+    createdAt: now
+  });
+
+  const reuseCount = shouldIncrementReuse(eventType)
+    ? Number(memory.reuse_count || 0) + 1
+    : Number(memory.reuse_count || 0);
+  const utilityEma = shouldUpdateUtility(eventType)
+    ? updateUtilityEma(memory.utility_ema, normalizedValue)
+    : Number(memory.utility_ema || 0);
+  const trustScore = updateTrustScore(memory.trust_score, eventType, normalizedValue);
+  const lastUsedAt = now;
+
+  const tokensEst = getTokensEstimate(memory);
+  const valueScore = computeValueScoreForMemory({
+    ...memory,
+    reuse_count: reuseCount,
+    utility_ema: utilityEma,
+    trust_score: trustScore,
+    last_used_at: lastUsedAt
+  }, tokensEst, now);
+
+  return updateMemoryItemMetrics({
+    id: memory.id,
+    tenantId: memory.tenant_id,
+    reuseCount,
+    lastUsedAt,
+    utilityEma,
+    trustScore,
+    valueScore
+  });
+}
+
+async function recordMemoryEventsForItems(memories, eventType, eventValue) {
+  if (!Array.isArray(memories) || memories.length === 0) return;
+  for (const memory of memories) {
+    try {
+      await recordMemoryEventForItem(memory, eventType, eventValue);
+    } catch (err) {
+      console.warn(`[memory_events] Failed to record ${eventType} for ${memory?.id}:`, err?.message || err);
+    }
   }
 }
 
@@ -967,6 +1169,7 @@ async function runTtlSweepOnce() {
   let totalDeleted = 0;
   let vectorsDeleted = 0;
   let vectorFailures = 0;
+  let queuedDeletes = 0;
   const cutoff = new Date();
   try {
     while (true) {
@@ -974,21 +1177,23 @@ async function runTtlSweepOnce() {
       if (!items.length) break;
       let batchDeleted = 0;
       for (const item of items) {
-        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
-        if (result.failed > 0) {
+        const result = await deleteMemoryItemFully(item, { reason: "ttl_sweep" });
+        if (result?.deleted) {
+          vectorsDeleted += result.vectorsDeleted || 0;
+          totalDeleted += 1;
+          batchDeleted += 1;
+        } else if (result?.failed) {
           vectorFailures += result.failed;
-          continue;
         }
-        vectorsDeleted += result.deleted;
-        await deleteMemoryItemById(item.id);
-        totalDeleted += 1;
-        batchDeleted += 1;
+        if (result?.queued) {
+          queuedDeletes += 1;
+        }
       }
       if (batchDeleted === 0) break;
       if (items.length < batchSize) break;
     }
-    if (totalDeleted || vectorFailures) {
-      console.log(`[ttl] sweep deleted=${totalDeleted} vectors=${vectorsDeleted} failures=${vectorFailures}`);
+    if (totalDeleted || vectorFailures || queuedDeletes) {
+      console.log(`[ttl] sweep deleted=${totalDeleted} vectors=${vectorsDeleted} failures=${vectorFailures} queuedDeletes=${queuedDeletes}`);
     }
   } catch (err) {
     console.warn("[ttl] sweep failed:", err?.message || err);
@@ -1421,6 +1626,30 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   });
   const chunks = results.map(r => r._row).filter(Boolean);
 
+  const namespaceIds = chunks.map(c => c.doc_id);
+  if (namespaceIds.length) {
+    try {
+      const memoryMap = await getMemoryItemsByNamespaceIds({
+        namespaceIds,
+        types: ["artifact"],
+        excludeExpired: true,
+        principalId,
+        privileges
+      });
+      const usedItems = [];
+      const seen = new Set();
+      for (const id of namespaceIds) {
+        const mem = memoryMap.get(id);
+        if (!mem || seen.has(mem.id)) continue;
+        seen.add(mem.id);
+        usedItems.push(mem);
+      }
+      await recordMemoryEventsForItems(usedItems, "used_in_answer");
+    } catch (err) {
+      console.warn("[memory_events] Failed to record used_in_answer:", err?.message || err);
+    }
+  }
+
   const { answer, citations, usage } = await generateAnswer(question, chunks);
   recordGenerationUsage(tenantId, usage);
   const mapped = citations.map((c) => {
@@ -1483,6 +1712,22 @@ async function indexMemoryText(namespaceId, text) {
   return { chunksIndexed: chunks.length, truncated };
 }
 
+function scheduleRedundancyUpdate(item) {
+  if (!item || !item.id) return;
+  if (item.item_type === "artifact") return;
+  if (redundancyPending.has(item.id)) return;
+  redundancyPending.add(item.id);
+  setImmediate(async () => {
+    try {
+      await computeRedundancyForItem(item);
+    } catch (err) {
+      console.warn("[redundancy] async update failed:", err?.message || err);
+    } finally {
+      redundancyPending.delete(item.id);
+    }
+  });
+}
+
 async function deleteVectorsForDoc(namespaceId, options = {}) {
   const strict = options.strict === true;
   const rows = await getChunksByDocId(namespaceId);
@@ -1518,9 +1763,28 @@ async function memoryWriteCore(req) {
   if (resolvedVisibility === "acl" && aclList.length === 0) {
     throw new Error("acl list is required when visibility is acl");
   }
+  const importanceRaw = req.body?.importanceHint ?? req.body?.importance_hint;
+  const importanceHint = importanceRaw === undefined || importanceRaw === null || importanceRaw === ""
+    ? undefined
+    : Number(importanceRaw);
+  if (importanceRaw !== undefined && importanceRaw !== null && importanceRaw !== "" && !Number.isFinite(importanceHint)) {
+    throw new Error("importanceHint must be a number");
+  }
+  let pinned = req.body?.pinned;
+  if (pinned !== undefined) {
+    if (typeof pinned === "string") {
+      const clean = pinned.trim().toLowerCase();
+      if (clean === "true") pinned = true;
+      else if (clean === "false") pinned = false;
+    }
+    if (pinned !== true && pinned !== false) {
+      throw new Error("pinned must be a boolean");
+    }
+  }
   const memoryId = crypto.randomUUID();
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
 
+  const metadataWithTokens = withTokenEstimate(metadata, text);
   const memory = await upsertMemoryItem({
     tenantId,
     collection,
@@ -1531,17 +1795,39 @@ async function memoryWriteCore(req) {
     title,
     sourceType,
     sourceUrl,
-    metadata,
+    metadata: metadataWithTokens,
     createdAt: createdTime,
     expiresAt,
     principalId,
     agentId,
     tags,
     visibility: resolvedVisibility,
-    acl: aclList
+    acl: aclList,
+    importanceHint,
+    pinned
   });
 
   const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text);
+  scheduleRedundancyUpdate(memory);
+
+  try {
+    const tokensEst = getTokensEstimate(memory);
+    const valueScore = computeValueScoreForMemory(memory, tokensEst);
+    const updated = await updateMemoryItemMetrics({
+      id: memory.id,
+      tenantId,
+      valueScore,
+      lastUsedAt: memory.created_at
+    });
+    if (updated) {
+      memory.value_score = updated.value_score;
+      memory.last_used_at = updated.last_used_at;
+    } else {
+      memory.value_score = valueScore;
+    }
+  } catch (err) {
+    console.warn("[memory] Failed to set initial value score:", err?.message || err);
+  }
 
   return {
     tenantId,
@@ -1583,6 +1869,10 @@ async function dispatchMemoryJob(jobId, tenantId, jobType) {
   }
   if (type === "compaction") {
     await runCompactionJob(jobId, tenantId);
+    return;
+  }
+  if (type === "delete_reconcile") {
+    await runDeleteReconcileJob(jobId, tenantId);
     return;
   }
   if (!type) {
@@ -1627,12 +1917,48 @@ async function cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExt
     if (expected.size > 0 && item.external_id && expected.has(item.external_id)) {
       continue;
     }
-    const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
-    if (result.failed > 0) {
-      throw new Error(`Failed to delete vectors for memory ${item.id}`);
+    const result = await deleteMemoryItemFully(item, { reason: "job_cleanup" });
+    if (result?.queued) {
+      console.warn(`[delete] queued reconcile for job cleanup item id=${item.id}`);
     }
-    await deleteMemoryItemById(item.id);
   }
+}
+
+async function cleanupExternalItems({ tenantId, collection, prefix, expectedExternalIds }) {
+  const items = await listMemoryItemsByExternalPrefix({
+    tenantId,
+    collection,
+    prefix
+  });
+  const expected = new Set(expectedExternalIds || []);
+  for (const item of items) {
+    if (expected.size > 0 && item.external_id && expected.has(item.external_id)) {
+      continue;
+    }
+    const result = await deleteMemoryItemFully(item, { reason: "external_cleanup" });
+    if (result?.queued) {
+      console.warn(`[delete] queued reconcile for external cleanup item id=${item.id}`);
+    }
+  }
+}
+
+async function enqueueDeleteReconcileJob(item, reason, failedCount) {
+  if (!item?.tenant_id || !item?.id) return null;
+  const existing = await findActiveDeleteJob({ tenantId: item.tenant_id, memoryId: item.id });
+  if (existing) return existing;
+  return createMemoryJob({
+    tenantId: item.tenant_id,
+    jobType: "delete_reconcile",
+    status: "queued",
+    input: {
+      memoryId: item.id,
+      namespaceId: item.namespace_id || null,
+      collection: item.collection || null,
+      reason: reason || "vdel_failed",
+      failed: Number.isFinite(failedCount) ? failedCount : null
+    },
+    maxAttempts: JOB_MAX_ATTEMPTS
+  });
 }
 
 async function loadArtifactText(namespaceId) {
@@ -1748,13 +2074,13 @@ async function runReflectionJob(jobId, tenantId) {
           title: item.title || null,
           sourceType: "reflection",
           sourceUrl: null,
-          metadata: {
+          metadata: withTokenEstimate({
             origin: "reflect",
             artifactId: sourceType === "artifact" ? sourceItem.id : null,
             conversationId: sourceType === "conversation" ? sourceItem.id : null,
             jobId,
             type
-          },
+          }, content),
           principalId: ownerId,
           agentId: derivedAgentId,
           tags: derivedTags,
@@ -1768,6 +2094,7 @@ async function runReflectionJob(jobId, tenantId) {
         }
 
         await indexMemoryText(memory.namespace_id, content);
+        scheduleRedundancyUpdate(memory);
         await createMemoryLink({
           tenantId,
           fromItemId: memory.id,
@@ -1829,17 +2156,20 @@ async function runTtlCleanupJob(jobId, tenantId) {
     let vectorsDeleted = 0;
     let itemsDeleted = 0;
     let vectorFailures = 0;
+    let queuedDeletes = 0;
 
     if (!dryRun) {
       for (const item of items) {
-        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
-        if (result.failed > 0) {
+        const result = await deleteMemoryItemFully(item, { reason: "ttl_cleanup" });
+        if (result?.deleted) {
+          itemsDeleted += 1;
+          vectorsDeleted += result.vectorsDeleted || 0;
+        } else if (result?.failed) {
           vectorFailures += result.failed;
-          continue;
         }
-        vectorsDeleted += result.deleted;
-        await deleteMemoryItemById(item.id);
-        itemsDeleted += 1;
+        if (result?.queued) {
+          queuedDeletes += 1;
+        }
       }
     }
 
@@ -1853,7 +2183,8 @@ async function runTtlCleanupJob(jobId, tenantId) {
         matched: items.length,
         itemsDeleted,
         vectorsDeleted,
-        vectorFailures
+        vectorFailures,
+        queuedDeletes
       }
     });
   } catch (err) {
@@ -1984,12 +2315,12 @@ async function runCompactionJob(jobId, tenantId) {
       title: summary.title || "Compacted memory",
       sourceType: "compaction",
       sourceUrl: null,
-      metadata: {
+      metadata: withTokenEstimate({
         origin: "compaction",
         jobId,
         sourceCount: included.length,
         types
-      },
+      }, summary.content),
       principalId: ownerId,
       visibility: resolvedVisibility,
       acl: aclList
@@ -2001,6 +2332,7 @@ async function runCompactionJob(jobId, tenantId) {
     }
 
     await indexMemoryText(memory.namespace_id, summary.content);
+    scheduleRedundancyUpdate(memory);
 
     for (const item of included) {
       await createMemoryLink({
@@ -2015,16 +2347,19 @@ async function runCompactionJob(jobId, tenantId) {
     let vectorsDeleted = 0;
     let deletedCount = 0;
     let vectorFailures = 0;
+    let queuedDeletes = 0;
     if (deleteOriginals) {
       for (const item of included) {
-        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
-        if (result.failed > 0) {
+        const result = await deleteMemoryItemFully(item, { reason: "compaction_job" });
+        if (result?.deleted) {
+          vectorsDeleted += result.vectorsDeleted || 0;
+          deletedCount += 1;
+        } else if (result?.failed) {
           vectorFailures += result.failed;
-          continue;
         }
-        vectorsDeleted += result.deleted;
-        await deleteMemoryItemById(item.id);
-        deletedCount += 1;
+        if (result?.queued) {
+          queuedDeletes += 1;
+        }
       }
     }
 
@@ -2038,12 +2373,588 @@ async function runCompactionJob(jobId, tenantId) {
         sourceCount: included.length,
         deletedCount,
         vectorsDeleted,
-        vectorFailures
+        vectorFailures,
+        queuedDeletes
       }
     });
   } catch (err) {
     await finalizeJobFailure(job, err);
   }
+}
+
+async function runDeleteReconcileJob(jobId, tenantId) {
+  const job = await claimMemoryJob({ id: jobId, tenantId });
+  if (!job) return;
+  try {
+    const input = parseJsonPayload(job.input) || {};
+    const memoryId = input.memoryId || null;
+    let namespaceId = input.namespaceId || null;
+
+    let memory = null;
+    if (!namespaceId && memoryId) {
+      memory = await getMemoryItemById(memoryId, tenantId, null);
+      namespaceId = memory?.namespace_id || null;
+    }
+
+    if (!namespaceId) {
+      throw new Error("Missing namespaceId for delete reconcile");
+    }
+
+    const result = await deleteVectorsForDoc(namespaceId, { strict: true });
+    if (result.failed > 0) {
+      throw new Error(`Failed to delete vectors for memory ${memoryId || namespaceId}`);
+    }
+
+    let dbDeleted = 0;
+    if (memoryId) {
+      await deleteMemoryItemById(memoryId);
+      dbDeleted = 1;
+    }
+
+    await updateMemoryJob({
+      id: jobId,
+      status: "succeeded",
+      output: {
+        memoryId,
+        namespaceId,
+        vectorsDeleted: result.deleted,
+        dbDeleted
+      }
+    });
+  } catch (err) {
+    await finalizeJobFailure(job, err);
+  }
+}
+
+function isExpiredMemory(item, now = new Date()) {
+  if (!item?.expires_at) return false;
+  return new Date(item.expires_at) <= now;
+}
+
+function visibilitySignature(item) {
+  const visibility = item?.visibility || "tenant";
+  if (visibility === "tenant") return "tenant";
+  const acl = Array.isArray(item?.acl_principals) ? item.acl_principals.slice().sort().join(",") : "";
+  const principal = item?.principal_id || "";
+  return `${visibility}|${principal}|${acl}`;
+}
+
+async function deleteMemoryItemFully(item, options = {}) {
+  if (!item?.id || !item?.namespace_id) {
+    return { deleted: false, queued: false, skipped: "missing" };
+  }
+  const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
+  if (result.failed > 0) {
+    const job = await enqueueDeleteReconcileJob(item, options.reason, result.failed);
+    console.warn(`[delete] vdel failed memory=${item.id} failed=${result.failed} job=${job?.id || "none"}`);
+    return {
+      deleted: false,
+      queued: Boolean(job),
+      failed: result.failed,
+      vectorsDeleted: result.deleted,
+      jobId: job?.id || null
+    };
+  }
+  await deleteMemoryItemById(item.id);
+  return { deleted: true, queued: false, failed: 0, vectorsDeleted: result.deleted };
+}
+
+async function ensureValueScore(item) {
+  if (!item) return null;
+  if (Number.isFinite(item.value_score)) return item.value_score;
+  const tokensEst = getTokensEstimate(item);
+  const score = computeValueScoreForMemory(item, tokensEst);
+  const updated = await updateMemoryItemMetrics({
+    id: item.id,
+    tenantId: item.tenant_id,
+    valueScore: score
+  });
+  if (updated) {
+    item.value_score = updated.value_score;
+  } else {
+    item.value_score = score;
+  }
+  return item.value_score;
+}
+
+async function loadMemoryTextSnippet(item, limit) {
+  const text = await loadArtifactText(item.namespace_id);
+  if (!text || !text.trim()) return "";
+  const cap = Number.isFinite(limit) && limit > 0 ? limit : MAX_COMPACT_CHARS;
+  return text.length > cap ? text.slice(0, cap) : text;
+}
+
+async function isRecentExternalPrefix({ tenantId, collection, prefix, cooldownHours }) {
+  const items = await listMemoryItemsByExternalPrefix({ tenantId, collection, prefix });
+  if (!items.length) return false;
+  const maxAgeMs = Number.isFinite(cooldownHours) && cooldownHours > 0 ? cooldownHours * 3600000 : 0;
+  if (!maxAgeMs) return false;
+  const now = Date.now();
+  return items.some(item => item.created_at && now - new Date(item.created_at).getTime() < maxAgeMs);
+}
+
+async function promoteMemoryItem(item) {
+  if (!item) return { created: 0 };
+  const cooldownHit = await isRecentExternalPrefix({
+    tenantId: item.tenant_id,
+    collection: item.collection,
+    prefix: `promote:${item.id}:`,
+    cooldownHours: MEMORY_PROMOTION_COOLDOWN_HOURS
+  });
+  if (cooldownHit) return { created: 0, skipped: "cooldown" };
+
+  let text = await loadMemoryTextSnippet(item, MAX_REFLECT_CHARS);
+  if (!text.trim()) return { created: 0, skipped: "empty" };
+
+  const reflection = await reflectMemories({
+    text,
+    types: ["semantic", "procedural"],
+    maxItems: MEMORY_PROMOTION_MAX_ITEMS
+  });
+  recordGenerationUsage(item.tenant_id, reflection?.usage);
+
+  const expectedExternalIds = [];
+  const typeMap = {
+    semantic: reflection.semantic || [],
+    procedural: reflection.procedural || []
+  };
+  for (const [type, items] of Object.entries(typeMap)) {
+    for (let i = 0; i < items.length; i += 1) {
+      expectedExternalIds.push(`promote:${item.id}:${type}:${i + 1}`);
+    }
+  }
+
+  await cleanupExternalItems({
+    tenantId: item.tenant_id,
+    collection: item.collection,
+    prefix: `promote:${item.id}:`,
+    expectedExternalIds
+  });
+
+  const created = [];
+  for (const [type, items] of Object.entries(typeMap)) {
+    if (!Array.isArray(items) || items.length === 0) continue;
+    for (let i = 0; i < items.length; i += 1) {
+      const entry = items[i] || {};
+      const content = String(entry.content || "").trim();
+      if (!content) continue;
+
+      const memoryId = crypto.randomUUID();
+      const namespaceId = namespaceDocId(item.tenant_id, item.collection, `mem_${memoryId}`);
+      const externalId = `promote:${item.id}:${type}:${i + 1}`;
+
+      const memory = await upsertMemoryItem({
+        tenantId: item.tenant_id,
+        collection: item.collection,
+        itemType: type,
+        externalId,
+        namespaceId,
+        itemId: memoryId,
+        title: entry.title || null,
+        sourceType: "promotion",
+        sourceUrl: null,
+        metadata: withTokenEstimate({
+          origin: "promotion",
+          sourceId: item.id,
+          type
+        }, content),
+        principalId: item.principal_id || null,
+        agentId: item.agent_id || null,
+        tags: Array.isArray(item.tags) ? item.tags : null,
+        visibility: item.visibility || "tenant",
+        acl: Array.isArray(item.acl_principals) ? item.acl_principals : []
+      });
+
+      const cleanup = await deleteVectorsForDoc(memory.namespace_id, { strict: true });
+      if (cleanup.failed > 0) {
+        throw new Error(`Failed to delete vectors for memory ${memory.id}`);
+      }
+
+      await indexMemoryText(memory.namespace_id, content);
+      scheduleRedundancyUpdate(memory);
+      await createMemoryLink({
+        tenantId: item.tenant_id,
+        fromItemId: memory.id,
+        toItemId: item.id,
+        relation: "promoted_from",
+        metadata: { origin: "promotion" }
+      });
+      created.push(memory.id);
+    }
+  }
+
+  return { created: created.length };
+}
+
+async function compactLowValueGroup(seed, options = {}) {
+  if (!seed) return { created: 0 };
+  const cooldownHit = await isRecentExternalPrefix({
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
+    prefix: `compact:${seed.id}:`,
+    cooldownHours: MEMORY_COMPACT_COOLDOWN_HOURS
+  });
+  if (cooldownHit) return { created: 0, skipped: "cooldown" };
+
+  const seedText = await loadMemoryTextSnippet(seed, MEMORY_REDUNDANCY_QUERY_CHARS);
+  if (!seedText.trim()) return { created: 0, skipped: "empty" };
+
+  const results = await searchChunks({
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
+    query: seedText,
+    k: MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE,
+    docIds: [],
+    principalId: null,
+    privileges: null
+  });
+
+  const namespaceIds = results.map(r => r._row.doc_id);
+  const memoryMap = await getMemoryItemsByNamespaceIds({
+    namespaceIds,
+    types: MEMORY_TYPES.filter(t => t !== "artifact"),
+    excludeExpired: true
+  });
+
+  const signature = visibilitySignature(seed);
+  const group = [];
+  const seen = new Set();
+
+  for (const r of results) {
+    const mem = memoryMap.get(r._row.doc_id);
+    if (!mem) continue;
+    if (seen.has(mem.id)) continue;
+    if (mem.pinned) continue;
+    if (mem.value_score !== null && mem.value_score !== undefined) {
+      const score = Number(mem.value_score);
+      if (Number.isFinite(score) && score >= MEMORY_LIFECYCLE_SUMMARY_THRESHOLD) continue;
+    }
+    if (visibilitySignature(mem) !== signature) continue;
+    seen.add(mem.id);
+    group.push(mem);
+    if (group.length >= MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE) break;
+  }
+
+  if (group.length === 0) {
+    group.push(seed);
+  }
+
+  const parts = [];
+  const included = [];
+  let total = 0;
+  for (const item of group) {
+    const text = await loadArtifactText(item.namespace_id);
+    if (!text.trim()) continue;
+    const header = item.title ? `${item.title}` : `${item.item_type}:${item.id}`;
+    const block = `# ${header}\n${text}`;
+    if (total + block.length > MAX_COMPACT_CHARS) break;
+    parts.push(block);
+    included.push(item);
+    total += block.length;
+  }
+
+  if (!parts.length) return { created: 0, skipped: "empty" };
+
+  const combined = parts.join("\n\n---\n\n");
+  const summary = await summarizeMemories({ text: combined });
+  recordGenerationUsage(seed.tenant_id, summary?.usage);
+  if (!summary.content) return { created: 0, skipped: "empty" };
+
+  await cleanupExternalItems({
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
+    prefix: `compact:${seed.id}:`,
+    expectedExternalIds: [`compact:${seed.id}:summary`]
+  });
+
+  const ownerId = seed.principal_id || null;
+  const visibility = seed.visibility || "tenant";
+  const aclList = visibility === "acl" ? (seed.acl_principals || []) : [];
+
+  const memoryId = crypto.randomUUID();
+  const namespaceId = namespaceDocId(seed.tenant_id, seed.collection, `mem_${memoryId}`);
+  const externalId = `compact:${seed.id}:summary`;
+
+  const memory = await upsertMemoryItem({
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
+    itemType: "summary",
+    externalId,
+    namespaceId,
+    itemId: memoryId,
+    title: summary.title || "Compacted memory",
+    sourceType: "lifecycle_compaction",
+    sourceUrl: null,
+    metadata: withTokenEstimate({
+      origin: "lifecycle_compaction",
+      sourceCount: included.length,
+      seedId: seed.id
+    }, summary.content),
+    principalId: ownerId,
+    visibility,
+    acl: aclList
+  });
+
+  const cleanup = await deleteVectorsForDoc(memory.namespace_id, { strict: true });
+  if (cleanup.failed > 0) {
+    throw new Error(`Failed to delete vectors for memory ${memory.id}`);
+  }
+
+  await indexMemoryText(memory.namespace_id, summary.content);
+  scheduleRedundancyUpdate(memory);
+
+  for (const item of included) {
+    await createMemoryLink({
+      tenantId: seed.tenant_id,
+      fromItemId: memory.id,
+      toItemId: item.id,
+      relation: "compacted_from",
+      metadata: { origin: "lifecycle_compaction" }
+    });
+  }
+
+  if (MEMORY_LIFECYCLE_COMPACT_DELETE_ORIGINALS) {
+    const deleteBudget = options.deleteBudget || null;
+    if (deleteBudget && !canConsumeDeleteBudget(deleteBudget, included.length)) {
+      console.warn(`[lifecycle] delete cap reached; skipping delete of compacted originals count=${included.length}`);
+    } else {
+      if (deleteBudget) consumeDeleteBudget(deleteBudget, included.length);
+      for (const item of included) {
+        const result = await deleteMemoryItemFully(item, { reason: "compaction_original" });
+        if (result?.queued) {
+          console.warn(`[lifecycle] queued delete reconcile for compacted item id=${item.id}`);
+        }
+      }
+    }
+  }
+
+  return { created: 1, sourceCount: included.length };
+}
+
+async function runValueDecayOnce() {
+  if (valueDecayRunning) return;
+  valueDecayRunning = true;
+  const batchSize = Number.isFinite(MEMORY_VALUE_BATCH_SIZE) && MEMORY_VALUE_BATCH_SIZE > 0 ? MEMORY_VALUE_BATCH_SIZE : 200;
+  const maxItems = Number.isFinite(MEMORY_VALUE_MAX_ITEMS) && MEMORY_VALUE_MAX_ITEMS > 0 ? MEMORY_VALUE_MAX_ITEMS : 0;
+  let processed = 0;
+  let afterId = null;
+  let updated = 0;
+  try {
+    while (true) {
+      const items = await listMemoryItemsForValueDecay({ limit: batchSize, afterId });
+      if (!items.length) break;
+      for (const item of items) {
+        let tokensEst = getTokensEstimate(item);
+        if (tokensEst === null && MEMORY_VALUE_TEXT_FALLBACK) {
+          const text = await loadArtifactText(item.namespace_id);
+          tokensEst = estimateTokensFromText(text);
+        }
+        const valueScore = computeValueScoreForMemory(item, tokensEst);
+        await updateMemoryItemMetrics({
+          id: item.id,
+          tenantId: item.tenant_id,
+          valueScore
+        });
+        updated += 1;
+        processed += 1;
+        if (maxItems && processed >= maxItems) break;
+      }
+      afterId = items[items.length - 1].id;
+      if (items.length < batchSize) break;
+      if (maxItems && processed >= maxItems) break;
+    }
+    if (updated) {
+      console.log(`[value] decay updated=${updated}`);
+    }
+  } catch (err) {
+    console.warn("[value] decay failed:", err?.message || err);
+  } finally {
+    valueDecayRunning = false;
+  }
+}
+
+function scheduleValueDecay() {
+  if (!Number.isFinite(MEMORY_VALUE_DECAY_INTERVAL_MS) || MEMORY_VALUE_DECAY_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runValueDecayOnce().catch(() => {});
+    setInterval(() => {
+      runValueDecayOnce().catch(() => {});
+    }, MEMORY_VALUE_DECAY_INTERVAL_MS);
+  }, 2500);
+}
+
+async function computeRedundancyForItem(item) {
+  if (!item || !item.id) return { updated: false, skipped: "missing" };
+  if (item.item_type === "artifact") return { updated: false, skipped: "artifact" };
+  if (isExpiredMemory(item)) return { updated: false, skipped: "expired" };
+
+  const queryText = await loadMemoryTextSnippet(item, MEMORY_REDUNDANCY_QUERY_CHARS);
+  if (!queryText.trim()) return { updated: false, skipped: "empty" };
+
+  const results = await searchChunks({
+    tenantId: item.tenant_id,
+    collection: item.collection,
+    query: queryText,
+    k: MEMORY_REDUNDANCY_TOP_K + 1,
+    docIds: [],
+    principalId: null,
+    privileges: null
+  });
+
+  const namespaceIds = results.map(r => r._row.doc_id);
+  const memoryMap = await getMemoryItemsByNamespaceIds({
+    namespaceIds,
+    types: MEMORY_TYPES.filter(t => t !== "artifact"),
+    excludeExpired: true
+  });
+
+  const seen = new Set([item.id]);
+  const scores = [];
+  for (const r of results) {
+    const mem = memoryMap.get(r._row.doc_id);
+    if (!mem || seen.has(mem.id)) continue;
+    seen.add(mem.id);
+    scores.push(r.score);
+    if (scores.length >= MEMORY_REDUNDANCY_TOP_K) break;
+  }
+
+  const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  const redundancyScore = clampNumber(avg, 0, 1);
+  const updated = await updateMemoryItemMetrics({
+    id: item.id,
+    tenantId: item.tenant_id,
+    redundancyScore
+  });
+  return { updated: Boolean(updated), redundancyScore };
+}
+
+async function runRedundancyOnce() {
+  if (redundancyRunning) return;
+  redundancyRunning = true;
+  const batchSize = Number.isFinite(MEMORY_REDUNDANCY_BATCH_SIZE) && MEMORY_REDUNDANCY_BATCH_SIZE > 0 ? MEMORY_REDUNDANCY_BATCH_SIZE : 100;
+  let afterId = null;
+  let updated = 0;
+  try {
+    while (true) {
+      const items = await listMemoryItemsForRedundancy({ limit: batchSize, afterId });
+      if (!items.length) break;
+      for (const item of items) {
+        const result = await computeRedundancyForItem(item);
+        if (result?.updated) updated += 1;
+      }
+      afterId = items[items.length - 1].id;
+      if (items.length < batchSize) break;
+    }
+    if (updated) {
+      console.log(`[redundancy] updated=${updated}`);
+    }
+  } catch (err) {
+    console.warn("[redundancy] sweep failed:", err?.message || err);
+  } finally {
+    redundancyRunning = false;
+  }
+}
+
+function scheduleRedundancySweep() {
+  if (!Number.isFinite(MEMORY_REDUNDANCY_INTERVAL_MS) || MEMORY_REDUNDANCY_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runRedundancyOnce().catch(() => {});
+    setInterval(() => {
+      runRedundancyOnce().catch(() => {});
+    }, MEMORY_REDUNDANCY_INTERVAL_MS);
+  }, 3000);
+}
+
+async function runLifecycleOnce() {
+  if (lifecycleRunning) return;
+  lifecycleRunning = true;
+  const batchSize = Number.isFinite(MEMORY_LIFECYCLE_BATCH_SIZE) && MEMORY_LIFECYCLE_BATCH_SIZE > 0 ? MEMORY_LIFECYCLE_BATCH_SIZE : 50;
+  const now = new Date();
+  const deleteBudget = createDeleteBudget(MEMORY_LIFECYCLE_MAX_DELETES);
+  let afterId = null;
+  let deleted = 0;
+  let queuedDeletes = 0;
+  let summarized = 0;
+  let promoted = 0;
+  try {
+    while (true) {
+      const items = await listMemoryItemsForLifecycle({ limit: batchSize, afterId });
+      if (!items.length) break;
+      for (const item of items) {
+        if (isExpiredMemory(item, now)) {
+          if (MEMORY_LIFECYCLE_DRY_RUN) {
+            console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=expired`);
+            continue;
+          }
+          if (!consumeDeleteBudget(deleteBudget, 1)) {
+            console.warn(`[lifecycle] delete cap reached; skipping expired delete id=${item.id}`);
+            continue;
+          }
+          const result = await deleteMemoryItemFully(item, { reason: "expired" });
+          if (result?.deleted) deleted += 1;
+          if (result?.queued) queuedDeletes += 1;
+          continue;
+        }
+        if (item.pinned) continue;
+
+        const valueScore = await ensureValueScore(item);
+        if (valueScore > MEMORY_LIFECYCLE_PROMOTE_THRESHOLD) {
+          if (MEMORY_LIFECYCLE_DRY_RUN) {
+            console.log(`[lifecycle] dry_run action=promote id=${item.id} value=${valueScore.toFixed(4)}`);
+          } else {
+            const result = await promoteMemoryItem(item);
+            if (result?.created) promoted += 1;
+          }
+          continue;
+        }
+        if (isBelowMinAgeForLifecycle(item, now, MEMORY_LIFECYCLE_MIN_AGE_HOURS)) {
+          continue;
+        }
+        if (valueScore < MEMORY_LIFECYCLE_DELETE_THRESHOLD) {
+          if (MEMORY_LIFECYCLE_DRY_RUN) {
+            console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=value value=${valueScore.toFixed(4)}`);
+            continue;
+          }
+          if (!consumeDeleteBudget(deleteBudget, 1)) {
+            console.warn(`[lifecycle] delete cap reached; skipping low-value delete id=${item.id}`);
+            continue;
+          }
+          const result = await deleteMemoryItemFully(item, { reason: "low_value" });
+          if (result?.deleted) deleted += 1;
+          if (result?.queued) queuedDeletes += 1;
+          continue;
+        }
+        if (valueScore < MEMORY_LIFECYCLE_SUMMARY_THRESHOLD) {
+          if (MEMORY_LIFECYCLE_DRY_RUN) {
+            console.log(`[lifecycle] dry_run action=compact id=${item.id} value=${valueScore.toFixed(4)}`);
+          } else {
+            const result = await compactLowValueGroup(item, { deleteBudget });
+            if (result?.created) summarized += 1;
+          }
+          continue;
+        }
+      }
+      afterId = items[items.length - 1].id;
+      if (items.length < batchSize) break;
+    }
+    if (deleted || summarized || promoted || queuedDeletes) {
+      console.log(`[lifecycle] deleted=${deleted} summarized=${summarized} promoted=${promoted} queuedDeletes=${queuedDeletes}`);
+    }
+  } catch (err) {
+    console.warn("[lifecycle] sweep failed:", err?.message || err);
+  } finally {
+    lifecycleRunning = false;
+  }
+}
+
+function scheduleLifecycleSweep() {
+  if (!Number.isFinite(MEMORY_LIFECYCLE_INTERVAL_MS) || MEMORY_LIFECYCLE_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runLifecycleOnce().catch(() => {});
+    setInterval(() => {
+      runLifecycleOnce().catch(() => {});
+    }, MEMORY_LIFECYCLE_INTERVAL_MS);
+  }, 3500);
 }
 
 // --------------------------
@@ -3206,23 +4117,7 @@ const memoryWriteLegacy = async (req, res) => {
 
     res.json({
       ok: true,
-      memory: {
-        id: result.memory.id,
-        namespaceId: result.memory.namespace_id,
-        type: result.memory.item_type,
-        externalId: result.memory.external_id || null,
-        principalId: result.memory.principal_id || null,
-        agentId: result.memory.agent_id || null,
-        tags: result.memory.tags || [],
-        visibility: result.memory.visibility || "tenant",
-        acl: result.memory.acl_principals || [],
-        title: result.memory.title || null,
-        sourceType: result.memory.source_type || null,
-        sourceUrl: result.memory.source_url || null,
-        metadata: result.memory.metadata || null,
-        createdAt: result.memory.created_at,
-        expiresAt: result.memory.expires_at || null
-      },
+      memory: formatMemoryItem(result.memory),
       chunksIndexed: result.chunksIndexed,
       truncated: result.truncated,
       tenantId,
@@ -3264,23 +4159,7 @@ const memoryWriteV1 = async (req, res) => {
         return {
           status: 200,
           payload: buildOkPayload({
-            memory: {
-              id: result.memory.id,
-              namespaceId: result.memory.namespace_id,
-              type: result.memory.item_type,
-              externalId: result.memory.external_id || null,
-              principalId: result.memory.principal_id || null,
-              agentId: result.memory.agent_id || null,
-              tags: result.memory.tags || [],
-              visibility: result.memory.visibility || "tenant",
-              acl: result.memory.acl_principals || [],
-              title: result.memory.title || null,
-              sourceType: result.memory.source_type || null,
-              sourceUrl: result.memory.source_url || null,
-              metadata: result.memory.metadata || null,
-              createdAt: result.memory.created_at,
-              expiresAt: result.memory.expires_at || null
-            },
+            memory: formatMemoryItem(result.memory),
             chunksIndexed: result.chunksIndexed,
             truncated: result.truncated
           }, tenantId, collection)
@@ -3342,6 +4221,8 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     });
 
     const recalled = [];
+    const recalledItems = [];
+    const seen = new Set();
     for (const r of results) {
       const mem = memoryMap.get(r._row.doc_id);
       if (!mem) continue;
@@ -3349,26 +4230,16 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
         score: r.score,
         chunkId: r.chunkId,
         preview: r.preview,
-        memory: {
-          id: mem.id,
-          namespaceId: mem.namespace_id,
-          type: mem.item_type,
-          externalId: mem.external_id || null,
-          principalId: mem.principal_id || null,
-          agentId: mem.agent_id || null,
-          tags: mem.tags || [],
-          visibility: mem.visibility || "tenant",
-          acl: mem.acl_principals || [],
-          title: mem.title || null,
-          sourceType: mem.source_type || null,
-          sourceUrl: mem.source_url || null,
-          metadata: mem.metadata || null,
-          createdAt: mem.created_at,
-          expiresAt: mem.expires_at || null
-        }
+        memory: formatMemoryItem(mem)
       });
+      if (!seen.has(mem.id)) {
+        seen.add(mem.id);
+        recalledItems.push(mem);
+      }
       if (recalled.length >= limit) break;
     }
+
+    await recordMemoryEventsForItems(recalledItems, "retrieved");
 
     res.json({
       ok: true,
@@ -3427,6 +4298,8 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     });
 
     const recalled = [];
+    const recalledItems = [];
+    const seen = new Set();
     for (const r of results) {
       const mem = memoryMap.get(r._row.doc_id);
       if (!mem) continue;
@@ -3434,26 +4307,16 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
         score: r.score,
         chunkId: r.chunkId,
         preview: r.preview,
-        memory: {
-          id: mem.id,
-          namespaceId: mem.namespace_id,
-          type: mem.item_type,
-          externalId: mem.external_id || null,
-          principalId: mem.principal_id || null,
-          agentId: mem.agent_id || null,
-          tags: mem.tags || [],
-          visibility: mem.visibility || "tenant",
-          acl: mem.acl_principals || [],
-          title: mem.title || null,
-          sourceType: mem.source_type || null,
-          sourceUrl: mem.source_url || null,
-          metadata: mem.metadata || null,
-          createdAt: mem.created_at,
-          expiresAt: mem.expires_at || null
-        }
+        memory: formatMemoryItem(mem)
       });
+      if (!seen.has(mem.id)) {
+        seen.add(mem.id);
+        recalledItems.push(mem);
+      }
       if (recalled.length >= limit) break;
     }
+
+    await recordMemoryEventsForItems(recalledItems, "retrieved");
 
     sendOk(res, {
       query,
@@ -3462,6 +4325,75 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "MEMORY_RECALL_FAILED", tenantId, collection);
+  }
+});
+
+app.post("/v1/feedback", requireJwt, requireRole("reader"), async (req, res) => {
+  const { memoryId, feedback, eventValue } = req.body || {};
+  if (!memoryId || !String(memoryId).trim()) {
+    return sendError(res, 400, "memoryId is required", "INVALID_INPUT", null, null);
+  }
+
+  const choice = String(feedback || "").trim().toLowerCase();
+  if (!choice || (choice !== "positive" && choice !== "negative")) {
+    return sendError(res, 400, "feedback must be positive or negative", "INVALID_INPUT", null, null);
+  }
+
+  let tenantId = null;
+  let collection = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const principalId = resolvePrincipalId(req);
+    const memory = await getMemoryItemById(memoryId, tenantId, principalId);
+    if (!memory) {
+      return sendError(res, 404, "memory not found", "NOT_FOUND", tenantId, null);
+    }
+    collection = memory.collection || null;
+    const eventType = choice === "positive" ? "user_positive" : "user_negative";
+    const updated = await recordMemoryEventForItem(memory, eventType, eventValue);
+    sendOk(res, {
+      memoryId: memory.id,
+      eventType,
+      valueScore: updated?.value_score ?? memory.value_score ?? null
+    }, tenantId, collection);
+  } catch (e) {
+    sendError(res, 400, e, "FEEDBACK_FAILED", tenantId, collection);
+  }
+});
+
+app.post("/v1/memory/event", requireJwt, requireRole("reader"), async (req, res) => {
+  const { memoryId, eventType, eventValue } = req.body || {};
+  if (!memoryId || !String(memoryId).trim()) {
+    return sendError(res, 400, "memoryId is required", "INVALID_INPUT", null, null);
+  }
+
+  const cleanType = String(eventType || "").trim();
+  if (!MEMORY_TASK_EVENT_TYPES.has(cleanType)) {
+    return sendError(res, 400, "eventType must be task_success or task_fail", "INVALID_INPUT", null, null);
+  }
+
+  let tenantId = null;
+  let collection = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const principalId = resolvePrincipalId(req);
+    const memory = await getMemoryItemById(memoryId, tenantId, principalId);
+    if (!memory) {
+      return sendError(res, 404, "memory not found", "NOT_FOUND", tenantId, null);
+    }
+    collection = memory.collection || null;
+    const normalizedValue = normalizeEventValue(cleanType, eventValue);
+    const updated = await recordMemoryEventForItem(memory, cleanType, eventValue);
+    sendOk(res, {
+      memoryId: memory.id,
+      eventType: cleanType,
+      eventValue: normalizedValue,
+      utilityEma: updated?.utility_ema ?? memory.utility_ema ?? 0,
+      trustScore: updated?.trust_score ?? memory.trust_score ?? 0.5,
+      valueScore: updated?.value_score ?? memory.value_score ?? null
+    }, tenantId, collection);
+  } catch (e) {
+    sendError(res, 400, e, "MEMORY_EVENT_FAILED", tenantId, collection);
   }
 });
 
@@ -3946,6 +4878,9 @@ async function start() {
       scheduleAutoReindex();
       scheduleTtlSweep();
       scheduleJobSweep();
+      scheduleValueDecay();
+      scheduleRedundancySweep();
+      scheduleLifecycleSweep();
     });
   } catch (err) {
     console.error("Failed to start gateway:", err);

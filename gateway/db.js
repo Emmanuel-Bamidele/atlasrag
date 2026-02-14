@@ -136,7 +136,27 @@ async function upsertMemoryArtifact({ tenantId, collection, externalId, namespac
   });
 }
 
-async function upsertMemoryItem({ tenantId, collection, itemType, externalId, namespaceId, title, sourceType, sourceUrl, metadata, createdAt, expiresAt, itemId, principalId, visibility, acl, agentId, tags }) {
+async function upsertMemoryItem({
+  tenantId,
+  collection,
+  itemType,
+  externalId,
+  namespaceId,
+  title,
+  sourceType,
+  sourceUrl,
+  metadata,
+  createdAt,
+  expiresAt,
+  itemId,
+  principalId,
+  visibility,
+  acl,
+  agentId,
+  tags,
+  importanceHint,
+  pinned
+}) {
   await ensureTenant(tenantId);
   if (!itemType) {
     throw new Error("itemType is required");
@@ -163,14 +183,16 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
     sourceUrl || null,
     metadata ? JSON.stringify(metadata) : null,
     namespaceId || id,
-    expiresAt ? new Date(expiresAt) : null
+    expiresAt ? new Date(expiresAt) : null,
+    importanceHint === undefined ? null : Number(importanceHint),
+    pinned === undefined ? null : Boolean(pinned)
   ];
 
   let sql = `INSERT INTO memory_items(
       id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-      title, source_type, source_url, metadata, namespace_id, expires_at
+      title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
     ON CONFLICT (tenant_id, collection, item_type, external_id)
     DO UPDATE SET
       principal_id = EXCLUDED.principal_id,
@@ -182,17 +204,20 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
       source_type = EXCLUDED.source_type,
       source_url = EXCLUDED.source_url,
       metadata = EXCLUDED.metadata,
-      expires_at = EXCLUDED.expires_at
-    RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-              title, source_type, source_url, metadata, tenant_id, collection`;
+      expires_at = EXCLUDED.expires_at,
+      importance_hint = EXCLUDED.importance_hint,
+      pinned = EXCLUDED.pinned
+    RETURNING id, namespace_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score, trust_score,
+              importance_hint, pinned, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title, source_type,
+              source_url, metadata, tenant_id, collection`;
 
   if (createdAt) {
     payload.push(new Date(createdAt));
     sql = `INSERT INTO memory_items(
         id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-        title, source_type, source_url, metadata, namespace_id, expires_at, created_at
+        title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned, created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       ON CONFLICT (tenant_id, collection, item_type, external_id)
       DO UPDATE SET
         principal_id = EXCLUDED.principal_id,
@@ -204,9 +229,12 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
         source_type = EXCLUDED.source_type,
         source_url = EXCLUDED.source_url,
         metadata = EXCLUDED.metadata,
-        expires_at = EXCLUDED.expires_at
-      RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-                title, source_type, source_url, metadata, tenant_id, collection`;
+        expires_at = EXCLUDED.expires_at,
+        importance_hint = EXCLUDED.importance_hint,
+        pinned = EXCLUDED.pinned
+      RETURNING id, namespace_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score, trust_score,
+                importance_hint, pinned, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title, source_type,
+                source_url, metadata, tenant_id, collection`;
   }
 
   const res = await pool.query(sql, payload);
@@ -272,7 +300,8 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
 
   const res = await pool.query(
     `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at
+            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
+            redundancy_score, trust_score, importance_hint, pinned
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
     params
@@ -305,7 +334,8 @@ async function getMemoryItemById(id, tenantId, principalId) {
 
   const res = await pool.query(
     `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at
+            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
+            redundancy_score, trust_score, importance_hint, pinned
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
     params
@@ -333,7 +363,8 @@ async function getArtifactByExternalId(tenantId, collection, externalId, princip
 
   const res = await pool.query(
     `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at
+            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
+            redundancy_score, trust_score, importance_hint, pinned
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
      LIMIT 1`,
@@ -434,12 +465,178 @@ async function listMemoryItemsByExternalPrefix({ tenantId, collection, prefix })
   const cleanPrefix = String(prefix || "").trim();
   if (!cleanPrefix) return [];
   const res = await pool.query(
-    `SELECT id, namespace_id, external_id
+    `SELECT id, namespace_id, external_id, item_type, tenant_id, collection, created_at
      FROM memory_items
      WHERE tenant_id = $1
        AND collection = $2
        AND external_id LIKE $3`,
     [tenantId, collection, `${cleanPrefix}%`]
+  );
+  return res.rows;
+}
+
+async function recordMemoryEvent({ memoryId, tenantId, eventType, eventValue, createdAt }) {
+  const cleanType = String(eventType || "").trim();
+  if (!cleanType) throw new Error("eventType is required");
+  const value = Number(eventValue);
+  if (!Number.isFinite(value)) throw new Error("eventValue must be a number");
+  const time = createdAt ? new Date(createdAt) : null;
+  const res = await pool.query(
+    `INSERT INTO memory_events(memory_id, tenant_id, event_type, event_value, created_at)
+     VALUES ($1, $2, $3, $4, COALESCE($5, NOW()))
+     RETURNING id, memory_id, tenant_id, event_type, event_value, created_at`,
+    [memoryId, tenantId, cleanType, value, time]
+  );
+  return res.rows[0] || null;
+}
+
+async function updateMemoryItemMetrics({
+  id,
+  tenantId,
+  reuseCount,
+  lastUsedAt,
+  utilityEma,
+  redundancyScore,
+  trustScore,
+  importanceHint,
+  pinned,
+  valueScore
+}) {
+  const updates = [];
+  const params = [id, tenantId];
+  if (reuseCount !== undefined) {
+    params.push(Number(reuseCount));
+    updates.push(`reuse_count = $${params.length}`);
+  }
+  if (lastUsedAt !== undefined) {
+    params.push(lastUsedAt ? new Date(lastUsedAt) : null);
+    updates.push(`last_used_at = $${params.length}`);
+  }
+  if (utilityEma !== undefined) {
+    params.push(Number(utilityEma));
+    updates.push(`utility_ema = $${params.length}`);
+  }
+  if (redundancyScore !== undefined) {
+    params.push(Number(redundancyScore));
+    updates.push(`redundancy_score = $${params.length}`);
+  }
+  if (trustScore !== undefined) {
+    params.push(Number(trustScore));
+    updates.push(`trust_score = $${params.length}`);
+  }
+  if (importanceHint !== undefined) {
+    params.push(importanceHint === null ? null : Number(importanceHint));
+    updates.push(`importance_hint = $${params.length}`);
+  }
+  if (pinned !== undefined) {
+    params.push(Boolean(pinned));
+    updates.push(`pinned = $${params.length}`);
+  }
+  if (valueScore !== undefined) {
+    params.push(valueScore === null ? null : Number(valueScore));
+    updates.push(`value_score = $${params.length}`);
+  }
+
+  if (updates.length === 0) return null;
+
+  const res = await pool.query(
+    `UPDATE memory_items
+     SET ${updates.join(", ")}
+     WHERE id = $1 AND tenant_id = $2
+     RETURNING id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+               source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
+               redundancy_score, trust_score, importance_hint, pinned`,
+    params
+  );
+  return res.rows[0] || null;
+}
+
+async function listMemoryItemsForValueDecay({ limit, afterId }) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200;
+  if (afterId) {
+    const res = await pool.query(
+      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+              trust_score, importance_hint, pinned
+       FROM memory_items
+       WHERE id > $1
+       ORDER BY id
+       LIMIT $2`,
+      [afterId, cleanLimit]
+    );
+    return res.rows;
+  }
+
+  const res = await pool.query(
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+            trust_score, importance_hint, pinned
+     FROM memory_items
+     ORDER BY id
+     LIMIT $1`,
+    [cleanLimit]
+  );
+  return res.rows;
+}
+
+async function listMemoryItemsForRedundancy({ limit, afterId }) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 100;
+  const clauses = ["item_type != 'artifact'"];
+  if (afterId) {
+    clauses.push(`id > $1`);
+    const res = await pool.query(
+      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+              trust_score, importance_hint, pinned
+       FROM memory_items
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY id
+       LIMIT $2`,
+      [afterId, cleanLimit]
+    );
+    return res.rows;
+  }
+
+  const res = await pool.query(
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+            trust_score, importance_hint, pinned
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY id
+     LIMIT $1`,
+    [cleanLimit]
+  );
+  return res.rows;
+}
+
+async function listMemoryItemsForLifecycle({ limit, afterId }) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 100;
+  const clauses = ["item_type != 'artifact'"];
+  if (afterId) {
+    clauses.push(`id > $1`);
+    const res = await pool.query(
+      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+              trust_score, importance_hint, pinned
+       FROM memory_items
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY id
+       LIMIT $2`,
+      [afterId, cleanLimit]
+    );
+    return res.rows;
+  }
+
+  const res = await pool.query(
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
+            trust_score, importance_hint, pinned
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY id
+     LIMIT $1`,
+    [cleanLimit]
   );
   return res.rows;
 }
@@ -681,6 +878,22 @@ async function listMemoryJobs({ tenantId, limit, status, jobType }) {
     [tenantId, statusParam, jobType || null, cleanLimit]
   );
   return res.rows;
+}
+
+async function findActiveDeleteJob({ tenantId, memoryId }) {
+  if (!tenantId || !memoryId) return null;
+  const res = await pool.query(
+    `SELECT id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at
+     FROM memory_jobs
+     WHERE tenant_id = $1
+       AND job_type = 'delete_reconcile'
+       AND status = ANY($2)
+       AND input->>'memoryId' = $3
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [tenantId, ["queued", "running"], memoryId]
+  );
+  return res.rows[0] || null;
 }
 
 async function listDueMemoryJobs({ limit }) {
@@ -1102,6 +1315,11 @@ module.exports = {
   listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
   listMemoryItemsByExternalPrefix,
+  recordMemoryEvent,
+  updateMemoryItemMetrics,
+  listMemoryItemsForValueDecay,
+  listMemoryItemsForRedundancy,
+  listMemoryItemsForLifecycle,
   createAuditLog,
   createMemoryLink,
   createMemoryJob,
@@ -1134,6 +1352,7 @@ module.exports = {
   recordServiceTokenUse,
   revokeServiceToken,
   deleteMemoryItemsByCollection,
+  findActiveDeleteJob,
   listDueMemoryJobs,
   listMemoryJobs,
   runMigrations

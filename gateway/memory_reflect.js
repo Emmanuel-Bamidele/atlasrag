@@ -57,7 +57,7 @@ async function reflectMemories({ text, types, maxItems }) {
     model: DEFAULT_MODEL,
     input,
     temperature: 0.2,
-    response_format: { type: "json_object" }
+    text: { format: { type: "json_object" } }
   });
 
   const raw = (resp.output_text || "").trim();
@@ -87,7 +87,7 @@ async function summarizeMemories({ text }) {
     model: COMPACT_MODEL,
     input,
     temperature: 0.2,
-    response_format: { type: "json_object" }
+    text: { format: { type: "json_object" } }
   });
 
   const raw = (resp.output_text || "").trim();

@@ -453,31 +453,56 @@
               <p>Everything you need to go from zero to production: quickstart, auth, APIs, SDKs, Python examples, and deployment guidance.</p>
             </header>
 
-            <h4>Quickstart</h4>
-            <ol>
-              <li>Start the stack: <span class="mono">docker compose up -d</span></li>
-              <li>Create an admin user (first time only):</li>
-            </ol>
-            <div class="doc-block">
-              <pre class="doc-code">docker compose exec gateway node scripts/create_user.js \
+            <div class="doc-tabs" data-doc-tabs="docs">
+              <button class="doc-tab active" data-doc-tab="core" type="button">Documentation</button>
+              <button class="doc-tab" data-doc-tab="amv" type="button">AMV-L algorithm</button>
+            </div>
+            <div class="doc-panels" data-doc-panels="docs">
+              <div class="doc-panel active" data-doc-panel="core">
+                <div class="doc-outline">
+                  <div class="doc-outline-title">Outline</div>
+                  <div class="doc-outline-links">
+                    <a href="#doc-quickstart">Quickstart</a>
+                    <a href="#doc-auth">Authentication</a>
+                    <a href="#doc-tenant-auth">Tenant auth mode</a>
+                    <a href="#doc-security">Security</a>
+                    <a href="#doc-api-ref">API Reference</a>
+                    <a href="#doc-sdks">SDKs</a>
+                    <a href="#doc-examples">Examples</a>
+                    <a href="#doc-client-examples">Client examples</a>
+                    <a href="#doc-visibility">Visibility without end-user login</a>
+                    <a href="#doc-architecture">Architecture</a>
+                    <a href="#doc-deployment">Deployment</a>
+                  </div>
+                </div>
+
+            <details class="details section" id="doc-quickstart" open>
+              <summary>Quickstart</summary>
+              <div class="section-body">
+                <ol>
+                  <li>Start the stack: <span class="mono">docker compose up -d</span></li>
+                  <li>Create an admin user (first time only):</li>
+                </ol>
+                <div class="doc-block">
+                  <pre class="doc-code">docker compose exec gateway node scripts/create_user.js \
   --username admin \
   --password changeme \
   --tenant acme \
   --role admin</pre>
-            </div>
-            <ol start="3">
-              <li>Login to get a JWT (required to create API keys):</li>
-            </ol>
-            <div class="doc-block">
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/login \
+                </div>
+                <ol start="3">
+                  <li>Login to get a JWT (required to create API keys):</li>
+                </ol>
+                <div class="doc-block">
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/login \
   -H "Content-Type: application/json" \
   -d '{ "username": "admin", "password": "changeme" }'</pre>
-            </div>
-            <ol start="4">
-              <li>Create a service token (API key) for your app:</li>
-            </ol>
-            <div class="doc-block">
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
+                </div>
+                <ol start="4">
+                  <li>Create a service token (API key) for your app:</li>
+                </ol>
+                <div class="doc-block">
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
   -H "Authorization: Bearer YOUR_ADMIN_JWT" \
   -H "Content-Type: application/json" \
   -d '{
@@ -486,12 +511,12 @@
     "roles": ["indexer"],
     "expiresAt": "2026-12-31T00:00:00Z"
   }'</pre>
-            </div>
-            <ol start="5">
-              <li>Index your first document:</li>
-            </ol>
-            <div class="doc-block">
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+                </div>
+                <ol start="5">
+                  <li>Index your first document:</li>
+                </ol>
+                <div class="doc-block">
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Idempotency-Key: idx-001" \
   -H "Content-Type: application/json" \
@@ -500,32 +525,36 @@
     "collection": "default",
     "text": "Your document text..."
   }'</pre>
-            </div>
-            <ol start="6">
-              <li>Search or Ask with <span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span>.</li>
-            </ol>
-            <div class="doc-block mono">GET /v1/health</div>
-            <div class="doc-block mono">POST /v1/login</div>
-            <div class="doc-block mono">POST /v1/docs</div>
+                </div>
+                <ol start="6">
+                  <li>Search or Ask with <span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span>.</li>
+                </ol>
+                <div class="doc-block mono">GET /v1/health</div>
+                <div class="doc-block mono">POST /v1/login</div>
+                <div class="doc-block mono">POST /v1/docs</div>
+              </div>
+            </details>
 
-            <h4>Authentication</h4>
-            <p>
-              Protected endpoints require either a JWT or a service token. Send
-              <span class="mono">Authorization: Bearer &lt;jwt&gt;</span> or <span class="mono">X-API-Key: &lt;token&gt;</span>
-              (also supports <span class="mono">Authorization: ApiKey &lt;token&gt;</span>).
-            </p>
-            <p>
-              Multi-tenant isolation is enforced by the auth token. JWTs must include a tenant identifier
-              using one of these claims: <span class="mono">tenant</span>, <span class="mono">tid</span>, or <span class="mono">sub</span>.
-              Service tokens inherit the tenant from the admin who created them.
-            </p>
-            <p>
-              Admins can issue service tokens via <span class="mono">POST /v1/admin/service-tokens</span>.
-              Store the returned token securely; it is shown only once.
-            </p>
-            <div class="doc-block">
-              <div class="doc-label">Create API key (admin)</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
+            <details class="details section" id="doc-auth" open>
+              <summary>Authentication</summary>
+              <div class="section-body">
+                <p>
+                  Protected endpoints require either a JWT or a service token. Send
+                  <span class="mono">Authorization: Bearer &lt;jwt&gt;</span> or <span class="mono">X-API-Key: &lt;token&gt;</span>
+                  (also supports <span class="mono">Authorization: ApiKey &lt;token&gt;</span>).
+                </p>
+                <p>
+                  Multi-tenant isolation is enforced by the auth token. JWTs must include a tenant identifier
+                  using one of these claims: <span class="mono">tenant</span>, <span class="mono">tid</span>, or <span class="mono">sub</span>.
+                  Service tokens inherit the tenant from the admin who created them.
+                </p>
+                <p>
+                  Admins can issue service tokens via <span class="mono">POST /v1/admin/service-tokens</span>.
+                  Store the returned token securely; it is shown only once.
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">Create API key (admin)</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
   -H "Authorization: Bearer YOUR_ADMIN_JWT" \
   -H "Content-Type: application/json" \
   -d '{
@@ -534,109 +563,125 @@
     "roles": ["indexer"],
     "expiresAt": "2026-12-31T00:00:00Z"
   }'</pre>
-            </div>
-            <p class="hint">Requires role <span class="mono">admin</span> (or a token whose principal matches the tenant).</p>
+                </div>
+                <p class="hint">Requires role <span class="mono">admin</span> (or a token whose principal matches the tenant).</p>
+              </div>
+            </details>
 
-            <h4>Tenant auth mode</h4>
-            <p>
-              Admins can set per-tenant login policy: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, or
-              <span class="mono">password_only</span>. <span class="mono">sso_only</span> disables password login; <span class="mono">password_only</span> disables SSO.
-            </p>
-            <p>
-              You can also restrict which SSO providers are allowed by supplying <span class="mono">ssoProviders</span>
-              (<span class="mono">google</span>, <span class="mono">azure</span>, <span class="mono">okta</span>).
-            </p>
-            <div class="doc-block">
-              <div class="doc-label">Get auth mode (admin)</div>
-              <pre class="doc-code">curl -X GET http://localhost:3000/v1/admin/tenant \
+            <details class="details section" id="doc-tenant-auth" open>
+              <summary>Tenant auth mode</summary>
+              <div class="section-body">
+                <p>
+                  Admins can set per-tenant login policy: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, or
+                  <span class="mono">password_only</span>. <span class="mono">sso_only</span> disables password login; <span class="mono">password_only</span> disables SSO.
+                </p>
+                <p>
+                  You can also restrict which SSO providers are allowed by supplying <span class="mono">ssoProviders</span>
+                  (<span class="mono">google</span>, <span class="mono">azure</span>, <span class="mono">okta</span>).
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">Get auth mode (admin)</div>
+                  <pre class="doc-code">curl -X GET http://localhost:3000/v1/admin/tenant \
   -H "Authorization: Bearer YOUR_ADMIN_JWT"</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Set auth mode (admin)</div>
-              <pre class="doc-code">curl -X PATCH http://localhost:3000/v1/admin/tenant \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Set auth mode (admin)</div>
+                  <pre class="doc-code">curl -X PATCH http://localhost:3000/v1/admin/tenant \
   -H "Authorization: Bearer YOUR_ADMIN_JWT" \
   -H "Content-Type: application/json" \
   -d '{ "authMode": "sso_only", "ssoProviders": ["google"] }'</pre>
-            </div>
+                </div>
+              </div>
+            </details>
             <p class="hint">Valid values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>.</p>
 
-            <h4>Security</h4>
-            <div class="doc-block">
-              <div class="doc-label">Built-in controls</div>
-              <ul>
-                <li><strong>Auth required:</strong> JWTs or service tokens protect all sensitive endpoints.</li>
-                <li><strong>Tenant isolation:</strong> data is partitioned by tenant and enforced in every query.</li>
-                <li><strong>Role-based access:</strong> <span class="mono">reader</span>/<span class="mono">indexer</span>/<span class="mono">admin</span> control access to privileged actions.</li>
-                <li><strong>Tenant auth mode:</strong> enforce <span class="mono">sso_only</span> or <span class="mono">password_only</span> per tenant.</li>
-                <li><strong>Tenant SSO allowlist:</strong> restrict SSO to <span class="mono">google</span>, <span class="mono">azure</span>, or <span class="mono">okta</span>.</li>
-                <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> rules apply to search/recall.</li>
-                <li><strong>Idempotency:</strong> write/index/reflect accept <span class="mono">Idempotency-Key</span> to prevent double writes.</li>
-                <li><strong>Audit logs:</strong> sensitive actions (auth policy changes, key revokes, deletes) are recorded with actor + request metadata.</li>
-                <li><strong>Rate limits + lockout:</strong> login throttling + failed-login lockout are enabled.</li>
-                <li><strong>URL ingestion safety:</strong> private IP ranges are blocked (SSRF protection).</li>
-                <li><strong>Prompt injection guard:</strong> source sanitization is enabled by default.</li>
-              </ul>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">RBAC by endpoint</div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Endpoint</th>
-                    <th>Role required</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td><span class="mono">GET /v1/health</span></td><td>Public</td></tr>
-                  <tr><td><span class="mono">POST /v1/login</span></td><td>Public</td></tr>
-                  <tr><td><span class="mono">/v1/auth/*</span></td><td>Public (SSO)</td></tr>
-                  <tr><td><span class="mono">GET /v1/stats</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">GET /v1/metrics</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">GET /v1/docs</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">GET /v1/collections</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">GET /v1/search</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">POST /v1/ask</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">POST /v1/memory/recall</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">POST /v1/docs</span></td><td>Indexer+</td></tr>
-                  <tr><td><span class="mono">POST /v1/docs/url</span></td><td>Indexer+</td></tr>
-                  <tr><td><span class="mono">DELETE /v1/docs/:docId</span></td><td>Indexer+</td></tr>
-                  <tr><td><span class="mono">POST /v1/memory/write</span></td><td>Indexer+</td></tr>
-                  <tr><td><span class="mono">POST /v1/memory/reflect</span></td><td>Indexer+</td></tr>
-                  <tr><td><span class="mono">GET /v1/jobs</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">GET /v1/jobs/:id</span></td><td>Reader+</td></tr>
-                  <tr><td><span class="mono">POST /v1/memory/cleanup</span></td><td>Admin</td></tr>
-                  <tr><td><span class="mono">POST /v1/memory/compact</span></td><td>Admin</td></tr>
-                  <tr><td><span class="mono">DELETE /v1/collections/:collection</span></td><td>Admin</td></tr>
-                  <tr><td><span class="mono">/v1/admin/service-tokens</span></td><td>Admin</td></tr>
-                  <tr><td><span class="mono">/v1/admin/tenant</span></td><td>Admin</td></tr>
-                  <tr><td><span class="mono">/v1/admin/usage</span></td><td>Admin</td></tr>
-                </tbody>
-              </table>
-              <p class="hint">Reader+ means <span class="mono">reader</span>, <span class="mono">indexer</span>, or <span class="mono">admin</span>. Indexer+ means <span class="mono">indexer</span> or <span class="mono">admin</span>.</p>
-            </div>
-            <h4>API Reference</h4>
-            <p>
-              Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.
-              All versioned routes live under <span class="mono">/v1</span>; legacy routes remain as aliases.
-            </p>
-            <ul>
-              <li><span class="mono">/v1/docs</span> index + list documents</li>
-              <li><span class="mono">/v1/docs/url</span> index content from a URL</li>
-              <li><span class="mono">/v1/docs/:docId</span> delete a document</li>
-              <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
-              <li><span class="mono">/v1/ask</span> RAG answers with citations</li>
-              <li><span class="mono">/v1/memory/write</span> durable memory items</li>
-              <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
-              <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
-              <li><span class="mono">/v1/metrics</span> Prometheus metrics (per tenant)</li>
-              <li><span class="mono">/v1/jobs/:id</span> job status</li>
-              <li><span class="mono">/v1/admin/tenant</span> tenant auth mode (admin)</li>
-              <li><span class="mono">/v1/admin/service-tokens</span> issue API keys (admin)</li>
-            </ul>
-            <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
-            <div class="doc-block">
-              <div class="doc-label">Success</div>
-              <pre class="doc-code">{
+            <details class="details section" id="doc-security" open>
+              <summary>Security</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Built-in controls</div>
+                  <ul>
+                    <li><strong>Auth required:</strong> JWTs or service tokens protect all sensitive endpoints.</li>
+                    <li><strong>Tenant isolation:</strong> data is partitioned by tenant and enforced in every query.</li>
+                    <li><strong>Role-based access:</strong> <span class="mono">reader</span>/<span class="mono">indexer</span>/<span class="mono">admin</span> control access to privileged actions.</li>
+                    <li><strong>Tenant auth mode:</strong> enforce <span class="mono">sso_only</span> or <span class="mono">password_only</span> per tenant.</li>
+                    <li><strong>Tenant SSO allowlist:</strong> restrict SSO to <span class="mono">google</span>, <span class="mono">azure</span>, or <span class="mono">okta</span>.</li>
+                    <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> rules apply to search/recall.</li>
+                    <li><strong>Idempotency:</strong> write/index/reflect accept <span class="mono">Idempotency-Key</span> to prevent double writes.</li>
+                    <li><strong>Audit logs:</strong> sensitive actions (auth policy changes, key revokes, deletes) are recorded with actor + request metadata.</li>
+                    <li><strong>Rate limits + lockout:</strong> login throttling + failed-login lockout are enabled.</li>
+                    <li><strong>URL ingestion safety:</strong> private IP ranges are blocked (SSRF protection).</li>
+                    <li><strong>Prompt injection guard:</strong> source sanitization is enabled by default.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">RBAC by endpoint</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Endpoint</th>
+                        <th>Role required</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><span class="mono">GET /v1/health</span></td><td>Public</td></tr>
+                      <tr><td><span class="mono">POST /v1/login</span></td><td>Public</td></tr>
+                      <tr><td><span class="mono">/v1/auth/*</span></td><td>Public (SSO)</td></tr>
+                      <tr><td><span class="mono">GET /v1/stats</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">GET /v1/metrics</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">GET /v1/docs</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">GET /v1/collections</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">GET /v1/search</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/ask</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/recall</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/feedback</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/event</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/docs</span></td><td>Indexer+</td></tr>
+                      <tr><td><span class="mono">POST /v1/docs/url</span></td><td>Indexer+</td></tr>
+                      <tr><td><span class="mono">DELETE /v1/docs/:docId</span></td><td>Indexer+</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/write</span></td><td>Indexer+</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/reflect</span></td><td>Indexer+</td></tr>
+                      <tr><td><span class="mono">GET /v1/jobs</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">GET /v1/jobs/:id</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/cleanup</span></td><td>Admin</td></tr>
+                      <tr><td><span class="mono">POST /v1/memory/compact</span></td><td>Admin</td></tr>
+                      <tr><td><span class="mono">DELETE /v1/collections/:collection</span></td><td>Admin</td></tr>
+                      <tr><td><span class="mono">/v1/admin/service-tokens</span></td><td>Admin</td></tr>
+                      <tr><td><span class="mono">/v1/admin/tenant</span></td><td>Admin</td></tr>
+                      <tr><td><span class="mono">/v1/admin/usage</span></td><td>Admin</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="hint">Reader+ means <span class="mono">reader</span>, <span class="mono">indexer</span>, or <span class="mono">admin</span>. Indexer+ means <span class="mono">indexer</span> or <span class="mono">admin</span>.</p>
+                </div>
+              </div>
+            </details>
+            <details class="details section" id="doc-api-ref" open>
+              <summary>API Reference</summary>
+              <div class="section-body">
+                <p>
+                  Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.
+                  All versioned routes live under <span class="mono">/v1</span>; legacy routes remain as aliases.
+                </p>
+                <ul>
+                  <li><span class="mono">/v1/docs</span> index + list documents</li>
+                  <li><span class="mono">/v1/docs/url</span> index content from a URL</li>
+                  <li><span class="mono">/v1/docs/:docId</span> delete a document</li>
+                  <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
+                  <li><span class="mono">/v1/ask</span> RAG answers with citations</li>
+                  <li><span class="mono">/v1/memory/write</span> durable memory items</li>
+                  <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
+                  <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
+                  <li><span class="mono">/v1/feedback</span> user feedback signals</li>
+                  <li><span class="mono">/v1/memory/event</span> task outcome signals</li>
+                  <li><span class="mono">/v1/metrics</span> Prometheus metrics (per tenant)</li>
+                  <li><span class="mono">/v1/jobs/:id</span> job status</li>
+                  <li><span class="mono">/v1/admin/tenant</span> tenant auth mode (admin)</li>
+                  <li><span class="mono">/v1/admin/service-tokens</span> issue API keys (admin)</li>
+                </ul>
+                <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Success</div>
+                  <pre class="doc-code">{
   "ok": true,
   "data": { ... },
   "meta": {
@@ -645,60 +690,68 @@
     "timestamp": "2026-02-12T12:00:00.000Z"
   }
 }</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Error</div>
-              <pre class="doc-code">{
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Error</div>
+                  <pre class="doc-code">{
   "ok": false,
   "error": { "message": "Invalid input", "code": "INVALID_INPUT" },
   "meta": { "tenantId": "acme", "collection": "default", "timestamp": "..." }
 }</pre>
-            </div>
+                </div>
 
-            <div class="doc-block">
-              <div class="doc-label">Error codes (common)</div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Meaning / cause</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td><span class="mono">AUTH_REQUIRED</span></td><td>Missing or malformed auth header.</td></tr>
-                  <tr><td><span class="mono">AUTH_INVALID</span></td><td>Invalid JWT/API key or invalid login credentials.</td></tr>
-                  <tr><td><span class="mono">AUTH_EXPIRED</span></td><td>API key expired.</td></tr>
-                  <tr><td><span class="mono">AUTH_REVOKED</span></td><td>API key revoked.</td></tr>
-                  <tr><td><span class="mono">AUTH_CONFIG</span></td><td>Server auth misconfiguration (missing <span class="mono">JWT_SECRET</span>).</td></tr>
-                  <tr><td><span class="mono">AUTH_LOOKUP_FAILED</span></td><td>Auth lookup failed in the database.</td></tr>
-                  <tr><td><span class="mono">RATE_LIMITED</span></td><td>Too many requests in the current window.</td></tr>
-                  <tr><td><span class="mono">FORBIDDEN</span></td><td>Insufficient role/permissions for the endpoint.</td></tr>
-                  <tr><td><span class="mono">NOT_FOUND</span></td><td>Requested resource does not exist.</td></tr>
-                  <tr><td><span class="mono">INVALID_INPUT</span></td><td>Missing or invalid parameters in the request.</td></tr>
-                  <tr><td><span class="mono">INVALID_DOC_ID</span></td><td>Doc ID failed validation (format/characters).</td></tr>
-                  <tr><td><span class="mono">ACCOUNT_LOCKED</span></td><td>Account locked after repeated failed logins.</td></tr>
-                  <tr><td><span class="mono">ACCOUNT_DISABLED</span></td><td>User account disabled by admin.</td></tr>
-                  <tr><td><span class="mono">SSO_ONLY</span></td><td>Account requires SSO login.</td></tr>
-                  <tr><td><span class="mono">IDEMPOTENCY_KEY_REQUIRED</span></td><td>Missing <span class="mono">Idempotency-Key</span> header.</td></tr>
-                  <tr><td><span class="mono">IDEMPOTENCY_KEY_INVALID</span></td><td>Invalid or oversized idempotency key.</td></tr>
-                  <tr><td><span class="mono">IDEMPOTENCY_KEY_REUSED</span></td><td>Idempotency key reused with different payload.</td></tr>
-                  <tr><td><span class="mono">IDEMPOTENCY_IN_PROGRESS</span></td><td>Request with the same key is already running.</td></tr>
-                </tbody>
-              </table>
-              <p class="hint">Some endpoints also return operation-specific codes like <span class="mono">*_FAILED</span> for internal failures.</p>
-            </div>
+                <div class="doc-block">
+                  <div class="doc-label">Error codes (common)</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>Meaning / cause</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><span class="mono">AUTH_REQUIRED</span></td><td>Missing or malformed auth header.</td></tr>
+                      <tr><td><span class="mono">AUTH_INVALID</span></td><td>Invalid JWT/API key or invalid login credentials.</td></tr>
+                      <tr><td><span class="mono">AUTH_EXPIRED</span></td><td>API key expired.</td></tr>
+                      <tr><td><span class="mono">AUTH_REVOKED</span></td><td>API key revoked.</td></tr>
+                      <tr><td><span class="mono">AUTH_CONFIG</span></td><td>Server auth misconfiguration (missing <span class="mono">JWT_SECRET</span>).</td></tr>
+                      <tr><td><span class="mono">AUTH_LOOKUP_FAILED</span></td><td>Auth lookup failed in the database.</td></tr>
+                      <tr><td><span class="mono">RATE_LIMITED</span></td><td>Too many requests in the current window.</td></tr>
+                      <tr><td><span class="mono">FORBIDDEN</span></td><td>Insufficient role/permissions for the endpoint.</td></tr>
+                      <tr><td><span class="mono">NOT_FOUND</span></td><td>Requested resource does not exist.</td></tr>
+                      <tr><td><span class="mono">INVALID_INPUT</span></td><td>Missing or invalid parameters in the request.</td></tr>
+                      <tr><td><span class="mono">INVALID_DOC_ID</span></td><td>Doc ID failed validation (format/characters).</td></tr>
+                      <tr><td><span class="mono">ACCOUNT_LOCKED</span></td><td>Account locked after repeated failed logins.</td></tr>
+                      <tr><td><span class="mono">ACCOUNT_DISABLED</span></td><td>User account disabled by admin.</td></tr>
+                      <tr><td><span class="mono">SSO_ONLY</span></td><td>Account requires SSO login.</td></tr>
+                      <tr><td><span class="mono">IDEMPOTENCY_KEY_REQUIRED</span></td><td>Missing <span class="mono">Idempotency-Key</span> header.</td></tr>
+                      <tr><td><span class="mono">IDEMPOTENCY_KEY_INVALID</span></td><td>Invalid or oversized idempotency key.</td></tr>
+                      <tr><td><span class="mono">IDEMPOTENCY_KEY_REUSED</span></td><td>Idempotency key reused with different payload.</td></tr>
+                      <tr><td><span class="mono">IDEMPOTENCY_IN_PROGRESS</span></td><td>Request with the same key is already running.</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="hint">Some endpoints also return operation-specific codes like <span class="mono">*_FAILED</span> for internal failures.</p>
+                </div>
+              </div>
+            </details>
 
-            <h4>SDKs</h4>
-            <p>
-              Official SDK: <span class="mono">sdk/node</span> (Node.js). It supports JWT or API key auth,
-              idempotency headers, and memory APIs. Additional SDKs can be added using the OpenAPI schema.
-            </p>
+            <details class="details section" id="doc-sdks" open>
+              <summary>SDKs</summary>
+              <div class="section-body">
+                <p>
+                  Official SDK: <span class="mono">sdk/node</span> (Node.js). It supports JWT or API key auth,
+                  idempotency headers, and memory APIs. Additional SDKs can be added using the OpenAPI schema.
+                </p>
+              </div>
+            </details>
 
-            <h4>Examples</h4>
-            <p>cURL:</p>
-            <div class="doc-block">
-              <div class="doc-label">Index text</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+            <details class="details section" id="doc-examples" open>
+              <summary>Examples</summary>
+              <div class="section-body">
+                <p>cURL:</p>
+                <div class="doc-block">
+                  <div class="doc-label">Index text</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Idempotency-Key: idx-001" \
   -H "Content-Type: application/json" \
@@ -707,37 +760,53 @@
     "collection": "default",
     "text": "Your document text..."
   }'</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Search</div>
-              <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default" \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Search</div>
+                  <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default" \
   -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Ask</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Ask</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "question": "How is durability handled?", "k": 5 }'</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Delete a document</div>
-              <pre class="doc-code">curl -X DELETE "http://localhost:3000/v1/docs/swe_notes?collection=default" \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Delete a document</div>
+                  <pre class="doc-code">curl -X DELETE "http://localhost:3000/v1/docs/swe_notes?collection=default" \
   -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Memory write + recall</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/write \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Memory write + recall</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/write \
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Idempotency-Key: mem-001" \
   -H "Content-Type: application/json" \
-  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default", "agentId": "agent:release-bot", "tags": ["release", "ops"] }'
+  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default", "agentId": "agent:release-bot", "tags": ["release", "ops"], "importanceHint": 0.6, "pinned": false }'
 
 curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Content-Type: application/json" \
   -d '{ "query": "release day", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "k": 5 }'</pre>
-            </div>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Memory feedback</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/feedback \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "memoryId": "mem_123", "feedback": "positive", "eventValue": 0.8 }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Task outcome event</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/event \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "memoryId": "mem_123", "eventType": "task_success", "eventValue": 0.9 }'</pre>
+                </div>
+              </div>
+            </details>
             <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
             <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
             <div class="doc-block">
@@ -760,13 +829,15 @@ curl -X POST http://localhost:3000/v1/memory/recall \
               </table>
             </div>
 
-            <h4>Client examples (Python + Node.js)</h4>
-            <div class="doc-tabs" data-doc-tabs="clients">
-              <button class="doc-tab active" data-doc-tab="python" type="button">Python</button>
-              <button class="doc-tab" data-doc-tab="node" type="button">Node.js</button>
-            </div>
-            <div class="doc-panels" data-doc-panels="clients">
-              <div class="doc-panel active" data-doc-panel="python">
+            <details class="details section" id="doc-client-examples" open>
+              <summary>Client examples (Python + Node.js)</summary>
+              <div class="section-body">
+                <div class="doc-tabs" data-doc-tabs="clients">
+                  <button class="doc-tab active" data-doc-tab="python" type="button">Python</button>
+                  <button class="doc-tab" data-doc-tab="node" type="button">Node.js</button>
+                </div>
+                <div class="doc-panels" data-doc-panels="clients">
+                  <div class="doc-panel active" data-doc-panel="python">
                 <div class="doc-block">
                   <div class="doc-label">Install + env</div>
                   <pre class="doc-code">pip install requests
@@ -820,7 +891,9 @@ res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-
   "collection": "default",
   "text": "Vector WAL is enabled in production.",
   "agentId": "agent:ops-bot",
-  "tags": ["infra", "wal"]
+  "tags": ["infra", "wal"],
+  "importanceHint": 0.6,
+  "pinned": false
 })
 res.raise_for_status()
 
@@ -833,6 +906,14 @@ res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
 })
 res.raise_for_status()
 print(res.json())
+
+# 5b) Feedback
+res = requests.post(f"{BASE}/v1/feedback", headers=headers, json={
+  "memoryId": "mem_123",
+  "feedback": "positive",
+  "eventValue": 0.8
+})
+res.raise_for_status()
 
 # 6) Reflect (async job)
 res = requests.post(f"{BASE}/v1/memory/reflect", headers={**headers, "Idempotency-Key": "reflect-001"}, json={
@@ -878,7 +959,7 @@ res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
 })</pre>
                 </div>
               </div>
-              <div class="doc-panel" data-doc-panel="node">
+                  <div class="doc-panel" data-doc-panel="node">
                 <div class="doc-block">
                   <div class="doc-label">Install + env (Node 18+)</div>
                   <pre class="doc-code">export ATLASRAG_URL="http://localhost:3000"
@@ -934,11 +1015,16 @@ await post("/v1/memory/write", {
   collection: "default",
   text: "Vector WAL is enabled in production.",
   agentId: "agent:ops-bot",
-  tags: ["infra", "wal"]
+  tags: ["infra", "wal"],
+  importanceHint: 0.6,
+  pinned: false
 }, { "Idempotency-Key": "mem-001" });
 
 // 5) Recall
 console.log(await post("/v1/memory/recall", { query: "WAL enabled", types: ["semantic"], tags: ["infra"], k: 5 }));
+
+// 5b) Feedback
+await post("/v1/feedback", { memoryId: "mem_123", feedback: "positive", eventValue: 0.8 });
 
 // 6) Reflect + job polling
 const reflect = await post("/v1/memory/reflect", {
@@ -980,22 +1066,26 @@ while (true) {
   k: 5
 });</pre>
                 </div>
+                  </div>
+                </div>
+                <p class="hint">Visibility can be <span class="mono">tenant</span>, <span class="mono">private</span>, or <span class="mono">acl</span>. For ACL, include a list of allowed principals.</p>
               </div>
-            </div>
-            <p class="hint">Visibility can be <span class="mono">tenant</span>, <span class="mono">private</span>, or <span class="mono">acl</span>. For ACL, include a list of allowed principals.</p>
+            </details>
 
-            <h4>Visibility without end-user login</h4>
-            <p>
-              If your app does not want users to log in directly, you can still enforce visibility by having
-              your backend call AtlasRAG with a service token and pass <span class="mono">principalId</span> and/or
-              <span class="mono">privileges</span> in the payload. The server matches these against the item's
-              visibility and ACL list. Enable this by setting <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span> and
-              using an <span class="mono">admin</span> service token. Never expose
-              this token to the browser.
-            </p>
-            <div class="doc-block">
-              <div class="doc-label">Write with ACL (server-side principal)</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+            <details class="details section" id="doc-visibility" open>
+              <summary>Visibility without end-user login</summary>
+              <div class="section-body">
+                <p>
+                  If your app does not want users to log in directly, you can still enforce visibility by having
+                  your backend call AtlasRAG with a service token and pass <span class="mono">principalId</span> and/or
+                  <span class="mono">privileges</span> in the payload. The server matches these against the item's
+                  visibility and ACL list. Enable this by setting <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span> and
+                  using an <span class="mono">admin</span> service token. Never expose
+                  this token to the browser.
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">Write with ACL (server-side principal)</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
   -H "X-API-Key: ADMIN_SERVICE_TOKEN" \
   -H "Idempotency-Key: idx-003" \
   -H "Content-Type: application/json" \
@@ -1008,10 +1098,10 @@ while (true) {
     "visibility": "acl",
     "acl": ["user:alice", "dept:hr"]
   }'</pre>
-            </div>
-            <div class="doc-block">
-              <div class="doc-label">Recall as a principal (server-side)</div>
-              <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/recall \
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Recall as a principal (server-side)</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/memory/recall \
   -H "X-API-Key: ADMIN_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1022,36 +1112,373 @@ while (true) {
     "types": ["semantic"],
     "k": 5
   }'</pre>
+                </div>
+                <p class="hint">
+                  If you use JWTs, <span class="mono">principalId</span> is derived from the token and should not be
+                  provided in the payload. <span class="mono">privileges</span> is only honored for admin service
+                  tokens when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.
+                </p>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-architecture" open>
+              <summary>Architecture</summary>
+              <div class="section-body">
+                <ul>
+                  <li>Gateway (Node) handles auth, routing, and orchestration.</li>
+                  <li>Vector store (C++ TCP service) stores embeddings and serves similarity search.</li>
+                  <li>Postgres stores chunks, memory items, links, jobs, and idempotency keys.</li>
+                  <li>OpenAI (or compatible) provides embeddings and generation.</li>
+                  <li>Background jobs handle reflection, summarization, redundancy scoring, and lifecycle tasks.</li>
+                  <li>Expired items are automatically swept and removed (vectors + DB rows), preventing orphan vectors.</li>
+                  <li>Jobs retry with exponential backoff before transitioning to failed.</li>
+                  <li>Job reruns are idempotent (derived memories are replaced, not duplicated).</li>
+                  <li>Structured logs include <span class="mono">request_id</span>, <span class="mono">tenant_id</span>, and <span class="mono">collection</span>.</li>
+                  <li>Prometheus metrics are exposed at <span class="mono">/metrics</span> (scoped to the tenant; admin sees all tenants).</li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment" open>
+              <summary>Deployment</summary>
+              <div class="section-body">
+                <ul>
+                  <li>Run with Docker Compose: <span class="mono">docker compose up -d</span></li>
+                  <li>Set required env: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">JWT_SECRET</span>, Postgres credentials.</li>
+                  <li>Timeouts: <span class="mono">TCP_TIMEOUT_MS</span>, <span class="mono">DB_CONNECT_TIMEOUT_MS</span>, <span class="mono">DB_QUERY_TIMEOUT_MS</span>, <span class="mono">DB_STATEMENT_TIMEOUT_MS</span>, <span class="mono">OPENAI_TIMEOUT_MS</span>.</li>
+                  <li>Rate limiting: per IP (<span class="mono">RATE_LIMIT_WINDOW_MS</span>/<span class="mono">RATE_LIMIT_MAX</span>) and per tenant/key (<span class="mono">TENANT_RATE_LIMIT_WINDOW_MS</span>/<span class="mono">TENANT_RATE_LIMIT_MAX</span>).</li>
+                  <li>Expose gateway on <span class="mono">:3000</span> and front with HTTPS in production.</li>
+                  <li>Optionally set <span class="mono">PUBLIC_BASE_URL</span> / <span class="mono">OPENAPI_BASE_URL</span> for correct docs links.</li>
+                </ul>
+              </div>
+            </details>
+              </div>
+              <div class="doc-panel" data-doc-panel="amv">
+                <div class="doc-outline">
+                  <div class="doc-outline-title">Outline</div>
+                  <div class="doc-outline-links">
+                    <a href="#amv-overview">Overview</a>
+                    <a href="#amv-why">Why AMV-L</a>
+                    <a href="#amv-value">Memory value score</a>
+                    <a href="#amv-reuse">Reuse (R)</a>
+                    <a href="#amv-utility">Utility (U)</a>
+                    <a href="#amv-novelty">Novelty (N)</a>
+                    <a href="#amv-trust">Trust (T)</a>
+                    <a href="#amv-recency">Recency (A)</a>
+                    <a href="#amv-importance">Importance hint (H)</a>
+                    <a href="#amv-cost">Cost (C)</a>
+                    <a href="#amv-lifecycle">Lifecycle decisions</a>
+                    <a href="#amv-delete">Delete</a>
+                    <a href="#amv-compact">Compact</a>
+                    <a href="#amv-promote">Promote</a>
+                    <a href="#amv-ttl">Hard TTL vs AMV-L</a>
+                    <a href="#amv-signals">Signals and events</a>
+                    <a href="#amv-benefits">Benefits</a>
+                    <a href="#amv-summary">Summary</a>
+                  </div>
+                </div>
+                <details class="details section" id="amv-overview" open>
+                  <summary>Adaptive Memory Value + Lifecycle (AMV-L)</summary>
+                  <div class="section-body">
+                    <p>
+                      AtlasRAG implements an adaptive memory lifecycle algorithm called Adaptive Memory Value + Lifecycle (AMV-L).
+                      AMV-L continuously estimates the value of each memory item based on observed usage and outcome signals, and
+                      automatically decides whether to retain, compact, promote, or delete memory.
+                    </p>
+                    <p>
+                      This allows AtlasRAG to maintain bounded, high-signal long-term memory for agents.
+                    </p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-why" open>
+                  <summary>Why AMV-L Exists</summary>
+                  <div class="section-body">
+                    <p>Naive memory systems:</p>
+                    <ul>
+                      <li>Store everything forever</li>
+                      <li>Or delete using fixed TTL</li>
+                    </ul>
+                    <p>Both approaches lead to:</p>
+                    <ul>
+                      <li>Memory bloat</li>
+                      <li>Noisy retrieval</li>
+                      <li>High token costs</li>
+                      <li>Loss of important knowledge</li>
+                    </ul>
+                    <p>AMV-L treats memory as an optimization problem rather than a storage problem.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-value" open>
+                  <summary>Memory Value Score</summary>
+                  <div class="section-body">
+                    <p>Each memory item <span class="mono">m</span> has a value score: <span class="mono">V(m) in [0,1]</span>.</p>
+                    <div class="doc-block">
+                      <div class="doc-label">Formula</div>
+                      <pre class="doc-code">V = sigmoid(
+  1.2 * R +
+  2.0 * U +
+  1.0 * N +
+  1.0 * T +
+  0.5 * A +
+  1.0 * H -
+  1.0 * C
+)</pre>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">Ranges &amp; Transforms (Code-Accurate)</div>
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Signal</th>
+                            <th>Source</th>
+                            <th>Range / Transform</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td><span class="mono">R</span></td>
+                            <td><span class="mono">reuse_count</span></td>
+                            <td><span class="mono">R = log1p(reuse_count)</span> (unbounded, sublinear)</td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">U</span></td>
+                            <td><span class="mono">utility_ema</span></td>
+                            <td>Clamped to <span class="mono">[-1, 1]</span> (EMA target values in that range)</td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">N</span></td>
+                            <td><span class="mono">redundancy_score</span></td>
+                            <td><span class="mono">N = 1 - redundancy_score</span>, where redundancy is clamped to <span class="mono">[0, 1]</span></td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">T</span></td>
+                            <td><span class="mono">trust_score</span></td>
+                            <td>Clamped to <span class="mono">[0, 1]</span>; defaults to <span class="mono">0.5</span>, updated by feedback/task events</td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">A</span></td>
+                            <td><span class="mono">last_used_at</span> / <span class="mono">created_at</span></td>
+                            <td>Exponential decay in <span class="mono">[0, 1]</span> with a configurable half-life</td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">H</span></td>
+                            <td><span class="mono">importance_hint</span></td>
+                            <td>Clamped to <span class="mono">[-1, 1]</span> (optional; default <span class="mono">0</span>)</td>
+                          </tr>
+                          <tr>
+                            <td><span class="mono">C</span></td>
+                            <td><span class="mono">tokens_est</span></td>
+                            <td><span class="mono">C = tokens_est / cost_scale</span>, clamped to <span class="mono">[0, 2]</span> (default scale 2000)</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <p><span class="mono">V</span> is computed with a sigmoid and then clamped to <span class="mono">[0, 1]</span>.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">Symbols</div>
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Symbol</th>
+                            <th>Meaning</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr><td><span class="mono">R</span></td><td>Reuse signal</td></tr>
+                          <tr><td><span class="mono">U</span></td><td>Utility signal (EMA)</td></tr>
+                          <tr><td><span class="mono">N</span></td><td>Novelty (1 - redundancy)</td></tr>
+                          <tr><td><span class="mono">T</span></td><td>Trust score</td></tr>
+                          <tr><td><span class="mono">A</span></td><td>Recency/age signal</td></tr>
+                          <tr><td><span class="mono">H</span></td><td>Importance hint</td></tr>
+                          <tr><td><span class="mono">C</span></td><td>Cost signal</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-reuse" open>
+                  <summary>Reuse (R)</summary>
+                  <div class="section-body">
+                    <p>Measures how often and how recently a memory is retrieved.</p>
+                    <ul>
+                      <li>Rolling reuse count</li>
+                      <li>Time since last used</li>
+                    </ul>
+                    <p>In code, <span class="mono">R = log1p(reuse_count)</span>, so reuse grows sublinearly and is not normalized to <span class="mono">[0, 1]</span>.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-utility" open>
+                  <summary>Utility (U)</summary>
+                  <div class="section-body">
+                    <p>Measures whether memory actually improves outcomes.</p>
+                    <p>Updated from events:</p>
+                    <ul>
+                      <li>Memory used in answer</li>
+                      <li>Task success/failure</li>
+                      <li>User feedback</li>
+                    </ul>
+                    <p>Utility is stored as an exponential moving average and clamped to <span class="mono">[-1, 1]</span>.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-novelty" open>
+                  <summary>Novelty (N)</summary>
+                  <div class="section-body">
+                    <p>Measures redundancy relative to other memories.</p>
+                    <p>Computed using nearest-neighbor similarity:</p>
+                    <ul>
+                      <li>High similarity - high redundancy</li>
+                      <li>Novelty = 1 - redundancy</li>
+                    </ul>
+                    <p>Redundancy is computed asynchronously for new or updated memory items, with a nightly sweep as a fallback.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-trust" open>
+                  <summary>Trust (T)</summary>
+                  <div class="section-body">
+                    <p>Represents source reliability. In the current implementation:</p>
+                    <ul>
+                      <li>Defaults to <span class="mono">0.5</span></li>
+                      <li>Adjusted by feedback and task events (positive increases, negative decreases)</li>
+                    </ul>
+                    <p>Source-derived trust heuristics can be layered on later, but are not applied automatically today.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-recency" open>
+                  <summary>Recency (A)</summary>
+                  <div class="section-body">
+                    <p>Recent memories get a small temporary boost.</p>
+                    <p>Decays exponentially over time.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-importance" open>
+                  <summary>Importance Hint (H)</summary>
+                  <div class="section-body">
+                    <p>Optional user-provided hint in <span class="mono">[-1, 1]</span> (default <span class="mono">0</span>).</p>
+                    <p>Used for pinning critical memories.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-cost" open>
+                  <summary>Cost (C)</summary>
+                  <div class="section-body">
+                    <p>Estimates storage and retrieval cost based on:</p>
+                    <ul>
+                      <li>Token size</li>
+                      <li>Chunk size</li>
+                    </ul>
+                    <p>In code, <span class="mono">C = tokens_est / cost_scale</span> and is clamped to <span class="mono">[0, 2]</span> (default scale 2000).</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-lifecycle" open>
+                  <summary>Lifecycle Decisions</summary>
+                  <div class="section-body">
+                    <p>AMV-L uses thresholds:</p>
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th>Condition</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td><span class="mono">expired</span></td><td>delete</td></tr>
+                        <tr><td><span class="mono">pinned</span></td><td>keep</td></tr>
+                        <tr><td><span class="mono">V &lt; 0.25</span></td><td>delete</td></tr>
+                        <tr><td><span class="mono">0.25 &lt;= V &lt; 0.45</span></td><td>compact</td></tr>
+                        <tr><td><span class="mono">V &gt; 0.70</span></td><td>promote</td></tr>
+                        <tr><td><span class="mono">otherwise</span></td><td>retain</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-delete" open>
+                  <summary>Delete</summary>
+                  <div class="section-body">
+                    <p>
+                      Memory is permanently removed from the metadata store and the vector engine. This is used for
+                      low-value or expired memory.
+                    </p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-compact" open>
+                  <summary>Compact (Summarize)</summary>
+                  <div class="section-body">
+                    <p>
+                      Multiple low-value related memories are summarized into a single memory item. Original items may be
+                      archived or deleted after the summary is created.
+                    </p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-promote" open>
+                  <summary>Promote (Distill)</summary>
+                  <div class="section-body">
+                    <p>
+                      High-value memory is distilled into higher-level memory types such as semantic facts and procedural steps.
+                      This converts raw experience into reusable knowledge.
+                    </p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-ttl" open>
+                  <summary>Hard TTL vs AMV-L</summary>
+                  <div class="section-body">
+                    <p>TTL is a hard retention boundary for compliance.</p>
+                    <p>AMV-L operates only on non-expired memory.</p>
+                    <p>TTL always wins.</p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-signals" open>
+                  <summary>Signals and Events</summary>
+                  <div class="section-body">
+                    <p>AtlasRAG records signals automatically and exposes explicit feedback:</p>
+                    <ul>
+                      <li><span class="mono">retrieved</span> and <span class="mono">used_in_answer</span> are logged during recall and answers</li>
+                      <li><span class="mono">user_positive</span> and <span class="mono">user_negative</span> are submitted via <span class="mono">POST /v1/feedback</span></li>
+                      <li><span class="mono">task_success</span> and <span class="mono">task_fail</span> can be logged via <span class="mono">POST /v1/memory/event</span></li>
+                    </ul>
+                    <p>
+                      Utility is updated as an exponential moving average, and value scores are recomputed after events and
+                      on periodic decay sweeps.
+                    </p>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-benefits" open>
+                  <summary>Benefits</summary>
+                  <div class="section-body">
+                    <ul>
+                      <li>Bounded memory growth</li>
+                      <li>Higher retrieval signal-to-noise</li>
+                      <li>Lower token usage</li>
+                      <li>Continuous improvement</li>
+                    </ul>
+                  </div>
+                </details>
+
+                <details class="details section" id="amv-summary" open>
+                  <summary>Summary</summary>
+                  <div class="section-body">
+                    <p>
+                      AMV-L provides AtlasRAG with a self-optimizing memory layer that learns what to remember and what to
+                      forget based on real usage.
+                    </p>
+                  </div>
+                </details>
+              </div>
             </div>
-            <p class="hint">
-              If you use JWTs, <span class="mono">principalId</span> is derived from the token and should not be
-              provided in the payload. <span class="mono">privileges</span> is only honored for admin service
-              tokens when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.
-            </p>
-
-            <h4>Architecture</h4>
-            <ul>
-              <li>Gateway (Node) handles auth, routing, and orchestration.</li>
-              <li>Vector store (C++ TCP service) stores embeddings and serves similarity search.</li>
-              <li>Postgres stores chunks, memory items, links, jobs, and idempotency keys.</li>
-              <li>OpenAI (or compatible) provides embeddings and generation.</li>
-              <li>Background jobs handle reflection, summarization, and lifecycle tasks.</li>
-              <li>Expired items are automatically swept and removed (vectors + DB rows), preventing orphan vectors.</li>
-              <li>Jobs retry with exponential backoff before transitioning to failed.</li>
-              <li>Job reruns are idempotent (derived memories are replaced, not duplicated).</li>
-              <li>Structured logs include <span class="mono">request_id</span>, <span class="mono">tenant_id</span>, and <span class="mono">collection</span>.</li>
-              <li>Prometheus metrics are exposed at <span class="mono">/metrics</span> (scoped to the tenant; admin sees all tenants).</li>
-            </ul>
-
-            <h4>Deployment</h4>
-            <ul>
-              <li>Run with Docker Compose: <span class="mono">docker compose up -d</span></li>
-              <li>Set required env: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">JWT_SECRET</span>, Postgres credentials.</li>
-              <li>Timeouts: <span class="mono">TCP_TIMEOUT_MS</span>, <span class="mono">DB_CONNECT_TIMEOUT_MS</span>, <span class="mono">DB_QUERY_TIMEOUT_MS</span>, <span class="mono">DB_STATEMENT_TIMEOUT_MS</span>, <span class="mono">OPENAI_TIMEOUT_MS</span>.</li>
-              <li>Rate limiting: per IP (<span class="mono">RATE_LIMIT_WINDOW_MS</span>/<span class="mono">RATE_LIMIT_MAX</span>) and per tenant/key (<span class="mono">TENANT_RATE_LIMIT_WINDOW_MS</span>/<span class="mono">TENANT_RATE_LIMIT_MAX</span>).</li>
-              <li>Expose gateway on <span class="mono">:3000</span> and front with HTTPS in production.</li>
-              <li>Optionally set <span class="mono">PUBLIC_BASE_URL</span> / <span class="mono">OPENAPI_BASE_URL</span> for correct docs links.</li>
-            </ul>
           </article>
         </section>
 

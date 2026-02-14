@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS memory_items (
   metadata JSONB,
   parent_id TEXT REFERENCES memory_items(id) ON DELETE CASCADE,
   namespace_id TEXT UNIQUE NOT NULL,
+  value_score DOUBLE PRECISION,
+  reuse_count BIGINT DEFAULT 0,
+  last_used_at TIMESTAMPTZ,
+  utility_ema DOUBLE PRECISION DEFAULT 0,
+  redundancy_score DOUBLE PRECISION DEFAULT 0,
+  trust_score DOUBLE PRECISION DEFAULT 0.5,
+  importance_hint DOUBLE PRECISION,
+  pinned BOOLEAN DEFAULT FALSE,
   expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -116,6 +124,20 @@ CREATE TABLE IF NOT EXISTS memory_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS memory_jobs_tenant_idx ON memory_jobs(tenant_id);
+
+-- Memory lifecycle events
+CREATE TABLE IF NOT EXISTS memory_events (
+  id SERIAL PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memory_items(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  event_value DOUBLE PRECISION NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS memory_events_tenant_idx ON memory_events(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS memory_events_memory_idx ON memory_events(memory_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS memory_events_type_idx ON memory_events(tenant_id, event_type, created_at DESC);
 
 -- Idempotency keys (hard guarantees for writes)
 CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -198,7 +220,20 @@ ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS agent_id TEXT;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS tags TEXT[];
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'tenant';
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS acl_principals TEXT[];
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS value_score DOUBLE PRECISION;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS reuse_count BIGINT DEFAULT 0;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS utility_ema DOUBLE PRECISION DEFAULT 0;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS redundancy_score DOUBLE PRECISION DEFAULT 0;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISION DEFAULT 0.5;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS importance_hint DOUBLE PRECISION;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT FALSE;
 UPDATE memory_items SET visibility = 'tenant' WHERE visibility IS NULL;
+UPDATE memory_items SET reuse_count = 0 WHERE reuse_count IS NULL;
+UPDATE memory_items SET utility_ema = 0 WHERE utility_ema IS NULL;
+UPDATE memory_items SET redundancy_score = 0 WHERE redundancy_score IS NULL;
+UPDATE memory_items SET trust_score = 0.5 WHERE trust_score IS NULL;
+UPDATE memory_items SET pinned = FALSE WHERE pinned IS NULL;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 3;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMPTZ;
@@ -237,3 +272,39 @@ CREATE INDEX IF NOT EXISTS memory_items_visibility_idx ON memory_items(tenant_id
 CREATE INDEX IF NOT EXISTS memory_items_acl_idx ON memory_items USING GIN (acl_principals);
 CREATE INDEX IF NOT EXISTS memory_items_tags_idx ON memory_items USING GIN (tags);
 CREATE INDEX IF NOT EXISTS memory_jobs_status_next_run_idx ON memory_jobs(status, next_run_at);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'memory_items'
+      AND column_name = 'value_score'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS memory_items_value_idx ON memory_items(tenant_id, value_score)';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'memory_items'
+      AND column_name = 'last_used_at'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS memory_items_last_used_idx ON memory_items(tenant_id, last_used_at)';
+  END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS memory_events (
+  id SERIAL PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memory_items(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  event_value DOUBLE PRECISION NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS memory_events_tenant_idx ON memory_events(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS memory_events_memory_idx ON memory_events(memory_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS memory_events_type_idx ON memory_events(tenant_id, event_type, created_at DESC);

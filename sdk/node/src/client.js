@@ -197,6 +197,13 @@ class AtlasRAGClient {
     });
   }
 
+  async feedback(data) {
+    return this.request("/v1/feedback", {
+      method: "POST",
+      body: data
+    });
+  }
+
   async getJob(id) {
     return this.request(`/v1/jobs/${id}`);
   }

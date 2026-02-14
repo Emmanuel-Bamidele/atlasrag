@@ -302,7 +302,15 @@
           "sourceUrl": { "type": ["string", "null"] },
           "metadata": { "type": ["object", "null"] },
           "createdAt": { "type": "string", "format": "date-time" },
-          "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+          "valueScore": { "type": ["number", "null"] },
+          "reuseCount": { "type": "integer" },
+          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
+          "utilityEma": { "type": "number" },
+          "redundancyScore": { "type": "number" },
+          "trustScore": { "type": "number" },
+          "importanceHint": { "type": ["number", "null"] },
+          "pinned": { "type": "boolean" }
         }
       },
       "MemoryWriteRequest": {
@@ -313,6 +321,8 @@
           "title": { "type": "string" },
           "externalId": { "type": "string" },
           "metadata": { "type": "object" },
+          "importanceHint": { "type": "number" },
+          "pinned": { "type": "boolean" },
           "sourceType": { "type": "string" },
           "sourceUrl": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" },
@@ -409,6 +419,47 @@
           "principalId": { "type": "string" },
           "collection": { "type": "string" },
           "tenantId": { "type": "string" }
+        }
+      },
+      "FeedbackRequest": {
+        "type": "object",
+        "properties": {
+          "memoryId": { "type": "string" },
+          "feedback": { "type": "string", "enum": ["positive", "negative"] },
+          "eventValue": { "type": "number" },
+          "collection": { "type": "string" },
+          "tenantId": { "type": "string" }
+        },
+        "required": ["memoryId", "feedback"]
+      },
+      "FeedbackResponseData": {
+        "type": "object",
+        "properties": {
+          "memoryId": { "type": "string" },
+          "eventType": { "type": "string" },
+          "valueScore": { "type": ["number", "null"] }
+        }
+      },
+      "TaskEventRequest": {
+        "type": "object",
+        "properties": {
+          "memoryId": { "type": "string" },
+          "eventType": { "type": "string", "enum": ["task_success", "task_fail"] },
+          "eventValue": { "type": "number" },
+          "collection": { "type": "string" },
+          "tenantId": { "type": "string" }
+        },
+        "required": ["memoryId", "eventType"]
+      },
+      "TaskEventResponseData": {
+        "type": "object",
+        "properties": {
+          "memoryId": { "type": "string" },
+          "eventType": { "type": "string" },
+          "eventValue": { "type": "number" },
+          "utilityEma": { "type": "number" },
+          "trustScore": { "type": "number" },
+          "valueScore": { "type": ["number", "null"] }
         }
       },
       "Job": {
@@ -913,6 +964,60 @@
                   "allOf": [
                     { "$ref": "#/components/schemas/OkResponse" },
                     { "properties": { "data": { "$ref": "#/components/schemas/JobResponseData" } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feedback": {
+      "post": {
+        "tags": ["Memory"],
+        "summary": "Submit memory feedback",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/FeedbackRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/OkResponse" },
+                    { "properties": { "data": { "$ref": "#/components/schemas/FeedbackResponseData" } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/memory/event": {
+      "post": {
+        "tags": ["Memory"],
+        "summary": "Submit task outcome event",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/TaskEventRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/OkResponse" },
+                    { "properties": { "data": { "$ref": "#/components/schemas/TaskEventResponseData" } } }
                   ]
                 }
               }
