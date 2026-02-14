@@ -6,30 +6,138 @@
     <title>AtlasRAG API Docs</title>
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
     <style>
+      :root {
+        --bg: #f4f5f6;
+        --card: #ffffff;
+        --text: #182432;
+        --muted: #516171;
+        --accent: #0b7a75;
+        --accent-soft: #dbf2ef;
+        --border: #d5dde6;
+      }
       html, body {
         margin: 0;
         padding: 0;
-        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      }
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px 18px 40px;
+      }
+      .hero {
+        background: linear-gradient(130deg, #ffffff 0%, #f6fbfa 100%);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px 20px 18px;
+        margin-bottom: 18px;
+      }
+      .hero h1 {
+        margin: 0 0 10px;
+        font-size: 1.6rem;
+      }
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .meta-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 13px;
+      }
+      .meta-card h2 {
+        font-size: 0.95rem;
+        margin: 0 0 8px;
+        color: #1f2f42;
+      }
+      .meta-card ol,
+      .meta-card ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.4;
+        font-size: 0.93rem;
+      }
+      .controls {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 0.88rem;
       }
       #swagger-ui {
-        height: 100%;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        background: #fff;
+      }
+      @media (max-width: 700px) {
+        .page {
+          padding: 14px 12px 24px;
+        }
+        .hero {
+          padding: 15px 14px;
+        }
+        .hero h1 {
+          font-size: 1.3rem;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="swagger-ui"></div>
+    <main class="page">
+      <section class="hero">
+        <h1>AtlasRAG API Documentation</h1>
+        <p>
+          This page is focused on API consumers building apps and agents.
+          It highlights only the details needed for integration and includes examples aligned with tested end-to-end flows.
+        </p>
+        <div class="meta-grid">
+          <article class="meta-card">
+            <h2>Tested Integration Flow</h2>
+            <ol>
+              <li>Authenticate with <code>POST /v1/login</code> or service token.</li>
+              <li>Index content via <code>/v1/docs</code> or <code>/v1/docs/url</code>.</li>
+              <li>Retrieve context with <code>/v1/search</code> and <code>/v1/ask</code>.</li>
+              <li>Use memory endpoints, then poll <code>/v1/jobs/{id}</code> for async work.</li>
+            </ol>
+          </article>
+          <article class="meta-card">
+            <h2>Important Notes</h2>
+            <ul>
+              <li><code>Idempotency-Key</code> is required for <code>/v1/docs</code>, <code>/v1/docs/url</code>, <code>/v1/memory/write</code>, <code>/v1/memory/reflect</code>.</li>
+              <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
+              <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="controls">
+          This page shows the integration-focused API surface.
+        </div>
+      </section>
+      <div id="swagger-ui"></div>
+    </main>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
     <script>
       window.onload = () => {
         window.ui = SwaggerUIBundle({
-          url: "/openapi.json",
+          url: "/openapi.public.json",
           dom_id: "#swagger-ui",
           deepLinking: true,
           presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
           layout: "BaseLayout",
           persistAuthorization: true,
-          displayRequestDuration: true
+          displayRequestDuration: true,
+          defaultModelsExpandDepth: 1
         });
       };
     </script>

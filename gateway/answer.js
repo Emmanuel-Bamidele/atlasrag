@@ -28,6 +28,7 @@ function getClient() {
 
 const PROMPT_GUARD = process.env.PROMPT_INJECTION_GUARD !== "0";
 const MIN_SOURCE_CHARS = 40;
+let fallbackWarned = false;
 
 function sanitizeChunkText(text) {
   const lines = String(text || "").split(/\r?\n/);
@@ -66,6 +67,41 @@ function sanitizeChunks(chunks) {
     }
   }
   return out;
+}
+
+function fallbackFromChunks(chunks) {
+  const top = (chunks || []).slice(0, 3);
+  if (!top.length) {
+    return {
+      answer: "I don't know based on the provided sources.",
+      citations: []
+    };
+  }
+
+  const parts = [];
+  for (const chunk of top) {
+    const raw = sanitizeChunkText(chunk.text);
+    if (!raw) continue;
+    const sentence = raw
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/(?<=[.!?])\s+/)[0]
+      .trim();
+    if (sentence) {
+      parts.push(sentence);
+    }
+    if (parts.length >= 2) break;
+  }
+
+  const answer = parts.length
+    ? parts.join(" ")
+    : "I don't know based on the provided sources.";
+
+  return {
+    answer,
+    citations: top.map((c) => c.chunk_id).filter(Boolean),
+    usage: null
+  };
 }
 
 // Build a prompt that forces the model to use only the provided context.
@@ -118,13 +154,21 @@ async function generateAnswer(question, chunks) {
 
   const input = buildPrompt(question, safeChunks);
 
-  // Use Responses API with GPT-4o
-  // The docs show using openai.responses.create({ model, input }) :contentReference[oaicite:1]{index=1}
-  const resp = await getClient().responses.create({
-    model: "gpt-4o",
-    input,
-    temperature: 0.2
-  });
+  let resp = null;
+  try {
+    // Use Responses API with GPT-4o
+    resp = await getClient().responses.create({
+      model: "gpt-4o",
+      input,
+      temperature: 0.2
+    });
+  } catch (err) {
+    if (!fallbackWarned) {
+      fallbackWarned = true;
+      console.warn(`[answer] OpenAI unavailable, using extractive fallback (${String(err?.message || err)})`);
+    }
+    return fallbackFromChunks(safeChunks);
+  }
 
   // openai SDK returns combined text via output_text
   const text = (resp.output_text || "").trim();
@@ -141,6 +185,12 @@ async function generateAnswer(question, chunks) {
       .map(s => s.trim())
       .filter(Boolean);
     answer = text.replace(match[0], "").trim();
+  }
+  if (!citations.length) {
+    citations = safeChunks.slice(0, 3).map((c) => c.chunk_id).filter(Boolean);
+  }
+  if (!answer) {
+    return fallbackFromChunks(safeChunks);
   }
 
   return { answer, citations, usage };

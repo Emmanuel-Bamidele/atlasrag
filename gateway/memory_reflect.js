@@ -22,6 +22,8 @@ function getClient() {
 const DEFAULT_MODEL = process.env.REFLECT_MODEL || "gpt-4o-mini";
 const DEFAULT_MAX_ITEMS = parseInt(process.env.REFLECT_MAX_ITEMS || "5", 10);
 const COMPACT_MODEL = process.env.COMPACT_MODEL || DEFAULT_MODEL;
+let reflectFallbackWarned = false;
+let compactFallbackWarned = false;
 
 function normalizeTypes(types) {
   const allowed = new Set(["semantic", "procedural", "summary"]);
@@ -48,17 +50,75 @@ Artifact text:
 ${text}`;
 }
 
+function splitSentences(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function makeTitle(prefix, sentence, idx) {
+  const words = String(sentence || "")
+    .replace(/[^a-zA-Z0-9._:@ -]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(" ");
+  return words ? `${prefix}: ${words}` : `${prefix} ${idx + 1}`;
+}
+
+function buildFallbackReflection({ text, types, maxItems }) {
+  const selected = normalizeTypes(types);
+  const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
+  const sentences = splitSentences(text);
+  const makeItems = (prefix, list) =>
+    list.slice(0, limit).map((sentence, idx) => ({
+      title: makeTitle(prefix, sentence, idx),
+      content: sentence
+    }));
+
+  const semantic = selected.includes("semantic")
+    ? makeItems("Semantic", sentences)
+    : [];
+  const proceduralSource = sentences.filter((s) =>
+    /\b(should|must|use|ensure|avoid|step|first|then|finally)\b/i.test(s)
+  );
+  const procedural = selected.includes("procedural")
+    ? makeItems("Procedure", proceduralSource.length ? proceduralSource : sentences)
+    : [];
+  const summarySource = sentences.length
+    ? [sentences.slice(0, Math.min(2, sentences.length)).join(" ")]
+    : [];
+  const summary = selected.includes("summary")
+    ? makeItems("Summary", summarySource)
+    : [];
+
+  return { semantic, procedural, summary, usage: null };
+}
+
 async function reflectMemories({ text, types, maxItems }) {
   const selected = normalizeTypes(types);
   const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
   const input = buildPrompt(text, selected, limit);
 
-  const resp = await getClient().responses.create({
-    model: DEFAULT_MODEL,
-    input,
-    temperature: 0.2,
-    text: { format: { type: "json_object" } }
-  });
+  let resp = null;
+  try {
+    resp = await getClient().responses.create({
+      model: DEFAULT_MODEL,
+      input,
+      temperature: 0.2,
+      text: { format: { type: "json_object" } }
+    });
+  } catch (err) {
+    if (!reflectFallbackWarned) {
+      reflectFallbackWarned = true;
+      console.warn(`[reflect] OpenAI unavailable, using extractive fallback (${String(err?.message || err)})`);
+    }
+    return buildFallbackReflection({ text, types: selected, maxItems: limit });
+  }
 
   const raw = (resp.output_text || "").trim();
   const usage = resp.usage || null;
@@ -66,7 +126,7 @@ async function reflectMemories({ text, types, maxItems }) {
   try {
     payload = JSON.parse(raw);
   } catch (err) {
-    throw new Error("Failed to parse reflection output");
+    return buildFallbackReflection({ text, types: selected, maxItems: limit });
   }
 
   return {
@@ -81,14 +141,36 @@ function buildCompactPrompt(text) {
   return `Summarize the memories below into one concise memory.\nReturn a JSON object with keys: title, content.\n- title: short descriptive title\n- content: concise factual memory\nOnly use the provided text. Avoid speculation.\n\nMemories:\n${text}`;
 }
 
+function buildFallbackCompaction(text) {
+  const sentences = splitSentences(text);
+  const summary = sentences.length
+    ? sentences.slice(0, Math.min(2, sentences.length)).join(" ")
+    : String(text || "").trim();
+  const content = summary || "No memory content available.";
+  return {
+    title: makeTitle("Compaction", content, 0),
+    content,
+    usage: null
+  };
+}
+
 async function summarizeMemories({ text }) {
   const input = buildCompactPrompt(text);
-  const resp = await getClient().responses.create({
-    model: COMPACT_MODEL,
-    input,
-    temperature: 0.2,
-    text: { format: { type: "json_object" } }
-  });
+  let resp = null;
+  try {
+    resp = await getClient().responses.create({
+      model: COMPACT_MODEL,
+      input,
+      temperature: 0.2,
+      text: { format: { type: "json_object" } }
+    });
+  } catch (err) {
+    if (!compactFallbackWarned) {
+      compactFallbackWarned = true;
+      console.warn(`[compact] OpenAI unavailable, using extractive fallback (${String(err?.message || err)})`);
+    }
+    return buildFallbackCompaction(text);
+  }
 
   const raw = (resp.output_text || "").trim();
   const usage = resp.usage || null;
@@ -96,12 +178,12 @@ async function summarizeMemories({ text }) {
   try {
     payload = JSON.parse(raw);
   } catch (err) {
-    throw new Error("Failed to parse compaction output");
+    return buildFallbackCompaction(text);
   }
 
   return {
-    title: String(payload.title || "").trim(),
-    content: String(payload.content || "").trim(),
+    title: String(payload.title || "").trim() || makeTitle("Compaction", payload?.content || text, 0),
+    content: String(payload.content || "").trim() || String(text || "").trim(),
     usage
   };
 }

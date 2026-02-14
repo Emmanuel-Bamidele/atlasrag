@@ -87,7 +87,7 @@
                 <h3>Collections</h3>
                 <p>
                   Segment knowledge by product, team, or environment. Collections scope indexing, recall,
-                  and governance without creating separate deployments.
+                  and governance without creating separate stacks.
                 </p>
               </div>
               <div class="doc-card">
@@ -450,7 +450,7 @@
           <article class="docs-article">
             <header class="docs-header">
               <h3>Developer documentation</h3>
-              <p>Everything you need to go from zero to production: quickstart, auth, APIs, SDKs, Python examples, and deployment guidance.</p>
+              <p>Everything you need to integrate quickly: quickstart, auth, APIs, SDKs, and Python examples.</p>
             </header>
 
             <div class="doc-tabs" data-doc-tabs="docs">
@@ -472,7 +472,6 @@
                     <a href="#doc-client-examples">Client examples</a>
                     <a href="#doc-visibility">Visibility without end-user login</a>
                     <a href="#doc-architecture">Architecture</a>
-                    <a href="#doc-deployment">Deployment</a>
                   </div>
                 </div>
 
@@ -480,29 +479,19 @@
               <summary>Quickstart</summary>
               <div class="section-body">
                 <ol>
-                  <li>Start the stack: <span class="mono">docker compose up -d</span></li>
-                  <li>Create an admin user (first time only):</li>
-                </ol>
-                <div class="doc-block">
-                  <pre class="doc-code">docker compose exec gateway node scripts/create_user.js \
-  --username admin \
-  --password changeme \
-  --tenant acme \
-  --role admin</pre>
-                </div>
-                <ol start="3">
+                  <li>Get your AtlasRAG base URL and user credentials.</li>
                   <li>Login to get a JWT (required to create API keys):</li>
                 </ol>
                 <div class="doc-block">
-                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/login \
+                  <pre class="doc-code">curl -X POST https://YOUR_BASE_URL/v1/login \
   -H "Content-Type: application/json" \
-  -d '{ "username": "admin", "password": "changeme" }'</pre>
+  -d '{ "username": "YOUR_USERNAME", "password": "YOUR_PASSWORD" }'</pre>
                 </div>
-                <ol start="4">
+                <ol start="3">
                   <li>Create a service token (API key) for your app:</li>
                 </ol>
                 <div class="doc-block">
-                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/admin/service-tokens \
+                  <pre class="doc-code">curl -X POST https://YOUR_BASE_URL/v1/admin/service-tokens \
   -H "Authorization: Bearer YOUR_ADMIN_JWT" \
   -H "Content-Type: application/json" \
   -d '{
@@ -512,11 +501,11 @@
     "expiresAt": "2026-12-31T00:00:00Z"
   }'</pre>
                 </div>
-                <ol start="5">
+                <ol start="4">
                   <li>Index your first document:</li>
                 </ol>
                 <div class="doc-block">
-                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+                  <pre class="doc-code">curl -X POST https://YOUR_BASE_URL/v1/docs \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Idempotency-Key: idx-001" \
   -H "Content-Type: application/json" \
@@ -526,7 +515,7 @@
     "text": "Your document text..."
   }'</pre>
                 </div>
-                <ol start="6">
+                <ol start="5">
                   <li>Search or Ask with <span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span>.</li>
                 </ol>
                 <div class="doc-block mono">GET /v1/health</div>
@@ -714,7 +703,7 @@
                       <tr><td><span class="mono">AUTH_INVALID</span></td><td>Invalid JWT/API key or invalid login credentials.</td></tr>
                       <tr><td><span class="mono">AUTH_EXPIRED</span></td><td>API key expired.</td></tr>
                       <tr><td><span class="mono">AUTH_REVOKED</span></td><td>API key revoked.</td></tr>
-                      <tr><td><span class="mono">AUTH_CONFIG</span></td><td>Server auth misconfiguration (missing <span class="mono">JWT_SECRET</span>).</td></tr>
+                      <tr><td><span class="mono">AUTH_CONFIG</span></td><td>Server auth misconfiguration.</td></tr>
                       <tr><td><span class="mono">AUTH_LOOKUP_FAILED</span></td><td>Auth lookup failed in the database.</td></tr>
                       <tr><td><span class="mono">RATE_LIMITED</span></td><td>Too many requests in the current window.</td></tr>
                       <tr><td><span class="mono">FORBIDDEN</span></td><td>Insufficient role/permissions for the endpoint.</td></tr>
@@ -1139,84 +1128,97 @@ while (true) {
               </div>
             </details>
 
-            <details class="details section" id="doc-deployment" open>
-              <summary>Deployment</summary>
-              <div class="section-body">
-                <ul>
-                  <li>Run with Docker Compose: <span class="mono">docker compose up -d</span></li>
-                  <li>Set required env: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">JWT_SECRET</span>, Postgres credentials.</li>
-                  <li>Timeouts: <span class="mono">TCP_TIMEOUT_MS</span>, <span class="mono">DB_CONNECT_TIMEOUT_MS</span>, <span class="mono">DB_QUERY_TIMEOUT_MS</span>, <span class="mono">DB_STATEMENT_TIMEOUT_MS</span>, <span class="mono">OPENAI_TIMEOUT_MS</span>.</li>
-                  <li>Rate limiting: per IP (<span class="mono">RATE_LIMIT_WINDOW_MS</span>/<span class="mono">RATE_LIMIT_MAX</span>) and per tenant/key (<span class="mono">TENANT_RATE_LIMIT_WINDOW_MS</span>/<span class="mono">TENANT_RATE_LIMIT_MAX</span>).</li>
-                  <li>Expose gateway on <span class="mono">:3000</span> and front with HTTPS in production.</li>
-                  <li>Optionally set <span class="mono">PUBLIC_BASE_URL</span> / <span class="mono">OPENAPI_BASE_URL</span> for correct docs links.</li>
-                </ul>
-              </div>
-            </details>
               </div>
               <div class="doc-panel" data-doc-panel="amv">
-                <div class="doc-outline">
-                  <div class="doc-outline-title">Outline</div>
-                  <div class="doc-outline-links">
-                    <a href="#amv-overview">Overview</a>
-                    <a href="#amv-why">Why AMV-L</a>
-                    <a href="#amv-value">Memory value score</a>
-                    <a href="#amv-reuse">Reuse (R)</a>
-                    <a href="#amv-utility">Utility (U)</a>
-                    <a href="#amv-novelty">Novelty (N)</a>
-                    <a href="#amv-trust">Trust (T)</a>
-                    <a href="#amv-recency">Recency (A)</a>
-                    <a href="#amv-importance">Importance hint (H)</a>
-                    <a href="#amv-cost">Cost (C)</a>
-                    <a href="#amv-lifecycle">Lifecycle decisions</a>
-                    <a href="#amv-delete">Delete</a>
-                    <a href="#amv-compact">Compact</a>
-                    <a href="#amv-promote">Promote</a>
-                    <a href="#amv-ttl">Hard TTL vs AMV-L</a>
-                    <a href="#amv-signals">Signals and events</a>
-                    <a href="#amv-benefits">Benefits</a>
-                    <a href="#amv-summary">Summary</a>
-                  </div>
-                </div>
-                <details class="details section" id="amv-overview" open>
-                  <summary>Adaptive Memory Value + Lifecycle (AMV-L)</summary>
-                  <div class="section-body">
-                    <p>
-                      AtlasRAG implements an adaptive memory lifecycle algorithm called Adaptive Memory Value + Lifecycle (AMV-L).
-                      AMV-L continuously estimates the value of each memory item based on observed usage and outcome signals, and
-                      automatically decides whether to retain, compact, promote, or delete memory.
+                <div class="amv-paper">
+                  <header class="amv-header">
+                    <p class="amv-kicker">Technical White Paper</p>
+                    <h3>Adaptive Memory Value + Lifecycle (AMV-L)</h3>
+                    <p class="amv-subtitle">
+                      A scoring and control policy for maintaining high-signal, bounded long-term memory in AtlasRAG.
                     </p>
-                    <p>
-                      This allows AtlasRAG to maintain bounded, high-signal long-term memory for agents.
-                    </p>
-                  </div>
-                </details>
+                    <div class="amv-meta-grid">
+                      <div class="amv-meta-item">
+                        <div class="amv-meta-label">Objective</div>
+                        <div class="amv-meta-value">Optimize retention quality under cost and safety constraints.</div>
+                      </div>
+                      <div class="amv-meta-item">
+                        <div class="amv-meta-label">Output</div>
+                        <div class="amv-meta-value">Per-item action: retain, delete, compact, or promote.</div>
+                      </div>
+                      <div class="amv-meta-item">
+                        <div class="amv-meta-label">Execution Model</div>
+                        <div class="amv-meta-value">Event-driven updates plus periodic sweeps.</div>
+                      </div>
+                    </div>
+                  </header>
 
-                <details class="details section" id="amv-why" open>
-                  <summary>Why AMV-L Exists</summary>
-                  <div class="section-body">
-                    <p>Naive memory systems:</p>
-                    <ul>
-                      <li>Store everything forever</li>
-                      <li>Or delete using fixed TTL</li>
-                    </ul>
-                    <p>Both approaches lead to:</p>
-                    <ul>
-                      <li>Memory bloat</li>
-                      <li>Noisy retrieval</li>
-                      <li>High token costs</li>
-                      <li>Loss of important knowledge</li>
-                    </ul>
-                    <p>AMV-L treats memory as an optimization problem rather than a storage problem.</p>
+                  <div class="doc-outline amv-outline">
+                    <div class="doc-outline-title">Outline</div>
+                    <div class="doc-outline-links">
+                      <a href="#amv-overview">Overview</a>
+                      <a href="#amv-why">Problem framing</a>
+                      <a href="#amv-value">Value function</a>
+                      <a href="#amv-reuse">Reuse (R)</a>
+                      <a href="#amv-utility">Utility (U)</a>
+                      <a href="#amv-novelty">Novelty (N)</a>
+                      <a href="#amv-trust">Trust (T)</a>
+                      <a href="#amv-recency">Recency (A)</a>
+                      <a href="#amv-importance">Importance hint (H)</a>
+                      <a href="#amv-cost">Cost (C)</a>
+                      <a href="#amv-lifecycle">Lifecycle policy</a>
+                      <a href="#amv-delete">Delete operator</a>
+                      <a href="#amv-compact">Compaction operator</a>
+                      <a href="#amv-promote">Promotion operator</a>
+                      <a href="#amv-ttl">TTL precedence</a>
+                      <a href="#amv-signals">Signals and events</a>
+                      <a href="#amv-benefits">System properties</a>
+                      <a href="#amv-summary">Conclusion</a>
+                    </div>
                   </div>
-                </details>
 
-                <details class="details section" id="amv-value" open>
-                  <summary>Memory Value Score</summary>
-                  <div class="section-body">
-                    <p>Each memory item <span class="mono">m</span> has a value score: <span class="mono">V(m) in [0,1]</span>.</p>
-                    <div class="doc-block">
-                      <div class="doc-label">Formula</div>
-                      <pre class="doc-code">V = sigmoid(
+                  <details class="details section" id="amv-overview" open>
+                    <summary>1. Overview</summary>
+                    <div class="section-body">
+                      <p>
+                        AtlasRAG implements Adaptive Memory Value + Lifecycle (AMV-L), a control algorithm that continuously
+                        estimates memory utility and applies lifecycle actions to each item. AMV-L computes a bounded value score
+                        from observed behavior and then maps the score to deterministic lifecycle decisions.
+                      </p>
+                      <p>
+                        The system-level goal is to preserve memories that improve downstream outcomes while limiting storage
+                        growth, retrieval noise, and token cost.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-why" open>
+                    <summary>2. Problem Framing</summary>
+                    <div class="section-body">
+                      <p>
+                        Naive retention strategies are insufficient in production memory systems:
+                      </p>
+                      <ul>
+                        <li>Store-everything policies produce unbounded growth and retrieval dilution.</li>
+                        <li>Fixed TTL-only policies remove stale data but may discard high-value knowledge.</li>
+                      </ul>
+                      <p>
+                        These failure modes increase operational cost and reduce answer quality. AMV-L reframes retention as
+                        an optimization problem over value, trust, novelty, and cost.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-value" open>
+                    <summary>3. Value Function V(m)</summary>
+                    <div class="section-body">
+                      <p>
+                        Each memory item <span class="mono">m</span> is assigned <span class="mono">V(m)</span> in
+                        <span class="mono">[0, 1]</span> via a weighted logistic model:
+                      </p>
+                      <div class="doc-block amv-equation">
+                        <div class="doc-label">Equation (Implementation-Accurate)</div>
+                        <pre class="doc-code">V = sigmoid(
   1.2 * R +
   2.0 * U +
   1.0 * N +
@@ -1225,258 +1227,280 @@ while (true) {
   1.0 * H -
   1.0 * C
 )</pre>
+                      </div>
+                      <div class="doc-block">
+                        <div class="doc-label">Signal Definitions and Transforms</div>
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th>Signal</th>
+                              <th>Source Field(s)</th>
+                              <th>Transform / Range</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td><span class="mono">R</span></td>
+                              <td><span class="mono">reuse_count</span></td>
+                              <td><span class="mono">log1p(reuse_count)</span> (unbounded, sublinear)</td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">U</span></td>
+                              <td><span class="mono">utility_ema</span></td>
+                              <td>Clamped to <span class="mono">[-1, 1]</span></td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">N</span></td>
+                              <td><span class="mono">redundancy_score</span></td>
+                              <td><span class="mono">1 - redundancy_score</span>, redundancy clamped to <span class="mono">[0, 1]</span></td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">T</span></td>
+                              <td><span class="mono">trust_score</span></td>
+                              <td>Clamped to <span class="mono">[0, 1]</span>, default <span class="mono">0.5</span></td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">A</span></td>
+                              <td><span class="mono">last_used_at</span> / <span class="mono">created_at</span></td>
+                              <td>Exponential time decay in <span class="mono">[0, 1]</span></td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">H</span></td>
+                              <td><span class="mono">importance_hint</span></td>
+                              <td>Clamped to <span class="mono">[-1, 1]</span>, default <span class="mono">0</span></td>
+                            </tr>
+                            <tr>
+                              <td><span class="mono">C</span></td>
+                              <td><span class="mono">tokens_est</span></td>
+                              <td><span class="mono">tokens_est / cost_scale</span>, clamped to <span class="mono">[0, 2]</span> (default scale <span class="mono">2000</span>)</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p>
+                          Final value is sigmoid-normalized and clamped to <span class="mono">[0, 1]</span>.
+                        </p>
+                      </div>
+                      <div class="doc-block">
+                        <div class="doc-label">Notation</div>
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th>Symbol</th>
+                              <th>Interpretation</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr><td><span class="mono">R</span></td><td>Reuse intensity</td></tr>
+                            <tr><td><span class="mono">U</span></td><td>Outcome utility (EMA)</td></tr>
+                            <tr><td><span class="mono">N</span></td><td>Novelty (= 1 - redundancy)</td></tr>
+                            <tr><td><span class="mono">T</span></td><td>Trust estimate</td></tr>
+                            <tr><td><span class="mono">A</span></td><td>Age/recency contribution</td></tr>
+                            <tr><td><span class="mono">H</span></td><td>User-provided importance prior</td></tr>
+                            <tr><td><span class="mono">C</span></td><td>Cost penalty</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                    <div class="doc-block">
-                      <div class="doc-label">Ranges &amp; Transforms (Code-Accurate)</div>
+                  </details>
+
+                  <details class="details section" id="amv-reuse" open>
+                    <summary>4. Reuse Signal (R)</summary>
+                    <div class="section-body">
+                      <p>
+                        Reuse captures empirical demand for a memory item through repeated retrieval.
+                        AMV-L uses <span class="mono">R = log1p(reuse_count)</span>, which dampens late-stage growth and
+                        prevents very old high-frequency items from dominating value indefinitely.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-utility" open>
+                    <summary>5. Utility Signal (U)</summary>
+                    <div class="section-body">
+                      <p>
+                        Utility estimates whether a memory improves downstream task outcomes. Utility is updated as an
+                        exponential moving average from runtime events and clamped to <span class="mono">[-1, 1]</span>.
+                      </p>
+                      <ul>
+                        <li>Positive contributors: successful use in answers, positive user/task outcomes.</li>
+                        <li>Negative contributors: explicit negative feedback and failed task outcomes.</li>
+                      </ul>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-novelty" open>
+                    <summary>6. Novelty Signal (N)</summary>
+                    <div class="section-body">
+                      <p>
+                        Novelty is derived from semantic redundancy. Redundancy is estimated via nearest-neighbor similarity;
+                        novelty is computed as <span class="mono">N = 1 - redundancy</span>.
+                      </p>
+                      <p>
+                        Redundancy scoring runs asynchronously for newly written/updated items, with periodic sweeps to ensure
+                        eventual consistency across older items.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-trust" open>
+                    <summary>7. Trust Signal (T)</summary>
+                    <div class="section-body">
+                      <p>
+                        Trust captures reliability of the memory source and subsequent validation outcomes. In the current
+                        implementation, trust starts at <span class="mono">0.5</span> and moves with feedback/task events.
+                      </p>
+                      <p>
+                        Additional source-quality priors can be layered on top without changing the lifecycle policy interface.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-recency" open>
+                    <summary>8. Recency Signal (A)</summary>
+                    <div class="section-body">
+                      <p>
+                        Recency applies a temporary boost to recently used memories through exponential decay. This improves
+                        responsiveness to changing context while naturally fading stale items over time.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-importance" open>
+                    <summary>9. Importance Prior (H)</summary>
+                    <div class="section-body">
+                      <p>
+                        Importance is an explicit user/system prior in <span class="mono">[-1, 1]</span> (default
+                        <span class="mono">0</span>). It allows intentional bias toward business-critical memories and can be
+                        combined with pinning when strict retention is required.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-cost" open>
+                    <summary>10. Cost Penalty (C)</summary>
+                    <div class="section-body">
+                      <p>
+                        Cost approximates retrieval and storage overhead using estimated token size and scales as
+                        <span class="mono">tokens_est / cost_scale</span>, clamped to <span class="mono">[0, 2]</span>.
+                        Default cost scale is <span class="mono">2000</span>.
+                      </p>
+                    </div>
+                  </details>
+
+                  <details class="details section" id="amv-lifecycle" open>
+                    <summary>11. Lifecycle Policy</summary>
+                    <div class="section-body">
+                      <p>
+                        AMV-L maps value to lifecycle operators using thresholded policy rules:
+                      </p>
                       <table class="table">
                         <thead>
                           <tr>
-                            <th>Signal</th>
-                            <th>Source</th>
-                            <th>Range / Transform</th>
+                            <th>Condition</th>
+                            <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr>
-                            <td><span class="mono">R</span></td>
-                            <td><span class="mono">reuse_count</span></td>
-                            <td><span class="mono">R = log1p(reuse_count)</span> (unbounded, sublinear)</td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">U</span></td>
-                            <td><span class="mono">utility_ema</span></td>
-                            <td>Clamped to <span class="mono">[-1, 1]</span> (EMA target values in that range)</td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">N</span></td>
-                            <td><span class="mono">redundancy_score</span></td>
-                            <td><span class="mono">N = 1 - redundancy_score</span>, where redundancy is clamped to <span class="mono">[0, 1]</span></td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">T</span></td>
-                            <td><span class="mono">trust_score</span></td>
-                            <td>Clamped to <span class="mono">[0, 1]</span>; defaults to <span class="mono">0.5</span>, updated by feedback/task events</td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">A</span></td>
-                            <td><span class="mono">last_used_at</span> / <span class="mono">created_at</span></td>
-                            <td>Exponential decay in <span class="mono">[0, 1]</span> with a configurable half-life</td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">H</span></td>
-                            <td><span class="mono">importance_hint</span></td>
-                            <td>Clamped to <span class="mono">[-1, 1]</span> (optional; default <span class="mono">0</span>)</td>
-                          </tr>
-                          <tr>
-                            <td><span class="mono">C</span></td>
-                            <td><span class="mono">tokens_est</span></td>
-                            <td><span class="mono">C = tokens_est / cost_scale</span>, clamped to <span class="mono">[0, 2]</span> (default scale 2000)</td>
-                          </tr>
+                          <tr><td><span class="mono">expired</span></td><td>delete</td></tr>
+                          <tr><td><span class="mono">pinned</span></td><td>keep</td></tr>
+                          <tr><td><span class="mono">V &lt; 0.25</span></td><td>delete</td></tr>
+                          <tr><td><span class="mono">0.25 &lt;= V &lt; 0.45</span></td><td>compact</td></tr>
+                          <tr><td><span class="mono">V &gt; 0.70</span></td><td>promote</td></tr>
+                          <tr><td><span class="mono">otherwise</span></td><td>retain</td></tr>
                         </tbody>
                       </table>
-                      <p><span class="mono">V</span> is computed with a sigmoid and then clamped to <span class="mono">[0, 1]</span>.</p>
+                      <div class="doc-block">
+                        <div class="doc-label">Policy Skeleton</div>
+                        <pre class="doc-code">if expired: delete
+else if pinned: retain
+else if V &lt; 0.25: delete
+else if V &lt; 0.45: compact
+else if V &gt; 0.70: promote
+else: retain</pre>
+                      </div>
                     </div>
-                    <div class="doc-block">
-                      <div class="doc-label">Symbols</div>
-                      <table class="table">
-                        <thead>
-                          <tr>
-                            <th>Symbol</th>
-                            <th>Meaning</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr><td><span class="mono">R</span></td><td>Reuse signal</td></tr>
-                          <tr><td><span class="mono">U</span></td><td>Utility signal (EMA)</td></tr>
-                          <tr><td><span class="mono">N</span></td><td>Novelty (1 - redundancy)</td></tr>
-                          <tr><td><span class="mono">T</span></td><td>Trust score</td></tr>
-                          <tr><td><span class="mono">A</span></td><td>Recency/age signal</td></tr>
-                          <tr><td><span class="mono">H</span></td><td>Importance hint</td></tr>
-                          <tr><td><span class="mono">C</span></td><td>Cost signal</td></tr>
-                        </tbody>
-                      </table>
+                  </details>
+
+                  <details class="details section" id="amv-delete" open>
+                    <summary>12. Delete Operator</summary>
+                    <div class="section-body">
+                      <p>
+                        Delete performs hard removal from metadata storage and vector storage. It is selected for expired items,
+                        low-value items, or policy-driven cleanup decisions.
+                      </p>
                     </div>
-                  </div>
-                </details>
+                  </details>
 
-                <details class="details section" id="amv-reuse" open>
-                  <summary>Reuse (R)</summary>
-                  <div class="section-body">
-                    <p>Measures how often and how recently a memory is retrieved.</p>
-                    <ul>
-                      <li>Rolling reuse count</li>
-                      <li>Time since last used</li>
-                    </ul>
-                    <p>In code, <span class="mono">R = log1p(reuse_count)</span>, so reuse grows sublinearly and is not normalized to <span class="mono">[0, 1]</span>.</p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-compact" open>
+                    <summary>13. Compaction Operator</summary>
+                    <div class="section-body">
+                      <p>
+                        Compaction summarizes multiple related low-value memories into a denser representation.
+                        Original items may be archived or removed after summary write to reduce noise and token cost.
+                      </p>
+                    </div>
+                  </details>
 
-                <details class="details section" id="amv-utility" open>
-                  <summary>Utility (U)</summary>
-                  <div class="section-body">
-                    <p>Measures whether memory actually improves outcomes.</p>
-                    <p>Updated from events:</p>
-                    <ul>
-                      <li>Memory used in answer</li>
-                      <li>Task success/failure</li>
-                      <li>User feedback</li>
-                    </ul>
-                    <p>Utility is stored as an exponential moving average and clamped to <span class="mono">[-1, 1]</span>.</p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-promote" open>
+                    <summary>14. Promotion Operator</summary>
+                    <div class="section-body">
+                      <p>
+                        Promotion distills high-value episodic/artifact context into reusable higher-order knowledge
+                        (for example semantic facts or procedural guidance), improving retrieval precision in future tasks.
+                      </p>
+                    </div>
+                  </details>
 
-                <details class="details section" id="amv-novelty" open>
-                  <summary>Novelty (N)</summary>
-                  <div class="section-body">
-                    <p>Measures redundancy relative to other memories.</p>
-                    <p>Computed using nearest-neighbor similarity:</p>
-                    <ul>
-                      <li>High similarity - high redundancy</li>
-                      <li>Novelty = 1 - redundancy</li>
-                    </ul>
-                    <p>Redundancy is computed asynchronously for new or updated memory items, with a nightly sweep as a fallback.</p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-ttl" open>
+                    <summary>15. TTL Precedence</summary>
+                    <div class="section-body">
+                      <p>
+                        TTL enforces a hard compliance retention boundary. AMV-L operates only on non-expired memory, and TTL
+                        always has higher precedence than value-based retention.
+                      </p>
+                    </div>
+                  </details>
 
-                <details class="details section" id="amv-trust" open>
-                  <summary>Trust (T)</summary>
-                  <div class="section-body">
-                    <p>Represents source reliability. In the current implementation:</p>
-                    <ul>
-                      <li>Defaults to <span class="mono">0.5</span></li>
-                      <li>Adjusted by feedback and task events (positive increases, negative decreases)</li>
-                    </ul>
-                    <p>Source-derived trust heuristics can be layered on later, but are not applied automatically today.</p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-signals" open>
+                    <summary>16. Signals and Event Ingestion</summary>
+                    <div class="section-body">
+                      <p>
+                        AtlasRAG ingests runtime signals automatically and accepts explicit supervisory feedback:
+                      </p>
+                      <ul>
+                        <li><span class="mono">retrieved</span> and <span class="mono">used_in_answer</span> during recall/answer flows.</li>
+                        <li><span class="mono">user_positive</span> and <span class="mono">user_negative</span> via <span class="mono">POST /v1/feedback</span>.</li>
+                        <li><span class="mono">task_success</span> and <span class="mono">task_fail</span> via <span class="mono">POST /v1/memory/event</span>.</li>
+                      </ul>
+                      <p>
+                        Event ingestion triggers metric updates and value recomputation, and is reinforced by periodic decay sweeps.
+                      </p>
+                    </div>
+                  </details>
 
-                <details class="details section" id="amv-recency" open>
-                  <summary>Recency (A)</summary>
-                  <div class="section-body">
-                    <p>Recent memories get a small temporary boost.</p>
-                    <p>Decays exponentially over time.</p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-benefits" open>
+                    <summary>17. Resulting System Properties</summary>
+                    <div class="section-body">
+                      <ul>
+                        <li>Bounded long-term memory growth.</li>
+                        <li>Higher retrieval signal-to-noise ratio.</li>
+                        <li>Lower token and storage overhead.</li>
+                        <li>Continuous adaptation to real usage outcomes.</li>
+                      </ul>
+                    </div>
+                  </details>
 
-                <details class="details section" id="amv-importance" open>
-                  <summary>Importance Hint (H)</summary>
-                  <div class="section-body">
-                    <p>Optional user-provided hint in <span class="mono">[-1, 1]</span> (default <span class="mono">0</span>).</p>
-                    <p>Used for pinning critical memories.</p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-cost" open>
-                  <summary>Cost (C)</summary>
-                  <div class="section-body">
-                    <p>Estimates storage and retrieval cost based on:</p>
-                    <ul>
-                      <li>Token size</li>
-                      <li>Chunk size</li>
-                    </ul>
-                    <p>In code, <span class="mono">C = tokens_est / cost_scale</span> and is clamped to <span class="mono">[0, 2]</span> (default scale 2000).</p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-lifecycle" open>
-                  <summary>Lifecycle Decisions</summary>
-                  <div class="section-body">
-                    <p>AMV-L uses thresholds:</p>
-                    <table class="table">
-                      <thead>
-                        <tr>
-                          <th>Condition</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr><td><span class="mono">expired</span></td><td>delete</td></tr>
-                        <tr><td><span class="mono">pinned</span></td><td>keep</td></tr>
-                        <tr><td><span class="mono">V &lt; 0.25</span></td><td>delete</td></tr>
-                        <tr><td><span class="mono">0.25 &lt;= V &lt; 0.45</span></td><td>compact</td></tr>
-                        <tr><td><span class="mono">V &gt; 0.70</span></td><td>promote</td></tr>
-                        <tr><td><span class="mono">otherwise</span></td><td>retain</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-delete" open>
-                  <summary>Delete</summary>
-                  <div class="section-body">
-                    <p>
-                      Memory is permanently removed from the metadata store and the vector engine. This is used for
-                      low-value or expired memory.
-                    </p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-compact" open>
-                  <summary>Compact (Summarize)</summary>
-                  <div class="section-body">
-                    <p>
-                      Multiple low-value related memories are summarized into a single memory item. Original items may be
-                      archived or deleted after the summary is created.
-                    </p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-promote" open>
-                  <summary>Promote (Distill)</summary>
-                  <div class="section-body">
-                    <p>
-                      High-value memory is distilled into higher-level memory types such as semantic facts and procedural steps.
-                      This converts raw experience into reusable knowledge.
-                    </p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-ttl" open>
-                  <summary>Hard TTL vs AMV-L</summary>
-                  <div class="section-body">
-                    <p>TTL is a hard retention boundary for compliance.</p>
-                    <p>AMV-L operates only on non-expired memory.</p>
-                    <p>TTL always wins.</p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-signals" open>
-                  <summary>Signals and Events</summary>
-                  <div class="section-body">
-                    <p>AtlasRAG records signals automatically and exposes explicit feedback:</p>
-                    <ul>
-                      <li><span class="mono">retrieved</span> and <span class="mono">used_in_answer</span> are logged during recall and answers</li>
-                      <li><span class="mono">user_positive</span> and <span class="mono">user_negative</span> are submitted via <span class="mono">POST /v1/feedback</span></li>
-                      <li><span class="mono">task_success</span> and <span class="mono">task_fail</span> can be logged via <span class="mono">POST /v1/memory/event</span></li>
-                    </ul>
-                    <p>
-                      Utility is updated as an exponential moving average, and value scores are recomputed after events and
-                      on periodic decay sweeps.
-                    </p>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-benefits" open>
-                  <summary>Benefits</summary>
-                  <div class="section-body">
-                    <ul>
-                      <li>Bounded memory growth</li>
-                      <li>Higher retrieval signal-to-noise</li>
-                      <li>Lower token usage</li>
-                      <li>Continuous improvement</li>
-                    </ul>
-                  </div>
-                </details>
-
-                <details class="details section" id="amv-summary" open>
-                  <summary>Summary</summary>
-                  <div class="section-body">
-                    <p>
-                      AMV-L provides AtlasRAG with a self-optimizing memory layer that learns what to remember and what to
-                      forget based on real usage.
-                    </p>
-                  </div>
-                </details>
+                  <details class="details section" id="amv-summary" open>
+                    <summary>18. Conclusion</summary>
+                    <div class="section-body">
+                      <p>
+                        AMV-L provides AtlasRAG with a self-optimizing memory substrate that explicitly balances value, trust,
+                        novelty, and cost. The result is a practical lifecycle policy that learns what to retain and what to
+                        compress or forget based on observed behavior, rather than static retention rules alone.
+                      </p>
+                    </div>
+                  </details>
+                </div>
               </div>
             </div>
           </article>

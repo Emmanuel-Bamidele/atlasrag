@@ -238,15 +238,43 @@ const MEMORY_EVENT_DEFAULTS = {
   task_fail: -0.8
 };
 const MEMORY_TASK_EVENT_TYPES = new Set(["task_success", "task_fail"]);
+const OPENAPI_HIDDEN_TAGS = new Set(["Metrics"]);
 
-function buildOpenApiDoc(req) {
+function filterPublicOpenApiDoc(doc) {
+  const inputTags = Array.isArray(doc?.tags) ? doc.tags : [];
+  const inputPaths = doc?.paths && typeof doc.paths === "object" ? doc.paths : {};
+  const paths = {};
+
+  for (const [route, ops] of Object.entries(inputPaths)) {
+    const cleanOps = {};
+    for (const [method, op] of Object.entries(ops || {})) {
+      const tags = Array.isArray(op?.tags) ? op.tags : [];
+      const hiddenByTag = tags.some((tag) => OPENAPI_HIDDEN_TAGS.has(tag));
+      if (op?.["x-internal"] === true || hiddenByTag) continue;
+      cleanOps[method] = op;
+    }
+    if (Object.keys(cleanOps).length > 0) {
+      paths[route] = cleanOps;
+    }
+  }
+
+  return {
+    ...doc,
+    tags: inputTags.filter((tag) => !OPENAPI_HIDDEN_TAGS.has(tag.name)),
+    paths
+  };
+}
+
+function buildOpenApiDoc(req, options = {}) {
+  const { publicView = false } = options;
   const envBase = process.env.OPENAPI_BASE_URL || process.env.PUBLIC_BASE_URL;
   const host = req.get("host");
   const baseUrl = envBase || (host ? `${req.protocol}://${host}` : "http://localhost:3000");
-  return {
+  const doc = {
     ...openApiSpec,
     servers: [{ url: baseUrl }]
   };
+  return publicView ? filterPublicOpenApiDoc(doc) : doc;
 }
 
 function resolveTenantForMetrics(req) {
@@ -2983,6 +3011,10 @@ app.get("/v1/health", async (req, res) => {
 // --------------------------
 app.get("/openapi.json", (req, res) => {
   res.json(buildOpenApiDoc(req));
+});
+
+app.get("/openapi.public.json", (req, res) => {
+  res.json(buildOpenApiDoc(req, { publicView: true }));
 });
 
 // --------------------------

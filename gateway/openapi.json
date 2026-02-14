@@ -3,7 +3,7 @@
   "info": {
     "title": "AtlasRAG API",
     "version": "1.0.0",
-    "description": "AtlasRAG provides semantic search, RAG answers, and memory APIs for multi-tenant agent memory. All /v1 endpoints return a standard response envelope with { ok, data|error, meta }."
+    "description": "AtlasRAG provides semantic search, RAG answers, and long-term memory APIs for multi-tenant agents. All /v1 endpoints return a standard response envelope: { ok, data|error, meta }. For idempotent write endpoints, send a unique Idempotency-Key per logical request."
   },
   "servers": [
     {
@@ -11,18 +11,46 @@
     }
   ],
   "tags": [
-    { "name": "Health" },
-    { "name": "Auth" },
-    { "name": "Docs" },
-    { "name": "Search" },
-    { "name": "Ask" },
-    { "name": "Memory" },
-    { "name": "Jobs" },
-    { "name": "Metrics" }
+    {
+      "name": "Health",
+      "description": "Liveness/readiness checks."
+    },
+    {
+      "name": "Auth",
+      "description": "User authentication and token issuance."
+    },
+    {
+      "name": "Docs",
+      "description": "Document ingestion, listing, and deletion."
+    },
+    {
+      "name": "Search",
+      "description": "Semantic retrieval over indexed chunks."
+    },
+    {
+      "name": "Ask",
+      "description": "Question answering with citations from retrieved context."
+    },
+    {
+      "name": "Memory",
+      "description": "Memory write/recall and memory lifecycle operations."
+    },
+    {
+      "name": "Jobs",
+      "description": "Polling for asynchronous job completion."
+    },
+    {
+      "name": "Metrics",
+      "description": "Internal/runtime metrics for observability."
+    }
   ],
   "security": [
-    { "bearerAuth": [] },
-    { "apiKeyAuth": [] }
+    {
+      "bearerAuth": []
+    },
+    {
+      "apiKeyAuth": []
+    }
   ],
   "components": {
     "securitySchemes": {
@@ -41,206 +69,476 @@
       "Meta": {
         "type": "object",
         "properties": {
-          "tenantId": { "type": ["string", "null"] },
-          "collection": { "type": ["string", "null"] },
-          "timestamp": { "type": "string", "format": "date-time" }
+          "tenantId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "OkResponse": {
         "type": "object",
         "properties": {
-          "ok": { "type": "boolean", "enum": [true] },
-          "data": { "type": "object" },
-          "meta": { "$ref": "#/components/schemas/Meta" }
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "data": {
+            "type": "object"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
         },
-        "required": ["ok", "data", "meta"]
+        "required": [
+          "ok",
+          "data",
+          "meta"
+        ]
       },
       "ErrorResponse": {
         "type": "object",
         "properties": {
-          "ok": { "type": "boolean", "enum": [false] },
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
           "error": {
             "type": "object",
             "properties": {
-              "message": { "type": "string" },
-              "code": { "type": ["string", "null"] }
+              "message": {
+                "type": "string"
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             },
-            "required": ["message"]
+            "required": [
+              "message"
+            ]
           },
-          "meta": { "$ref": "#/components/schemas/Meta" }
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
         },
-        "required": ["ok", "error", "meta"]
+        "required": [
+          "ok",
+          "error",
+          "meta"
+        ]
       },
       "User": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "username": { "type": "string" },
-          "tenant": { "type": "string" },
-          "roles": { "type": "array", "items": { "type": "string" } }
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "LoginRequest": {
         "type": "object",
         "properties": {
-          "username": { "type": "string" },
-          "password": { "type": "string" }
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
         },
-        "required": ["username", "password"]
+        "required": [
+          "username",
+          "password"
+        ]
       },
       "LoginResponseData": {
         "type": "object",
         "properties": {
-          "token": { "type": "string" },
-          "user": { "$ref": "#/components/schemas/User" },
-          "note": { "type": "string" }
+          "token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "note": {
+            "type": "string"
+          }
         }
       },
       "ServiceToken": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "tenantId": { "type": "string" },
-          "name": { "type": "string" },
-          "principalId": { "type": "string" },
-          "roles": { "type": "array", "items": { "type": "string" } },
-          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
-          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
-          "revokedAt": { "type": ["string", "null"], "format": "date-time" },
-          "createdAt": { "type": ["string", "null"], "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
         }
       },
       "ServiceTokenCreateRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "principalId": { "type": "string" },
-          "roles": { "type": "array", "items": { "type": "string" } },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "tenantId": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "ServiceTokenCreateResponseData": {
         "type": "object",
         "properties": {
-          "token": { "type": "string" },
-          "tokenInfo": { "$ref": "#/components/schemas/ServiceToken" },
-          "note": { "type": "string" }
+          "token": {
+            "type": "string"
+          },
+          "tokenInfo": {
+            "$ref": "#/components/schemas/ServiceToken"
+          },
+          "note": {
+            "type": "string"
+          }
         }
       },
       "ServiceTokenListResponseData": {
         "type": "object",
         "properties": {
-          "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/ServiceToken" } }
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceToken"
+            }
+          }
         }
       },
       "ServiceTokenRevokeResponseData": {
         "type": "object",
         "properties": {
-          "token": { "$ref": "#/components/schemas/ServiceToken" }
+          "token": {
+            "$ref": "#/components/schemas/ServiceToken"
+          }
         }
       },
       "TenantAuthMode": {
         "type": "string",
-        "enum": ["sso_only", "sso_plus_password", "password_only"]
+        "enum": [
+          "sso_only",
+          "sso_plus_password",
+          "password_only"
+        ]
       },
       "TenantSsoProvider": {
         "type": "string",
-        "enum": ["google", "azure", "okta"]
+        "enum": [
+          "google",
+          "azure",
+          "okta"
+        ]
       },
       "TenantSettings": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": ["string", "null"] },
-          "authMode": { "$ref": "#/components/schemas/TenantAuthMode" },
-          "ssoProviders": { "type": "array", "items": { "$ref": "#/components/schemas/TenantSsoProvider" } }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authMode": {
+            "$ref": "#/components/schemas/TenantAuthMode"
+          },
+          "ssoProviders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TenantSsoProvider"
+            }
+          }
         }
       },
       "TenantSettingsResponseData": {
         "type": "object",
         "properties": {
-          "tenant": { "$ref": "#/components/schemas/TenantSettings" }
+          "tenant": {
+            "$ref": "#/components/schemas/TenantSettings"
+          }
         }
       },
       "TenantSettingsUpdateRequest": {
         "type": "object",
         "properties": {
-          "authMode": { "$ref": "#/components/schemas/TenantAuthMode" },
-          "ssoProviders": { "type": "array", "items": { "$ref": "#/components/schemas/TenantSsoProvider" } }
+          "authMode": {
+            "$ref": "#/components/schemas/TenantAuthMode"
+          },
+          "ssoProviders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TenantSsoProvider"
+            }
+          }
         }
       },
       "HealthResponseData": {
         "type": "object",
         "properties": {
-          "status": { "type": "string" },
-          "tcp": { "type": "string" }
+          "status": {
+            "type": "string"
+          },
+          "tcp": {
+            "type": "string"
+          }
         }
       },
       "DocListItem": {
         "type": "object",
         "properties": {
-          "docId": { "type": "string" },
-          "collection": { "type": "string" },
-          "chunks": { "type": "integer" }
+          "docId": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "chunks": {
+            "type": "integer"
+          }
         }
       },
       "DocsListResponseData": {
         "type": "object",
         "properties": {
-          "docs": { "type": "array", "items": { "$ref": "#/components/schemas/DocListItem" } },
-          "totalDocs": { "type": "integer" }
+          "docs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocListItem"
+            }
+          },
+          "totalDocs": {
+            "type": "integer"
+          }
         }
       },
       "DocIndexRequest": {
         "type": "object",
         "properties": {
-          "docId": { "type": "string" },
-          "text": { "type": "string" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" },
-          "agentId": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "ttlSeconds": { "type": "number" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "principalId": { "type": "string" }
+          "docId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ttlSeconds": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string"
+          }
         },
-        "required": ["docId", "text"]
+        "required": [
+          "docId",
+          "text"
+        ]
       },
       "DocIndexUrlRequest": {
         "type": "object",
         "properties": {
-          "docId": { "type": "string" },
-          "url": { "type": "string" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" },
-          "agentId": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "ttlSeconds": { "type": "number" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "principalId": { "type": "string" }
+          "docId": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ttlSeconds": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string"
+          }
         },
-        "required": ["docId", "url"]
+        "required": [
+          "docId",
+          "url"
+        ]
       },
       "SearchResponseData": {
         "type": "object",
         "properties": {
-          "query": { "type": "string" },
+          "query": {
+            "type": "string"
+          },
           "results": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "chunkId": { "type": "string" },
-                "score": { "type": "number" },
-                "docId": { "type": "string" },
-                "collection": { "type": "string" },
-                "preview": { "type": "string" }
+                "chunkId": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "docId": {
+                  "type": "string"
+                },
+                "collection": {
+                  "type": "string"
+                },
+                "preview": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -249,132 +547,370 @@
       "AskRequest": {
         "type": "object",
         "properties": {
-          "question": { "type": "string" },
-          "k": { "type": "integer" },
-          "docIds": { "type": "array", "items": { "type": "string" } },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "question": {
+            "type": "string"
+          },
+          "k": {
+            "type": "integer"
+          },
+          "docIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["question"]
+        "required": [
+          "question"
+        ]
       },
       "AskResponseData": {
         "type": "object",
         "properties": {
-          "question": { "type": "string" },
-          "answer": { "type": "string" },
+          "question": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
           "citations": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "chunkId": { "type": "string" },
-                "docId": { "type": ["string", "null"] },
-                "collection": { "type": ["string", "null"] }
+                "chunkId": {
+                  "type": "string"
+                },
+                "docId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "collection": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
               }
             }
           },
-          "chunksUsed": { "type": "integer" },
-          "k": { "type": "integer" }
+          "chunksUsed": {
+            "type": "integer"
+          },
+          "k": {
+            "type": "integer"
+          }
         }
       },
       "MemoryType": {
         "type": "string",
-        "enum": ["artifact", "semantic", "procedural", "episodic", "conversation", "summary"]
+        "enum": [
+          "artifact",
+          "semantic",
+          "procedural",
+          "episodic",
+          "conversation",
+          "summary"
+        ]
       },
       "MemoryReflectType": {
         "type": "string",
-        "enum": ["semantic", "procedural", "summary"]
+        "enum": [
+          "semantic",
+          "procedural",
+          "summary"
+        ]
       },
       "MemoryItem": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "namespaceId": { "type": "string" },
-          "type": { "$ref": "#/components/schemas/MemoryType" },
-          "externalId": { "type": ["string", "null"] },
-          "principalId": { "type": ["string", "null"] },
-          "agentId": { "type": ["string", "null"] },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "title": { "type": ["string", "null"] },
-          "sourceType": { "type": ["string", "null"] },
-          "sourceUrl": { "type": ["string", "null"] },
-          "metadata": { "type": ["object", "null"] },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
-          "valueScore": { "type": ["number", "null"] },
-          "reuseCount": { "type": "integer" },
-          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
-          "utilityEma": { "type": "number" },
-          "redundancyScore": { "type": "number" },
-          "trustScore": { "type": "number" },
-          "importanceHint": { "type": ["number", "null"] },
-          "pinned": { "type": "boolean" }
+          "id": {
+            "type": "string"
+          },
+          "namespaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "externalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "valueScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reuseCount": {
+            "type": "integer"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "utilityEma": {
+            "type": "number"
+          },
+          "redundancyScore": {
+            "type": "number"
+          },
+          "trustScore": {
+            "type": "number"
+          },
+          "importanceHint": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
+          }
         }
       },
       "MemoryWriteRequest": {
         "type": "object",
         "properties": {
-          "text": { "type": "string" },
-          "type": { "$ref": "#/components/schemas/MemoryType" },
-          "title": { "type": "string" },
-          "externalId": { "type": "string" },
-          "metadata": { "type": "object" },
-          "importanceHint": { "type": "number" },
-          "pinned": { "type": "boolean" },
-          "sourceType": { "type": "string" },
-          "sourceUrl": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "ttlSeconds": { "type": "number" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "agentId": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "principalId": { "type": "string" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "title": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "importanceHint": {
+            "type": "number"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ttlSeconds": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       },
       "MemoryWriteResponseData": {
         "type": "object",
         "properties": {
-          "memory": { "$ref": "#/components/schemas/MemoryItem" },
-          "chunksIndexed": { "type": "integer" },
-          "truncated": { "type": "boolean" }
+          "memory": {
+            "$ref": "#/components/schemas/MemoryItem"
+          },
+          "chunksIndexed": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
         }
       },
       "MemoryRecallRequest": {
         "type": "object",
         "properties": {
-          "query": { "type": "string" },
-          "k": { "type": "integer" },
-          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryType" } },
-          "since": { "type": "string", "format": "date-time" },
-          "until": { "type": "string", "format": "date-time" },
-          "agentId": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "query": {
+            "type": "string"
+          },
+          "k": {
+            "type": "integer"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryType"
+            }
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "MemoryRecallResponseData": {
         "type": "object",
         "properties": {
-          "query": { "type": "string" },
-          "k": { "type": "integer" },
+          "query": {
+            "type": "string"
+          },
+          "k": {
+            "type": "integer"
+          },
           "results": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "chunkId": { "type": "string" },
-                "score": { "type": "number" },
-                "preview": { "type": "string" },
-                "memory": { "$ref": "#/components/schemas/MemoryItem" }
+                "chunkId": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "preview": {
+                  "type": "string"
+                },
+                "memory": {
+                  "$ref": "#/components/schemas/MemoryItem"
+                }
               }
             }
           }
@@ -383,99 +919,274 @@
       "MemoryReflectRequest": {
         "type": "object",
         "properties": {
-          "docId": { "type": "string" },
-          "artifactId": { "type": "string" },
-          "conversationId": { "type": "string" },
-          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryReflectType" } },
-          "maxItems": { "type": "integer" },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "principalId": { "type": "string" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "docId": {
+            "type": "string"
+          },
+          "artifactId": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryReflectType"
+            }
+          },
+          "maxItems": {
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         }
       },
       "MemoryCleanupRequest": {
         "type": "object",
         "properties": {
-          "before": { "type": "string", "format": "date-time" },
-          "limit": { "type": "integer" },
-          "dryRun": { "type": "boolean" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         }
       },
       "MemoryCompactRequest": {
         "type": "object",
         "properties": {
-          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryType" } },
-          "since": { "type": "string", "format": "date-time" },
-          "until": { "type": "string", "format": "date-time" },
-          "maxItems": { "type": "integer" },
-          "summaryType": { "$ref": "#/components/schemas/MemoryType" },
-          "deleteOriginals": { "type": "boolean" },
-          "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
-          "acl": { "type": "array", "items": { "type": "string" } },
-          "principalId": { "type": "string" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryType"
+            }
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxItems": {
+            "type": "integer"
+          },
+          "summaryType": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "deleteOriginals": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "private",
+              "acl"
+            ]
+          },
+          "acl": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         }
       },
       "FeedbackRequest": {
         "type": "object",
         "properties": {
-          "memoryId": { "type": "string" },
-          "feedback": { "type": "string", "enum": ["positive", "negative"] },
-          "eventValue": { "type": "number" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "memoryId": {
+            "type": "string"
+          },
+          "feedback": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ]
+          },
+          "eventValue": {
+            "type": "number"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["memoryId", "feedback"]
+        "required": [
+          "memoryId",
+          "feedback"
+        ]
       },
       "FeedbackResponseData": {
         "type": "object",
         "properties": {
-          "memoryId": { "type": "string" },
-          "eventType": { "type": "string" },
-          "valueScore": { "type": ["number", "null"] }
+          "memoryId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "valueScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
         }
       },
       "TaskEventRequest": {
         "type": "object",
         "properties": {
-          "memoryId": { "type": "string" },
-          "eventType": { "type": "string", "enum": ["task_success", "task_fail"] },
-          "eventValue": { "type": "number" },
-          "collection": { "type": "string" },
-          "tenantId": { "type": "string" }
+          "memoryId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "task_success",
+              "task_fail"
+            ]
+          },
+          "eventValue": {
+            "type": "number"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
         },
-        "required": ["memoryId", "eventType"]
+        "required": [
+          "memoryId",
+          "eventType"
+        ]
       },
       "TaskEventResponseData": {
         "type": "object",
         "properties": {
-          "memoryId": { "type": "string" },
-          "eventType": { "type": "string" },
-          "eventValue": { "type": "number" },
-          "utilityEma": { "type": "number" },
-          "trustScore": { "type": "number" },
-          "valueScore": { "type": ["number", "null"] }
+          "memoryId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "eventValue": {
+            "type": "number"
+          },
+          "utilityEma": {
+            "type": "number"
+          },
+          "trustScore": {
+            "type": "number"
+          },
+          "valueScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
         }
       },
       "Job": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "status": { "type": "string" },
-          "jobType": { "type": "string" },
-          "error": { "type": ["string", "null"] },
-          "input": { "type": ["object", "null"] },
-          "output": { "type": ["object", "null"] },
-          "attempts": { "type": "integer" },
-          "maxAttempts": { "type": ["integer", "null"] },
-          "nextRunAt": { "type": ["string", "null"], "format": "date-time" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "jobType": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "output": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "maxAttempts": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "nextRunAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "JobResponseData": {
@@ -484,8 +1195,12 @@
           "job": {
             "type": "object",
             "properties": {
-              "id": { "type": "integer" },
-              "status": { "type": "string" }
+              "id": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              }
             }
           }
         }
@@ -493,7 +1208,9 @@
       "JobStatusResponseData": {
         "type": "object",
         "properties": {
-          "job": { "$ref": "#/components/schemas/Job" }
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
         }
       },
       "StatsResponseData": {
@@ -505,7 +1222,9 @@
   "paths": {
     "/v1/health": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "Health check",
         "security": [],
         "responses": {
@@ -515,25 +1234,44 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/HealthResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Public health probe for gateway + vector TCP connectivity."
       }
     },
     "/v1/login": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Login with username/password",
         "security": [],
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": {
+                "username": "acme_admin",
+                "password": "correct-horse-battery-staple"
+              }
+            }
           }
         },
         "responses": {
@@ -543,21 +1281,50 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/LoginResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LoginResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "401": { "description": "Invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Authenticate with username/password and receive a JWT bearer token."
       }
     },
     "/v1/admin/tenant": {
       "get": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Get tenant settings (admin)",
         "responses": {
           "200": {
@@ -566,23 +1333,54 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/TenantSettingsResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TenantSettingsResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read tenant authentication policy (admin role required)."
       },
       "patch": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Update tenant settings (admin)",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/TenantSettingsUpdateRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantSettingsUpdateRequest"
+              },
+              "example": {
+                "authMode": "sso_plus_password",
+                "ssoProviders": [
+                  "google",
+                  "okta"
+                ]
+              }
+            }
           }
         },
         "responses": {
@@ -592,21 +1390,50 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/TenantSettingsResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TenantSettingsResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Update tenant authentication policy (admin role required)."
       }
     },
     "/v1/admin/service-tokens": {
       "get": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "List service tokens (admin)",
         "responses": {
           "200": {
@@ -615,23 +1442,55 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/ServiceTokenListResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ServiceTokenListResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "List service tokens for the current tenant (admin role required)."
       },
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Create service token (admin)",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/ServiceTokenCreateRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceTokenCreateRequest"
+              },
+              "example": {
+                "name": "agent-runtime",
+                "principalId": "svc:agent-runtime",
+                "roles": [
+                  "indexer",
+                  "reader"
+                ]
+              }
+            }
           }
         },
         "responses": {
@@ -641,24 +1500,62 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/ServiceTokenCreateResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ServiceTokenCreateResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a service token for API-key auth (admin role required)."
       }
     },
     "/v1/admin/service-tokens/{id}": {
       "delete": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Revoke service token (admin)",
         "parameters": [
-          { "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 42,
+            "description": "Service token numeric ID."
+          }
         ],
         "responses": {
           "200": {
@@ -667,25 +1564,70 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/ServiceTokenRevokeResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ServiceTokenRevokeResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           },
-          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
-        }
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Revoke a service token by ID (admin role required)."
       }
     },
     "/v1/docs": {
       "get": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "List indexed docs",
         "parameters": [
-          { "in": "query", "name": "collection", "schema": { "type": "string" } },
-          { "in": "query", "name": "tenantId", "schema": { "type": "string" } }
+          {
+            "in": "query",
+            "name": "collection",
+            "schema": {
+              "type": "string"
+            },
+            "example": "default",
+            "description": "Collection scope (defaults to default)."
+          },
+          {
+            "in": "query",
+            "name": "tenantId",
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme",
+            "description": "Optional tenant override for admin-compatible clients."
+          }
         ],
         "responses": {
           "200": {
@@ -694,86 +1636,222 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/DocsListResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/DocsListResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "List indexed documents visible to the authenticated principal."
       },
       "post": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "Index raw text",
         "parameters": [
           {
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
-            "schema": { "type": "string" },
-            "description": "Unique key to make indexing idempotent."
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique key to make indexing idempotent.",
+            "example": "idx-doc-20260214-0001"
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/DocIndexRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocIndexRequest"
+              },
+              "example": {
+                "docId": "onboarding-guide",
+                "text": "AtlasRAG stores semantic memories for agents and supports tenant-scoped retrieval.",
+                "collection": "default",
+                "tags": [
+                  "guide",
+                  "onboarding"
+                ]
+              }
+            }
           }
         },
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } } }
-        }
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Index raw text into semantic chunks for retrieval and question answering."
       }
     },
     "/v1/docs/url": {
       "post": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "Fetch a URL and index",
         "parameters": [
           {
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
-            "schema": { "type": "string" },
-            "description": "Unique key to make indexing idempotent."
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique key to make indexing idempotent.",
+            "example": "idx-url-20260214-0001"
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/DocIndexUrlRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocIndexUrlRequest"
+              },
+              "example": {
+                "docId": "product-page",
+                "url": "https://example.com/docs/product-overview",
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } } }
-        }
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Fetch a public URL and index extracted text. Private/local hosts are blocked for safety."
       }
     },
     "/v1/docs/{docId}": {
       "delete": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "Delete indexed doc chunks",
         "parameters": [
-          { "in": "path", "name": "docId", "required": true, "schema": { "type": "string" } },
-          { "in": "query", "name": "collection", "schema": { "type": "string" } },
-          { "in": "query", "name": "tenantId", "schema": { "type": "string" } }
+          {
+            "in": "path",
+            "name": "docId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "onboarding-guide"
+          },
+          {
+            "in": "query",
+            "name": "collection",
+            "schema": {
+              "type": "string"
+            },
+            "example": "default"
+          },
+          {
+            "in": "query",
+            "name": "tenantId",
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme"
+          }
         ],
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } } }
-        }
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete vectors/chunks associated with a document id in the selected collection."
       }
     },
     "/v1/search": {
       "get": {
-        "tags": ["Search"],
+        "tags": [
+          "Search"
+        ],
         "summary": "Semantic search",
         "parameters": [
-          { "in": "query", "name": "q", "required": true, "schema": { "type": "string" } },
-          { "in": "query", "name": "k", "schema": { "type": "integer" } },
-          { "in": "query", "name": "docIds", "schema": { "type": "string" }, "description": "Comma-separated docIds" },
-          { "in": "query", "name": "collection", "schema": { "type": "string" } },
-          { "in": "query", "name": "tenantId", "schema": { "type": "string" } }
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "semantic memory policies",
+            "description": "Query text to embed and search."
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 5,
+            "description": "Top-k result count."
+          },
+          {
+            "in": "query",
+            "name": "docIds",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated docIds",
+            "example": "onboarding-guide,product-page"
+          },
+          {
+            "in": "query",
+            "name": "collection",
+            "schema": {
+              "type": "string"
+            },
+            "example": "default"
+          },
+          {
+            "in": "query",
+            "name": "tenantId",
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme"
+          }
         ],
         "responses": {
           "200": {
@@ -782,24 +1860,44 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/SearchResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SearchResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Run semantic vector search and return ranked chunk hits."
       }
     },
     "/v1/ask": {
       "post": {
-        "tags": ["Ask"],
+        "tags": [
+          "Ask"
+        ],
         "summary": "RAG question answering",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/AskRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              },
+              "example": {
+                "question": "What does AtlasRAG store?",
+                "k": 4,
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
@@ -809,33 +1907,62 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/AskResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AskResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Retrieve relevant chunks and generate a grounded answer with citations."
       }
     },
     "/v1/memory/write": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Write a memory item",
         "parameters": [
           {
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
-            "schema": { "type": "string" },
-            "description": "Unique key to make memory writes idempotent."
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique key to make memory writes idempotent.",
+            "example": "mem-write-20260214-0001"
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/MemoryWriteRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWriteRequest"
+              },
+              "example": {
+                "text": "Use idempotency keys for memory and indexing writes.",
+                "type": "semantic",
+                "title": "Idempotency guidance",
+                "tags": [
+                  "reliability",
+                  "api"
+                ],
+                "agentId": "agent:planner",
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
@@ -845,24 +1972,49 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/MemoryWriteResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MemoryWriteResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Write a memory item and index it for future recall."
       }
     },
     "/v1/memory/recall": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Recall memories",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/MemoryRecallRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryRecallRequest"
+              },
+              "example": {
+                "query": "How do we avoid duplicate writes?",
+                "k": 3,
+                "types": [
+                  "semantic"
+                ],
+                "tags": [
+                  "reliability"
+                ]
+              }
+            }
           }
         },
         "responses": {
@@ -872,33 +2024,60 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/MemoryRecallResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MemoryRecallResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Semantic recall over memory items with optional type/time/tag filters."
       }
     },
     "/v1/memory/reflect": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Queue reflection job",
         "parameters": [
           {
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
-            "schema": { "type": "string" },
-            "description": "Unique key to make reflect job creation idempotent."
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique key to make reflect job creation idempotent.",
+            "example": "mem-reflect-20260214-0001"
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/MemoryReflectRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryReflectRequest"
+              },
+              "example": {
+                "docId": "onboarding-guide",
+                "types": [
+                  "semantic",
+                  "summary"
+                ],
+                "maxItems": 3,
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
@@ -908,24 +2087,44 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/JobResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/JobResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Queue reflection job(s) to derive semantic/procedural/summary memories from an artifact or conversation source."
       }
     },
     "/v1/memory/cleanup": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Queue TTL cleanup job",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/MemoryCleanupRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCleanupRequest"
+              },
+              "example": {
+                "dryRun": true,
+                "limit": 200,
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
@@ -935,24 +2134,47 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/JobResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/JobResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Queue TTL cleanup. Use dryRun=true to preview impact safely."
       }
     },
     "/v1/memory/compact": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Queue compaction job",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/MemoryCompactRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCompactRequest"
+              },
+              "example": {
+                "types": [
+                  "semantic"
+                ],
+                "maxItems": 10,
+                "deleteOriginals": false,
+                "collection": "default"
+              }
+            }
           }
         },
         "responses": {
@@ -962,24 +2184,43 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/JobResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/JobResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Queue compaction to summarize/reduce redundant memory items."
       }
     },
     "/v1/feedback": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Submit memory feedback",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/FeedbackRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              },
+              "example": {
+                "memoryId": "2b6d4fd7-1d2b-4b19-9db5-aec4f31af7e2",
+                "feedback": "positive"
+              }
+            }
           }
         },
         "responses": {
@@ -989,24 +2230,44 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/FeedbackResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FeedbackResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Submit positive/negative feedback signal for a memory item."
       }
     },
     "/v1/memory/event": {
       "post": {
-        "tags": ["Memory"],
+        "tags": [
+          "Memory"
+        ],
         "summary": "Submit task outcome event",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/TaskEventRequest" } }
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskEventRequest"
+              },
+              "example": {
+                "memoryId": "2b6d4fd7-1d2b-4b19-9db5-aec4f31af7e2",
+                "eventType": "task_success",
+                "eventValue": 0.8
+              }
+            }
           }
         },
         "responses": {
@@ -1016,22 +2277,41 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/TaskEventResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskEventResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Submit task outcome events to influence trust/utility scoring."
       }
     },
     "/v1/jobs/{id}": {
       "get": {
-        "tags": ["Jobs"],
+        "tags": [
+          "Jobs"
+        ],
         "summary": "Get job status",
         "parameters": [
-          { "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "example": 107
+          }
         ],
         "responses": {
           "200": {
@@ -1040,23 +2320,48 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/JobStatusResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/JobStatusResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Poll an async job until status is succeeded or failed."
       }
     },
     "/v1/stats": {
       "get": {
-        "tags": ["Metrics"],
+        "tags": [
+          "Metrics"
+        ],
         "summary": "Runtime stats",
         "parameters": [
-          { "in": "query", "name": "collection", "schema": { "type": "string" } },
-          { "in": "query", "name": "tenantId", "schema": { "type": "string" } }
+          {
+            "in": "query",
+            "name": "collection",
+            "schema": {
+              "type": "string"
+            },
+            "example": "default"
+          },
+          {
+            "in": "query",
+            "name": "tenantId",
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme"
+          }
         ],
         "responses": {
           "200": {
@@ -1065,31 +2370,46 @@
               "application/json": {
                 "schema": {
                   "allOf": [
-                    { "$ref": "#/components/schemas/OkResponse" },
-                    { "properties": { "data": { "$ref": "#/components/schemas/StatsResponseData" } } }
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/StatsResponseData"
+                        }
+                      }
+                    }
                   ]
                 }
               }
             }
           }
-        }
+        },
+        "description": "Internal runtime statistics for platform diagnostics/operations.",
+        "x-internal": true
       }
-    }
-    ,
+    },
     "/v1/metrics": {
       "get": {
-        "tags": ["Metrics"],
+        "tags": [
+          "Metrics"
+        ],
         "summary": "Prometheus metrics",
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "text/plain": {
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
-        }
+        },
+        "description": "Prometheus-formatted metrics for runtime monitoring.",
+        "x-internal": true
       }
     }
   }

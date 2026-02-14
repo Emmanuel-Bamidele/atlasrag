@@ -693,6 +693,123 @@ select option{
   border-color: rgba(61,213,200,0.5);
 }
 
+.amv-paper{
+  display:flex;
+  flex-direction:column;
+  gap: 14px;
+}
+
+.amv-header{
+  border: 1px solid rgba(61,213,200,0.28);
+  background:
+    linear-gradient(180deg, rgba(14,31,36,0.92), rgba(8,18,20,0.92)),
+    radial-gradient(560px 220px at 12% -12%, rgba(61,213,200,0.22), transparent 60%);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 14px 34px rgba(3,9,10,0.35);
+}
+
+.amv-kicker{
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(61,213,200,0.9);
+}
+
+.amv-header h3{
+  margin: 6px 0 8px;
+  font-size: 22px;
+  font-family: var(--display);
+  letter-spacing: -0.25px;
+}
+
+.amv-subtitle{
+  margin: 0;
+  color: rgba(232,242,242,0.86);
+  max-width: 78ch;
+}
+
+.amv-meta-grid{
+  margin-top: 14px;
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.amv-meta-item{
+  border: 1px solid rgba(226,232,240,0.13);
+  border-radius: 12px;
+  background: rgba(10,22,24,0.72);
+  padding: 10px 11px;
+}
+
+.amv-meta-label{
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.amv-meta-value{
+  font-size: 12.5px;
+  color: rgba(232,242,242,0.92);
+  line-height: 1.4;
+}
+
+.amv-outline{
+  margin-top: 0;
+}
+
+.amv-paper .details.section{
+  border-color: rgba(226,232,240,0.15);
+  background: rgba(6,14,16,0.62);
+}
+
+.amv-paper .details.section summary{
+  background: linear-gradient(180deg, rgba(15,33,38,0.72), rgba(9,20,22,0.62));
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: -0.08px;
+}
+
+.amv-paper .details.section[open] summary{
+  border-bottom-color: rgba(61,213,200,0.22);
+}
+
+.amv-paper .details.section .section-body{
+  padding: 12px;
+}
+
+.amv-paper .section-body p{
+  margin-bottom: 10px;
+  color: rgba(232,242,242,0.9);
+}
+
+.amv-paper .section-body ul{
+  margin-top: 6px;
+}
+
+.amv-paper .table th{
+  color: rgba(211,223,223,0.9);
+  font-size: 10px;
+}
+
+.amv-paper .table td{
+  color: rgba(232,242,242,0.9);
+}
+
+.amv-equation{
+  border-color: rgba(246,195,86,0.28);
+  background: linear-gradient(180deg, rgba(18,32,36,0.72), rgba(9,20,22,0.7));
+}
+
+.amv-equation .doc-code{
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .doc-label{
   font-size: 11px;
   text-transform: uppercase;
