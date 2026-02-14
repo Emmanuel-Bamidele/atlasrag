@@ -1,19 +1,28 @@
-FROM gcc:13
+FROM gcc:12 AS build
 
-# Install standalone Asio headers on Debian-based image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libasio-dev \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Copy your C++ project folder into the container
 COPY mini_redis/ ./mini_redis
+RUN mkdir -p /out && g++ -O2 -std=c++20 mini_redis/src/server.cpp -o /out/server -pthread
 
-# Compile the server (Asio headers now exist in /usr/include)
-RUN g++ -std=c++20 mini_redis/src/server.cpp -o server -pthread
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -r -u 10001 -g nogroup appuser
+
+WORKDIR /app
+COPY --from=build /out/server ./server
+
+RUN mkdir -p /data && chown -R appuser:nogroup /data
+
+USER appuser
 
 EXPOSE 6379
 
 CMD ["./server"]
-

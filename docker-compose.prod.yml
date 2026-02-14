@@ -17,6 +17,30 @@ services:
       retries: 5
       start_period: 15s
 
+  vector-tls-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.stunnel
+    image: atlasrag/stunnel
+    restart: unless-stopped
+    volumes:
+      - ./deploy/stunnel/vector-server.conf:/etc/stunnel/stunnel.conf:ro
+      - ./deploy/certs:/etc/stunnel/certs:ro
+    depends_on:
+      - redis
+
+  vector-tls-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.stunnel
+    image: atlasrag/stunnel
+    restart: unless-stopped
+    volumes:
+      - ./deploy/stunnel/vector-client.conf:/etc/stunnel/stunnel.conf:ro
+      - ./deploy/certs:/etc/stunnel/certs:ro
+    depends_on:
+      - vector-tls-server
+
   postgres:
     image: postgres:16
     restart: unless-stopped
@@ -43,8 +67,8 @@ services:
     environment:
       NODE_ENV: production
       TCP_TIMEOUT_MS: "30000"
-      TCP_HOST: redis
-      TCP_PORT: "6379"
+      TCP_HOST: vector-tls-client
+      TCP_PORT: "16379"
 
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
@@ -93,6 +117,7 @@ services:
       REINDEX_TCP_DELAY_MS: ${REINDEX_TCP_DELAY_MS}
     depends_on:
       - redis
+      - vector-tls-client
       - postgres
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/v1/health', r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]

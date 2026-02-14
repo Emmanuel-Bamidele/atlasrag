@@ -5,6 +5,28 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { getUserByUsername } = require("./db");
 
+const DEFAULT_AUTH_MODE = "sso_plus_password";
+const AUTH_MODES = new Set(["sso_only", "sso_plus_password", "password_only"]);
+
+function parseAuthMode(value) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return null;
+  if (AUTH_MODES.has(clean)) return clean;
+  return null;
+}
+
+function normalizeAuthMode(value) {
+  return parseAuthMode(value) || DEFAULT_AUTH_MODE;
+}
+
+function isPasswordAllowed(authMode) {
+  return normalizeAuthMode(authMode) !== "sso_only";
+}
+
+function isSsoAllowed(authMode) {
+  return normalizeAuthMode(authMode) !== "password_only";
+}
+
 async function verifyCredentials(username, password) {
   const user = await getUserByUsername(username);
   if (!user) {
@@ -12,6 +34,10 @@ async function verifyCredentials(username, password) {
   }
   if (user.disabled) {
     return { ok: false, reason: "disabled" };
+  }
+  const tenantAuthMode = normalizeAuthMode(user.tenant_auth_mode);
+  if (!isPasswordAllowed(tenantAuthMode)) {
+    return { ok: false, reason: "sso_only" };
   }
   if (user.sso_only) {
     return { ok: false, reason: "sso_only" };
@@ -68,5 +94,9 @@ function issueToken(user) {
 
 module.exports = {
   verifyCredentials,
-  issueToken
+  issueToken,
+  parseAuthMode,
+  normalizeAuthMode,
+  isPasswordAllowed,
+  isSsoAllowed
 };

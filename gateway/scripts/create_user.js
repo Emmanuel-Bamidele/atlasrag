@@ -17,7 +17,7 @@ async function main() {
   const role = readArg("--role") || process.env.ROLE || "";
 
   if (!username || !password || !tenant) {
-    console.error("Usage: node scripts/create_user.js --username USER --password PASS --tenant TENANT [--role admin]");
+    console.error("Usage: node scripts/create_user.js --username USER --password PASS --tenant TENANT [--role admin|indexer|reader]");
     process.exit(1);
   }
 

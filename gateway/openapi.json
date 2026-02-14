@@ -141,6 +141,36 @@
           "token": { "$ref": "#/components/schemas/ServiceToken" }
         }
       },
+      "TenantAuthMode": {
+        "type": "string",
+        "enum": ["sso_only", "sso_plus_password", "password_only"]
+      },
+      "TenantSsoProvider": {
+        "type": "string",
+        "enum": ["google", "azure", "okta"]
+      },
+      "TenantSettings": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "authMode": { "$ref": "#/components/schemas/TenantAuthMode" },
+          "ssoProviders": { "type": "array", "items": { "$ref": "#/components/schemas/TenantSsoProvider" } }
+        }
+      },
+      "TenantSettingsResponseData": {
+        "type": "object",
+        "properties": {
+          "tenant": { "$ref": "#/components/schemas/TenantSettings" }
+        }
+      },
+      "TenantSettingsUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "authMode": { "$ref": "#/components/schemas/TenantAuthMode" },
+          "ssoProviders": { "type": "array", "items": { "$ref": "#/components/schemas/TenantSsoProvider" } }
+        }
+      },
       "HealthResponseData": {
         "type": "object",
         "properties": {
@@ -170,6 +200,8 @@
           "text": { "type": "string" },
           "collection": { "type": "string" },
           "tenantId": { "type": "string" },
+          "agentId": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "ttlSeconds": { "type": "number" },
           "expiresAt": { "type": "string", "format": "date-time" },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
@@ -185,6 +217,8 @@
           "url": { "type": "string" },
           "collection": { "type": "string" },
           "tenantId": { "type": "string" },
+          "agentId": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "ttlSeconds": { "type": "number" },
           "expiresAt": { "type": "string", "format": "date-time" },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
@@ -243,14 +277,24 @@
           "k": { "type": "integer" }
         }
       },
+      "MemoryType": {
+        "type": "string",
+        "enum": ["artifact", "semantic", "procedural", "episodic", "conversation", "summary"]
+      },
+      "MemoryReflectType": {
+        "type": "string",
+        "enum": ["semantic", "procedural", "summary"]
+      },
       "MemoryItem": {
         "type": "object",
         "properties": {
           "id": { "type": "string" },
           "namespaceId": { "type": "string" },
-          "type": { "type": "string" },
+          "type": { "$ref": "#/components/schemas/MemoryType" },
           "externalId": { "type": ["string", "null"] },
           "principalId": { "type": ["string", "null"] },
+          "agentId": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
           "acl": { "type": "array", "items": { "type": "string" } },
           "title": { "type": ["string", "null"] },
@@ -265,7 +309,7 @@
         "type": "object",
         "properties": {
           "text": { "type": "string" },
-          "type": { "type": "string" },
+          "type": { "$ref": "#/components/schemas/MemoryType" },
           "title": { "type": "string" },
           "externalId": { "type": "string" },
           "metadata": { "type": "object" },
@@ -274,6 +318,8 @@
           "createdAt": { "type": "string", "format": "date-time" },
           "ttlSeconds": { "type": "number" },
           "expiresAt": { "type": "string", "format": "date-time" },
+          "agentId": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
           "acl": { "type": "array", "items": { "type": "string" } },
           "principalId": { "type": "string" },
@@ -295,9 +341,11 @@
         "properties": {
           "query": { "type": "string" },
           "k": { "type": "integer" },
-          "types": { "type": "array", "items": { "type": "string" } },
+          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryType" } },
           "since": { "type": "string", "format": "date-time" },
           "until": { "type": "string", "format": "date-time" },
+          "agentId": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "collection": { "type": "string" },
           "tenantId": { "type": "string" }
         },
@@ -327,7 +375,8 @@
         "properties": {
           "docId": { "type": "string" },
           "artifactId": { "type": "string" },
-          "types": { "type": "array", "items": { "type": "string" } },
+          "conversationId": { "type": "string" },
+          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryReflectType" } },
           "maxItems": { "type": "integer" },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
           "acl": { "type": "array", "items": { "type": "string" } },
@@ -349,11 +398,11 @@
       "MemoryCompactRequest": {
         "type": "object",
         "properties": {
-          "types": { "type": "array", "items": { "type": "string" } },
+          "types": { "type": "array", "items": { "$ref": "#/components/schemas/MemoryType" } },
           "since": { "type": "string", "format": "date-time" },
           "until": { "type": "string", "format": "date-time" },
           "maxItems": { "type": "integer" },
-          "summaryType": { "type": "string" },
+          "summaryType": { "$ref": "#/components/schemas/MemoryType" },
           "deleteOriginals": { "type": "boolean" },
           "visibility": { "type": "string", "enum": ["tenant", "private", "acl"] },
           "acl": { "type": "array", "items": { "type": "string" } },
@@ -370,7 +419,12 @@
           "jobType": { "type": "string" },
           "error": { "type": ["string", "null"] },
           "input": { "type": ["object", "null"] },
-          "output": { "type": ["object", "null"] }
+          "output": { "type": ["object", "null"] },
+          "attempts": { "type": "integer" },
+          "maxAttempts": { "type": ["integer", "null"] },
+          "nextRunAt": { "type": ["string", "null"], "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
         }
       },
       "JobResponseData": {
@@ -447,6 +501,55 @@
           },
           "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "401": { "description": "Invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/admin/tenant": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get tenant settings (admin)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/OkResponse" },
+                    { "properties": { "data": { "$ref": "#/components/schemas/TenantSettingsResponseData" } } }
+                  ]
+                }
+              }
+            }
+          },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "patch": {
+        "tags": ["Auth"],
+        "summary": "Update tenant settings (admin)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/TenantSettingsUpdateRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/OkResponse" },
+                    { "properties": { "data": { "$ref": "#/components/schemas/TenantSettingsResponseData" } } }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
       }
     },
@@ -861,6 +964,23 @@
                     { "properties": { "data": { "$ref": "#/components/schemas/StatsResponseData" } } }
                   ]
                 }
+              }
+            }
+          }
+        }
+      }
+    }
+    ,
+    "/v1/metrics": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Prometheus metrics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
               }
             }
           }

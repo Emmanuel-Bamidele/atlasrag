@@ -62,7 +62,7 @@
               <div class="doc-card">
                 <h3>Memory API</h3>
                 <p>
-                  Write durable memories with clear types (artifact, semantic, procedural, summary). Each
+                  Write durable memories with clear types (artifact, semantic, procedural, episodic, conversation, summary). Each
                   memory is attributed to a tenant, collection, and principal for safe isolation.
                 </p>
               </div>
@@ -367,7 +367,7 @@
               <div class="metrics-meta">Updated: <span id="usageUpdated">-</span></div>
             </div>
 
-            <p class="hint" style="margin-top:6px;">Requires admin or owner privileges.</p>
+            <p class="hint" style="margin-top:6px;">Requires admin privileges.</p>
 
             <div class="actions" style="margin-top:12px;">
               <button class="btn secondary" id="usageRefreshBtn">Refresh usage</button>
@@ -483,7 +483,7 @@
   -d '{
     "name": "app-server",
     "principalId": "svc:app",
-    "roles": ["writer"],
+    "roles": ["indexer"],
     "expiresAt": "2026-12-31T00:00:00Z"
   }'</pre>
             </div>
@@ -520,7 +520,7 @@
               Service tokens inherit the tenant from the admin who created them.
             </p>
             <p>
-              Admins or org owners can issue service tokens via <span class="mono">POST /v1/admin/service-tokens</span>.
+              Admins can issue service tokens via <span class="mono">POST /v1/admin/service-tokens</span>.
               Store the returned token securely; it is shown only once.
             </p>
             <div class="doc-block">
@@ -531,11 +531,34 @@
   -d '{
     "name": "ci-pipeline",
     "principalId": "svc:ci",
-    "roles": ["writer"],
+    "roles": ["indexer"],
     "expiresAt": "2026-12-31T00:00:00Z"
   }'</pre>
             </div>
-            <p class="hint">Requires role <span class="mono">admin</span> or <span class="mono">owner</span> (or a token whose principal matches the tenant).</p>
+            <p class="hint">Requires role <span class="mono">admin</span> (or a token whose principal matches the tenant).</p>
+
+            <h4>Tenant auth mode</h4>
+            <p>
+              Admins can set per-tenant login policy: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, or
+              <span class="mono">password_only</span>. <span class="mono">sso_only</span> disables password login; <span class="mono">password_only</span> disables SSO.
+            </p>
+            <p>
+              You can also restrict which SSO providers are allowed by supplying <span class="mono">ssoProviders</span>
+              (<span class="mono">google</span>, <span class="mono">azure</span>, <span class="mono">okta</span>).
+            </p>
+            <div class="doc-block">
+              <div class="doc-label">Get auth mode (admin)</div>
+              <pre class="doc-code">curl -X GET http://localhost:3000/v1/admin/tenant \
+  -H "Authorization: Bearer YOUR_ADMIN_JWT"</pre>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Set auth mode (admin)</div>
+              <pre class="doc-code">curl -X PATCH http://localhost:3000/v1/admin/tenant \
+  -H "Authorization: Bearer YOUR_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "authMode": "sso_only", "ssoProviders": ["google"] }'</pre>
+            </div>
+            <p class="hint">Valid values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>.</p>
 
             <h4>Security</h4>
             <div class="doc-block">
@@ -543,13 +566,53 @@
               <ul>
                 <li><strong>Auth required:</strong> JWTs or service tokens protect all sensitive endpoints.</li>
                 <li><strong>Tenant isolation:</strong> data is partitioned by tenant and enforced in every query.</li>
-                <li><strong>Role-based access:</strong> <span class="mono">reader</span>/<span class="mono">writer</span>/<span class="mono">admin</span>/<span class="mono">owner</span> control access to privileged actions.</li>
+                <li><strong>Role-based access:</strong> <span class="mono">reader</span>/<span class="mono">indexer</span>/<span class="mono">admin</span> control access to privileged actions.</li>
+                <li><strong>Tenant auth mode:</strong> enforce <span class="mono">sso_only</span> or <span class="mono">password_only</span> per tenant.</li>
+                <li><strong>Tenant SSO allowlist:</strong> restrict SSO to <span class="mono">google</span>, <span class="mono">azure</span>, or <span class="mono">okta</span>.</li>
                 <li><strong>Visibility + ACL:</strong> <span class="mono">tenant</span>, <span class="mono">private</span>, <span class="mono">acl</span> rules apply to search/recall.</li>
                 <li><strong>Idempotency:</strong> write/index/reflect accept <span class="mono">Idempotency-Key</span> to prevent double writes.</li>
+                <li><strong>Audit logs:</strong> sensitive actions (auth policy changes, key revokes, deletes) are recorded with actor + request metadata.</li>
                 <li><strong>Rate limits + lockout:</strong> login throttling + failed-login lockout are enabled.</li>
                 <li><strong>URL ingestion safety:</strong> private IP ranges are blocked (SSRF protection).</li>
                 <li><strong>Prompt injection guard:</strong> source sanitization is enabled by default.</li>
               </ul>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">RBAC by endpoint</div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th>Role required</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><span class="mono">GET /v1/health</span></td><td>Public</td></tr>
+                  <tr><td><span class="mono">POST /v1/login</span></td><td>Public</td></tr>
+                  <tr><td><span class="mono">/v1/auth/*</span></td><td>Public (SSO)</td></tr>
+                  <tr><td><span class="mono">GET /v1/stats</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">GET /v1/metrics</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">GET /v1/docs</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">GET /v1/collections</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">GET /v1/search</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">POST /v1/ask</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">POST /v1/memory/recall</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">POST /v1/docs</span></td><td>Indexer+</td></tr>
+                  <tr><td><span class="mono">POST /v1/docs/url</span></td><td>Indexer+</td></tr>
+                  <tr><td><span class="mono">DELETE /v1/docs/:docId</span></td><td>Indexer+</td></tr>
+                  <tr><td><span class="mono">POST /v1/memory/write</span></td><td>Indexer+</td></tr>
+                  <tr><td><span class="mono">POST /v1/memory/reflect</span></td><td>Indexer+</td></tr>
+                  <tr><td><span class="mono">GET /v1/jobs</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">GET /v1/jobs/:id</span></td><td>Reader+</td></tr>
+                  <tr><td><span class="mono">POST /v1/memory/cleanup</span></td><td>Admin</td></tr>
+                  <tr><td><span class="mono">POST /v1/memory/compact</span></td><td>Admin</td></tr>
+                  <tr><td><span class="mono">DELETE /v1/collections/:collection</span></td><td>Admin</td></tr>
+                  <tr><td><span class="mono">/v1/admin/service-tokens</span></td><td>Admin</td></tr>
+                  <tr><td><span class="mono">/v1/admin/tenant</span></td><td>Admin</td></tr>
+                  <tr><td><span class="mono">/v1/admin/usage</span></td><td>Admin</td></tr>
+                </tbody>
+              </table>
+              <p class="hint">Reader+ means <span class="mono">reader</span>, <span class="mono">indexer</span>, or <span class="mono">admin</span>. Indexer+ means <span class="mono">indexer</span> or <span class="mono">admin</span>.</p>
             </div>
             <h4>API Reference</h4>
             <p>
@@ -565,7 +628,9 @@
               <li><span class="mono">/v1/memory/write</span> durable memory items</li>
               <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
               <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
+              <li><span class="mono">/v1/metrics</span> Prometheus metrics (per tenant)</li>
               <li><span class="mono">/v1/jobs/:id</span> job status</li>
+              <li><span class="mono">/v1/admin/tenant</span> tenant auth mode (admin)</li>
               <li><span class="mono">/v1/admin/service-tokens</span> issue API keys (admin)</li>
             </ul>
             <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
@@ -585,9 +650,42 @@
               <div class="doc-label">Error</div>
               <pre class="doc-code">{
   "ok": false,
-  "error": { "message": "Invalid request", "code": "INVALID_REQUEST" },
+  "error": { "message": "Invalid input", "code": "INVALID_INPUT" },
   "meta": { "tenantId": "acme", "collection": "default", "timestamp": "..." }
 }</pre>
+            </div>
+
+            <div class="doc-block">
+              <div class="doc-label">Error codes (common)</div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Meaning / cause</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><span class="mono">AUTH_REQUIRED</span></td><td>Missing or malformed auth header.</td></tr>
+                  <tr><td><span class="mono">AUTH_INVALID</span></td><td>Invalid JWT/API key or invalid login credentials.</td></tr>
+                  <tr><td><span class="mono">AUTH_EXPIRED</span></td><td>API key expired.</td></tr>
+                  <tr><td><span class="mono">AUTH_REVOKED</span></td><td>API key revoked.</td></tr>
+                  <tr><td><span class="mono">AUTH_CONFIG</span></td><td>Server auth misconfiguration (missing <span class="mono">JWT_SECRET</span>).</td></tr>
+                  <tr><td><span class="mono">AUTH_LOOKUP_FAILED</span></td><td>Auth lookup failed in the database.</td></tr>
+                  <tr><td><span class="mono">RATE_LIMITED</span></td><td>Too many requests in the current window.</td></tr>
+                  <tr><td><span class="mono">FORBIDDEN</span></td><td>Insufficient role/permissions for the endpoint.</td></tr>
+                  <tr><td><span class="mono">NOT_FOUND</span></td><td>Requested resource does not exist.</td></tr>
+                  <tr><td><span class="mono">INVALID_INPUT</span></td><td>Missing or invalid parameters in the request.</td></tr>
+                  <tr><td><span class="mono">INVALID_DOC_ID</span></td><td>Doc ID failed validation (format/characters).</td></tr>
+                  <tr><td><span class="mono">ACCOUNT_LOCKED</span></td><td>Account locked after repeated failed logins.</td></tr>
+                  <tr><td><span class="mono">ACCOUNT_DISABLED</span></td><td>User account disabled by admin.</td></tr>
+                  <tr><td><span class="mono">SSO_ONLY</span></td><td>Account requires SSO login.</td></tr>
+                  <tr><td><span class="mono">IDEMPOTENCY_KEY_REQUIRED</span></td><td>Missing <span class="mono">Idempotency-Key</span> header.</td></tr>
+                  <tr><td><span class="mono">IDEMPOTENCY_KEY_INVALID</span></td><td>Invalid or oversized idempotency key.</td></tr>
+                  <tr><td><span class="mono">IDEMPOTENCY_KEY_REUSED</span></td><td>Idempotency key reused with different payload.</td></tr>
+                  <tr><td><span class="mono">IDEMPOTENCY_IN_PROGRESS</span></td><td>Request with the same key is already running.</td></tr>
+                </tbody>
+              </table>
+              <p class="hint">Some endpoints also return operation-specific codes like <span class="mono">*_FAILED</span> for internal failures.</p>
             </div>
 
             <h4>SDKs</h4>
@@ -633,12 +731,33 @@
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Idempotency-Key: mem-001" \
   -H "Content-Type: application/json" \
-  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default" }'
+  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default", "agentId": "agent:release-bot", "tags": ["release", "ops"] }'
 
 curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Content-Type: application/json" \
-  -d '{ "query": "release day", "types": ["semantic"], "k": 5 }'</pre>
+  -d '{ "query": "release day", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "k": 5 }'</pre>
+            </div>
+            <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
+            <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
+            <div class="doc-block">
+              <div class="doc-label">Memory types</div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Use case</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><span class="mono">artifact</span></td><td>Source documents or raw inputs.</td></tr>
+                  <tr><td><span class="mono">semantic</span></td><td>Facts or knowledge extracted from artifacts.</td></tr>
+                  <tr><td><span class="mono">procedural</span></td><td>How-to steps or workflows.</td></tr>
+                  <tr><td><span class="mono">episodic</span></td><td>Events with time/context.</td></tr>
+                  <tr><td><span class="mono">conversation</span></td><td>Dialogue snippets or chat history.</td></tr>
+                  <tr><td><span class="mono">summary</span></td><td>Compressed rollups or compactions.</td></tr>
+                </tbody>
+              </table>
             </div>
 
             <h4>Client examples (Python + Node.js)</h4>
@@ -699,7 +818,9 @@ print(res.json())
 res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-Key": "mem-001"}, json={
   "type": "semantic",
   "collection": "default",
-  "text": "Vector WAL is enabled in production."
+  "text": "Vector WAL is enabled in production.",
+  "agentId": "agent:ops-bot",
+  "tags": ["infra", "wal"]
 })
 res.raise_for_status()
 
@@ -707,6 +828,7 @@ res.raise_for_status()
 res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
   "query": "WAL enabled",
   "types": ["semantic"],
+  "tags": ["infra"],
   "k": 5
 })
 res.raise_for_status()
@@ -720,6 +842,8 @@ res = requests.post(f"{BASE}/v1/memory/reflect", headers={**headers, "Idempotenc
 })
 res.raise_for_status()
 job_id = res.json()["data"]["job"]["id"]
+#
+# You can also reflect from a conversation memory item via "conversationId".
 
 # 7) Poll job
 while True:
@@ -743,7 +867,7 @@ res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "i
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Server-side privileges (no end-user login)</div>
-                  <pre class="doc-code"># Requires ALLOW_PRINCIPAL_OVERRIDE=1 and an admin/owner service token
+                  <pre class="doc-code"># Requires ALLOW_PRINCIPAL_OVERRIDE=1 and an admin service token
 res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
   "query": "policy details",
   "collection": "internal",
@@ -808,11 +932,13 @@ console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5
 await post("/v1/memory/write", {
   type: "semantic",
   collection: "default",
-  text: "Vector WAL is enabled in production."
+  text: "Vector WAL is enabled in production.",
+  agentId: "agent:ops-bot",
+  tags: ["infra", "wal"]
 }, { "Idempotency-Key": "mem-001" });
 
 // 5) Recall
-console.log(await post("/v1/memory/recall", { query: "WAL enabled", types: ["semantic"], k: 5 }));
+console.log(await post("/v1/memory/recall", { query: "WAL enabled", types: ["semantic"], tags: ["infra"], k: 5 }));
 
 // 6) Reflect + job polling
 const reflect = await post("/v1/memory/reflect", {
@@ -820,6 +946,7 @@ const reflect = await post("/v1/memory/reflect", {
   types: ["semantic", "summary"],
   collection: "default"
 }, { "Idempotency-Key": "reflect-001" });
+// You can also pass conversationId to reflect from a conversation memory item.
 
 const jobId = reflect.data.job.id;
 while (true) {
@@ -863,7 +990,7 @@ while (true) {
               your backend call AtlasRAG with a service token and pass <span class="mono">principalId</span> and/or
               <span class="mono">privileges</span> in the payload. The server matches these against the item's
               visibility and ACL list. Enable this by setting <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span> and
-              using an <span class="mono">admin</span>/<span class="mono">owner</span> service token. Never expose
+              using an <span class="mono">admin</span> service token. Never expose
               this token to the browser.
             </p>
             <div class="doc-block">
@@ -898,7 +1025,7 @@ while (true) {
             </div>
             <p class="hint">
               If you use JWTs, <span class="mono">principalId</span> is derived from the token and should not be
-              provided in the payload. <span class="mono">privileges</span> is only honored for admin/owner service
+              provided in the payload. <span class="mono">privileges</span> is only honored for admin service
               tokens when <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span>.
             </p>
 
@@ -909,12 +1036,19 @@ while (true) {
               <li>Postgres stores chunks, memory items, links, jobs, and idempotency keys.</li>
               <li>OpenAI (or compatible) provides embeddings and generation.</li>
               <li>Background jobs handle reflection, summarization, and lifecycle tasks.</li>
+              <li>Expired items are automatically swept and removed (vectors + DB rows), preventing orphan vectors.</li>
+              <li>Jobs retry with exponential backoff before transitioning to failed.</li>
+              <li>Job reruns are idempotent (derived memories are replaced, not duplicated).</li>
+              <li>Structured logs include <span class="mono">request_id</span>, <span class="mono">tenant_id</span>, and <span class="mono">collection</span>.</li>
+              <li>Prometheus metrics are exposed at <span class="mono">/metrics</span> (scoped to the tenant; admin sees all tenants).</li>
             </ul>
 
             <h4>Deployment</h4>
             <ul>
               <li>Run with Docker Compose: <span class="mono">docker compose up -d</span></li>
               <li>Set required env: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">JWT_SECRET</span>, Postgres credentials.</li>
+              <li>Timeouts: <span class="mono">TCP_TIMEOUT_MS</span>, <span class="mono">DB_CONNECT_TIMEOUT_MS</span>, <span class="mono">DB_QUERY_TIMEOUT_MS</span>, <span class="mono">DB_STATEMENT_TIMEOUT_MS</span>, <span class="mono">OPENAI_TIMEOUT_MS</span>.</li>
+              <li>Rate limiting: per IP (<span class="mono">RATE_LIMIT_WINDOW_MS</span>/<span class="mono">RATE_LIMIT_MAX</span>) and per tenant/key (<span class="mono">TENANT_RATE_LIMIT_WINDOW_MS</span>/<span class="mono">TENANT_RATE_LIMIT_MAX</span>).</li>
               <li>Expose gateway on <span class="mono">:3000</span> and front with HTTPS in production.</li>
               <li>Optionally set <span class="mono">PUBLIC_BASE_URL</span> / <span class="mono">OPENAPI_BASE_URL</span> for correct docs links.</li>
             </ul>
@@ -926,6 +1060,7 @@ while (true) {
           <div class="doc-tabs" data-doc-tabs="settings">
             <button class="doc-tab active" data-doc-tab="auth" type="button">Authenticate</button>
             <button class="doc-tab" data-doc-tab="keys" type="button">API Keys</button>
+            <button class="doc-tab" data-doc-tab="tenant" type="button">Tenant</button>
           </div>
           <div class="doc-panels" data-doc-panels="settings">
             <div class="doc-panel active" data-doc-panel="auth">
@@ -963,7 +1098,7 @@ while (true) {
                   - Index at least one document before searching or asking.<br>
                   - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
                   - Health check only verifies gateway to TCP reachability.<br>
-                  - API keys are created by admins or org owners via <span class="mono">POST /v1/admin/service-tokens</span>.
+                  - API keys are created by admins via <span class="mono">POST /v1/admin/service-tokens</span>.
                 </div>
               </div>
 
@@ -981,9 +1116,9 @@ while (true) {
             <div class="doc-panel" data-doc-panel="keys">
               <div class="row">
                 <div class="field">
-                  <label for="apiKeyName">Create API key (admin/owner)</label>
+                  <label for="apiKeyName">Create API key (admin)</label>
                   <input id="apiKeyName" placeholder="ci-pipeline">
-                  <div class="hint">Admins/owners can issue service tokens for server-to-server use.</div>
+                  <div class="hint">Admins can issue service tokens for server-to-server use.</div>
                 </div>
               </div>
 
@@ -991,7 +1126,7 @@ while (true) {
                 <summary>Advanced options</summary>
                 <div class="row" style="margin-top:12px;">
                   <div class="field">
-                    <label for="apiKeyPrincipal">Principal ID (owner)</label>
+                    <label for="apiKeyPrincipal">Principal ID (optional)</label>
                     <input id="apiKeyPrincipal" placeholder="svc:ci">
                     <div class="hint">Defaults to your token subject if omitted.</div>
                   </div>
@@ -1001,7 +1136,8 @@ while (true) {
               <div class="row" style="margin-top:12px;">
                 <div class="field">
                   <label for="apiKeyRoles">Roles (comma separated)</label>
-                  <input id="apiKeyRoles" placeholder="writer,reader">
+                  <input id="apiKeyRoles" placeholder="indexer,reader">
+                  <div class="hint">Valid roles: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span>.</div>
                 </div>
                 <div class="field">
                   <label for="apiKeyExpires">Expires at</label>
@@ -1020,6 +1156,56 @@ while (true) {
                 <pre class="doc-code" id="createdApiKey">(not created)</pre>
               </div>
               <div class="banner" id="apiKeyBanner"></div>
+            </div>
+            <div class="doc-panel" data-doc-panel="tenant">
+              <div class="row">
+                <div class="field">
+                  <label for="tenantAuthTenantId">Tenant ID</label>
+                  <input id="tenantAuthTenantId" readonly>
+                </div>
+                <div class="field">
+                  <label for="tenantAuthTenantName">Tenant name</label>
+                  <input id="tenantAuthTenantName" readonly>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantAuthMode">Auth mode</label>
+                  <select id="tenantAuthMode">
+                    <option value="sso_plus_password">SSO + password</option>
+                    <option value="sso_only">SSO only</option>
+                    <option value="password_only">Password only</option>
+                  </select>
+                  <div class="hint">Admins can enforce SSO-only or password-only login per tenant.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label>Allowed SSO providers</label>
+                  <div class="hint" style="margin-bottom:6px;">Uncheck all to disable SSO for this tenant.</div>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoGoogle" value="google">
+                    Google
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoAzure" value="azure">
+                    Azure
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoOkta" value="okta">
+                    Okta
+                  </label>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
+                <button class="btn" id="tenantAuthSaveBtn">Save auth mode</button>
+              </div>
+
+              <div class="banner" id="tenantAuthBanner"></div>
             </div>
           </div>
         </section>

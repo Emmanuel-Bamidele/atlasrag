@@ -371,6 +371,17 @@ function renderAnswer(data){
 
   const answerText = data?.answer || "(no answer)";
 
+  let sources = [];
+  if (Array.isArray(data?.sources)) {
+    sources = data.sources;
+  } else if (Array.isArray(data?.citations)) {
+    if (data.citations.length > 0 && typeof data.citations[0] === "string") {
+      sources = data.citations.map((chunkId) => ({ chunkId }));
+    } else {
+      sources = data.citations;
+    }
+  }
+
   const html = `
     <div class="card reveal" style="animation-delay:20ms;">
       <div class="cardhead">
@@ -380,6 +391,37 @@ function renderAnswer(data){
     </div>
   `;
   wrap.insertAdjacentHTML("beforeend", html);
+
+  const sourcesHtml = sources.length
+    ? sources.map((src, idx) => {
+      const docId = src?.docId || src?.doc_id || null;
+      const collection = src?.collection || src?.collection_id || null;
+      const chunkId = src?.chunkId || src?.chunk_id || src?.id || null;
+      const chips = [];
+      chips.push(`<span class="chip">Source ${idx + 1}</span>`);
+      if (docId) chips.push(`<span class="chip">Doc <span class="mono">${escapeHtml(docId)}</span></span>`);
+      if (collection) chips.push(`<span class="chip">Collection <span class="mono">${escapeHtml(collection)}</span></span>`);
+      if (chunkId) chips.push(`<span class="chip">Chunk <span class="mono">${escapeHtml(chunkId)}</span></span>`);
+      return `
+        <div class="source-item">
+          <div class="chips">
+            ${chips.join("")}
+          </div>
+        </div>
+      `;
+    }).join("")
+    : `<div class="preview">No sources returned.</div>`;
+
+  const sourcesCard = `
+    <div class="card reveal" style="animation-delay:60ms;">
+      <div class="cardhead">
+        <span class="chip">Sources</span>
+        <span class="chip">${sources.length} total</span>
+      </div>
+      ${sourcesHtml}
+    </div>
+  `;
+  wrap.insertAdjacentHTML("beforeend", sourcesCard);
 }
 
 function renderStats(data){
@@ -963,6 +1005,90 @@ async function refreshHealth(){
   }
 }
 
+async function loadTenantSettings(){
+  const banner = $("tenantAuthBanner");
+  const loadBtn = $("tenantAuthLoadBtn");
+  if (!banner || !loadBtn) return;
+  clearBanner(banner);
+  if (!requireKeyOrWarn(banner)) return;
+
+  loadBtn.disabled = true;
+  const originalLabel = loadBtn.textContent;
+  loadBtn.textContent = "Loading...";
+
+  try{
+    const res = await fetch("/v1/admin/tenant", { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && data.ok && data.data?.tenant){
+      const tenant = data.data.tenant;
+      if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
+      if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
+      if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || "sso_plus_password";
+      const providersRaw = tenant.ssoProviders;
+      const providers = Array.isArray(providersRaw) ? providersRaw : ["google", "azure", "okta"];
+      const allowed = new Set(providers);
+      if ($("tenantSsoGoogle")) $("tenantSsoGoogle").checked = allowed.has("google");
+      if ($("tenantSsoAzure")) $("tenantSsoAzure").checked = allowed.has("azure");
+      if ($("tenantSsoOkta")) $("tenantSsoOkta").checked = allowed.has("okta");
+      setBanner(banner, "ok", "Tenant settings loaded.");
+    }else{
+      const msg = data?.error?.message || data?.error || "Failed to load tenant settings.";
+      setBanner(banner, "err", msg);
+    }
+  }catch(e){
+    setBanner(banner, "err", "Error loading tenant settings.");
+  }finally{
+    loadBtn.disabled = false;
+    loadBtn.textContent = originalLabel;
+  }
+}
+
+async function saveTenantSettings(){
+  const banner = $("tenantAuthBanner");
+  const saveBtn = $("tenantAuthSaveBtn");
+  if (!banner || !saveBtn) return;
+  clearBanner(banner);
+  if (!requireKeyOrWarn(banner)) return;
+
+  const authMode = $("tenantAuthMode") ? $("tenantAuthMode").value : "";
+  if (!authMode){
+    setBanner(banner, "err", "Select an auth mode.");
+    return;
+  }
+  const ssoProviders = [];
+  if ($("tenantSsoGoogle")?.checked) ssoProviders.push("google");
+  if ($("tenantSsoAzure")?.checked) ssoProviders.push("azure");
+  if ($("tenantSsoOkta")?.checked) ssoProviders.push("okta");
+
+  saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
+  saveBtn.textContent = "Saving...";
+
+  try{
+    const res = await fetch("/v1/admin/tenant", {
+      method: "PATCH",
+      headers: apiHeaders(),
+      body: JSON.stringify({ authMode, ssoProviders })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok && data.data?.tenant){
+      const tenant = data.data.tenant;
+      if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
+      if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
+      if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || authMode;
+      setBanner(banner, "ok", "Tenant auth mode updated.");
+    }else{
+      const msg = data?.error?.message || data?.error || "Failed to update tenant settings.";
+      setBanner(banner, "err", msg);
+    }
+  }catch(e){
+    setBanner(banner, "err", "Error updating tenant settings.");
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   initDocTabs();
   $("tabPlayground").onclick = () => showPage("pagePlayground");
@@ -1047,7 +1173,7 @@ window.addEventListener("DOMContentLoaded", () => {
     $("useCreatedApiKeyBtn").disabled = true;
     const auth = loadStoredAuth();
     if (!auth.token){
-      setBanner($("apiKeyBanner"), "err", "Save a token first (admin/owner required).");
+      setBanner($("apiKeyBanner"), "err", "Save a token first (admin required).");
       return;
     }
 
@@ -1146,6 +1272,17 @@ window.addEventListener("DOMContentLoaded", () => {
       setBanner($("apiKeyBanner"), "err", "Failed to copy API key.");
     }
   };
+
+  if ($("tenantAuthLoadBtn")) {
+    $("tenantAuthLoadBtn").onclick = () => loadTenantSettings();
+  }
+  if ($("tenantAuthSaveBtn")) {
+    $("tenantAuthSaveBtn").onclick = () => saveTenantSettings();
+  }
+  const tenantTabBtn = document.querySelector('.doc-tabs[data-doc-tabs="settings"] .doc-tab[data-doc-tab="tenant"]');
+  if (tenantTabBtn){
+    tenantTabBtn.addEventListener("click", () => loadTenantSettings());
+  }
 
   $("indexClearBtn").onclick = () => {
     $("docId").value = "";

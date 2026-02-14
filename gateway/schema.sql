@@ -14,6 +14,8 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks(doc_id);
 CREATE TABLE IF NOT EXISTS tenants (
   tenant_id TEXT PRIMARY KEY,
   name TEXT,
+  auth_mode TEXT DEFAULT 'sso_plus_password',
+  sso_providers TEXT[],
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -45,6 +47,8 @@ CREATE TABLE IF NOT EXISTS memory_items (
   item_type TEXT NOT NULL,
   external_id TEXT,
   principal_id TEXT,
+  agent_id TEXT,
+  tags TEXT[],
   visibility TEXT DEFAULT 'tenant',
   acl_principals TEXT[],
   title TEXT,
@@ -75,6 +79,26 @@ CREATE TABLE IF NOT EXISTS memory_links (
 CREATE INDEX IF NOT EXISTS memory_links_tenant_idx ON memory_links(tenant_id);
 CREATE INDEX IF NOT EXISTS memory_links_from_idx ON memory_links(from_item_id);
 CREATE INDEX IF NOT EXISTS memory_links_to_idx ON memory_links(to_item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_links_unique_idx
+  ON memory_links(tenant_id, from_item_id, to_item_id, relation);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  actor_id TEXT,
+  actor_type TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  metadata JSONB,
+  request_id TEXT,
+  ip TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS audit_logs_tenant_idx ON audit_logs(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS audit_logs_target_idx ON audit_logs(target_type, target_id);
 
 CREATE TABLE IF NOT EXISTS memory_jobs (
   id SERIAL PRIMARY KEY,
@@ -84,6 +108,9 @@ CREATE TABLE IF NOT EXISTS memory_jobs (
   input JSONB,
   output JSONB,
   error TEXT,
+  attempts INT DEFAULT 0,
+  max_attempts INT DEFAULT 3,
+  next_run_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -153,6 +180,9 @@ CREATE INDEX IF NOT EXISTS tenant_usage_rollups_idx
   ON tenant_usage_rollups(tenant_id, bucket_kind, bucket_start);
 
 -- Idempotent migrations for existing databases
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS auth_mode TEXT DEFAULT 'sso_plus_password';
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS sso_providers TEXT[];
+UPDATE tenants SET auth_mode = 'sso_plus_password' WHERE auth_mode IS NULL;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS failed_attempts INT DEFAULT 0;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
@@ -164,11 +194,46 @@ ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS full_name TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS users_auth_provider_subject_idx ON users(auth_provider, auth_subject);
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS principal_id TEXT;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS agent_id TEXT;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS tags TEXT[];
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'tenant';
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS acl_principals TEXT[];
 UPDATE memory_items SET visibility = 'tenant' WHERE visibility IS NULL;
+ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
+ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 3;
+ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMPTZ;
+UPDATE memory_jobs SET attempts = 0 WHERE attempts IS NULL;
+UPDATE memory_jobs SET max_attempts = 3 WHERE max_attempts IS NULL;
+DELETE FROM memory_links a
+USING memory_links b
+WHERE a.id > b.id
+  AND a.tenant_id = b.tenant_id
+  AND a.from_item_id = b.from_item_id
+  AND a.to_item_id = b.to_item_id
+  AND a.relation = b.relation;
+CREATE UNIQUE INDEX IF NOT EXISTS memory_links_unique_idx
+  ON memory_links(tenant_id, from_item_id, to_item_id, relation);
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  actor_id TEXT,
+  actor_type TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  metadata JSONB,
+  request_id TEXT,
+  ip TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS audit_logs_tenant_idx ON audit_logs(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS audit_logs_target_idx ON audit_logs(target_type, target_id);
 
 -- Indexes added after migrations so columns always exist
 CREATE INDEX IF NOT EXISTS memory_items_principal_idx ON memory_items(tenant_id, principal_id);
+CREATE INDEX IF NOT EXISTS memory_items_agent_idx ON memory_items(tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS memory_items_visibility_idx ON memory_items(tenant_id, visibility);
 CREATE INDEX IF NOT EXISTS memory_items_acl_idx ON memory_items USING GIN (acl_principals);
+CREATE INDEX IF NOT EXISTS memory_items_tags_idx ON memory_items USING GIN (tags);
+CREATE INDEX IF NOT EXISTS memory_jobs_status_next_run_idx ON memory_jobs(status, next_run_at);

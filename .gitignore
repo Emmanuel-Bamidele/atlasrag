@@ -12,3 +12,6 @@
 
 # Backups
 backups/
+
+# TLS certs
+deploy/certs/

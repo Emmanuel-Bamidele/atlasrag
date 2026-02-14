@@ -336,6 +336,22 @@ input:focus, textarea:focus, select:focus{
   box-shadow: 0 0 0 3px rgba(61,213,200,0.18);
 }
 
+.check{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+input[type="checkbox"]{
+  width: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent-2);
+}
+
 textarea{
   min-height: 190px;
   resize: vertical;
@@ -447,6 +463,20 @@ select option{
   background: rgba(10,22,24,0.5);
   color: rgba(232,242,242,0.9);
   font-size: 12px;
+}
+
+.chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.source-item{
+  margin-bottom: 10px;
+}
+
+.source-item:last-child{
+  margin-bottom: 0;
 }
 
 .mono{ font-family: var(--mono); }

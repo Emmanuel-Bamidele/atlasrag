@@ -17,7 +17,12 @@ function getClient() {
   if (!key) {
     throw new Error("OPENAI_API_KEY not set on server");
   }
-  defaultClient = new OpenAI({ apiKey: key });
+  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
+  const options = { apiKey: key };
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    options.timeout = timeoutMs;
+  }
+  defaultClient = new OpenAI(options);
   return defaultClient;
 }
 

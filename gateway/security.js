@@ -9,6 +9,7 @@
 // JWT auth + rate limiting (simple production protections)
 
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = rateLimit;
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { getServiceTokenByHash, recordServiceTokenUse } = require("./db");
@@ -21,16 +22,30 @@ function buildMeta() {
   };
 }
 
-function sendAuthError(res, status, message, req) {
+function sendAuthError(res, status, message, req, code) {
   const path = req?.path || "";
+  const errorCode = code || "AUTH_INVALID";
   if (path.startsWith("/v1")) {
     return res.status(status).json({
       ok: false,
-      error: { message, code: "AUTH_ERROR" },
+      error: { message, code: errorCode },
       meta: buildMeta()
     });
   }
-  return res.status(status).json({ error: message, tenantId: null, collection: null });
+  return res.status(status).json({ error: message, code: errorCode, tenantId: null, collection: null });
+}
+
+function sendRateLimitError(res, req) {
+  const path = req?.path || "";
+  const message = "Rate limit exceeded";
+  if (path.startsWith("/v1")) {
+    return res.status(429).json({
+      ok: false,
+      error: { message, code: "RATE_LIMITED" },
+      meta: buildMeta()
+    });
+  }
+  return res.status(429).json({ error: message, code: "RATE_LIMITED", tenantId: null, collection: null });
 }
 
 function buildVerifyOptions() {
@@ -65,29 +80,29 @@ async function tryApiKeyAuth(req, res) {
   try {
     record = await getServiceTokenByHash(keyHash);
   } catch (err) {
-    sendAuthError(res, 500, "Auth lookup failed", req);
+    sendAuthError(res, 500, "Auth lookup failed", req, "AUTH_LOOKUP_FAILED");
     return { handled: true, ok: false };
   }
 
   if (!record) {
-    sendAuthError(res, 401, "Invalid API key", req);
+    sendAuthError(res, 401, "Invalid API key", req, "AUTH_INVALID");
     return { handled: true, ok: false };
   }
 
   if (record.revoked_at) {
-    sendAuthError(res, 401, "API key revoked", req);
+    sendAuthError(res, 401, "API key revoked", req, "AUTH_REVOKED");
     return { handled: true, ok: false };
   }
 
   if (record.expires_at && new Date(record.expires_at) <= new Date()) {
-    sendAuthError(res, 401, "API key expired", req);
+    sendAuthError(res, 401, "API key expired", req, "AUTH_EXPIRED");
     return { handled: true, ok: false };
   }
 
   try {
     await recordServiceTokenUse(record.id);
   } catch (err) {
-    sendAuthError(res, 500, "Auth lookup failed", req);
+    sendAuthError(res, 500, "Auth lookup failed", req, "AUTH_LOOKUP_FAILED");
     return { handled: true, ok: false };
   }
   req.user = {
@@ -106,7 +121,7 @@ async function requireJwt(req, res, next) {
   const apiKeyResult = await tryApiKeyAuth(req, res);
   if (apiKeyResult.handled) {
     if (apiKeyResult.ok) {
-      return next();
+      return tenantLimiter(req, res, next);
     }
     return;
   }
@@ -115,13 +130,13 @@ async function requireJwt(req, res, next) {
 
   // If no JWT_SECRET set, we refuse (safer than accidentally public)
   if (!secret) {
-    return sendAuthError(res, 500, "JWT_SECRET not set on server", req);
+    return sendAuthError(res, 500, "JWT_SECRET not set on server", req, "AUTH_CONFIG");
   }
 
   const auth = req.header("authorization") || "";
   const [scheme, token] = auth.split(" ");
   if (scheme !== "Bearer" || !token) {
-    return sendAuthError(res, 401, "Missing or invalid auth header (Authorization: Bearer <jwt> or X-API-Key)", req);
+    return sendAuthError(res, 401, "Missing or invalid auth header (Authorization: Bearer <jwt> or X-API-Key)", req, "AUTH_REQUIRED");
   }
 
   try {
@@ -130,18 +145,40 @@ async function requireJwt(req, res, next) {
     if (req.user && !req.user.auth) {
       req.user.auth = "jwt";
     }
-    next();
+    return tenantLimiter(req, res, next);
   } catch (err) {
-    return sendAuthError(res, 401, "Invalid token", req);
+    return sendAuthError(res, 401, "Invalid token", req, "AUTH_INVALID");
   }
 }
 
-// Rate limiter: max requests per window per IP
+const publicWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10);
+const publicMax = parseInt(process.env.RATE_LIMIT_MAX || "60", 10);
+// Rate limiter: max requests per window per IP (public/unauth)
 const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 60,             // 60 requests/min per IP
+  windowMs: Number.isFinite(publicWindowMs) && publicWindowMs > 0 ? publicWindowMs : 60000,
+  max: Number.isFinite(publicMax) && publicMax > 0 ? publicMax : 60,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: (req, res) => sendRateLimitError(res, req)
+});
+
+const tenantWindowMs = parseInt(process.env.TENANT_RATE_LIMIT_WINDOW_MS || "60000", 10);
+const tenantMax = parseInt(process.env.TENANT_RATE_LIMIT_MAX || "120", 10);
+const tenantLimiter = rateLimit({
+  windowMs: Number.isFinite(tenantWindowMs) && tenantWindowMs > 0 ? tenantWindowMs : 60000,
+  max: Number.isFinite(tenantMax) && tenantMax > 0 ? tenantMax : 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendRateLimitError(res, req),
+  keyGenerator: (req) => {
+    const user = req.user || {};
+    if (user.auth === "api_key" && user.token_id) {
+      return `key:${user.token_id}`;
+    }
+    const tenant = user.tenant || user.tid || user.tenantId || user.sub;
+    if (tenant) return `tenant:${tenant}`;
+    return ipKeyGenerator(req.ip);
+  }
 });
 
 const loginWindowMs = parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || "60000", 10);
@@ -150,7 +187,8 @@ const loginLimiter = rateLimit({
   windowMs: Number.isFinite(loginWindowMs) && loginWindowMs > 0 ? loginWindowMs : 60000,
   max: Number.isFinite(loginMax) && loginMax > 0 ? loginMax : 10,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: (req, res) => sendRateLimitError(res, req)
 });
 
 module.exports = { requireJwt, limiter, loginLimiter };

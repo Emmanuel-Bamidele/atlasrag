@@ -13,14 +13,30 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+const DB_CONNECT_TIMEOUT_MS = parseInt(process.env.DB_CONNECT_TIMEOUT_MS || "5000", 10);
+const DB_QUERY_TIMEOUT_MS = parseInt(process.env.DB_QUERY_TIMEOUT_MS || "15000", 10);
+const DB_STATEMENT_TIMEOUT_MS = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || "15000", 10);
+
 // Pool manages a set of DB connections (better than one connection)
-const pool = new Pool({
+const poolConfig = {
   host: process.env.PGHOST,
   port: parseInt(process.env.PGPORT || "5432", 10),
   database: process.env.PGDATABASE,
   user: process.env.PGUSER,
   password: process.env.PGPASSWORD
-});
+};
+
+if (Number.isFinite(DB_CONNECT_TIMEOUT_MS) && DB_CONNECT_TIMEOUT_MS > 0) {
+  poolConfig.connectionTimeoutMillis = DB_CONNECT_TIMEOUT_MS;
+}
+if (Number.isFinite(DB_QUERY_TIMEOUT_MS) && DB_QUERY_TIMEOUT_MS > 0) {
+  poolConfig.query_timeout = DB_QUERY_TIMEOUT_MS;
+}
+if (Number.isFinite(DB_STATEMENT_TIMEOUT_MS) && DB_STATEMENT_TIMEOUT_MS > 0) {
+  poolConfig.statement_timeout = DB_STATEMENT_TIMEOUT_MS;
+}
+
+const pool = new Pool(poolConfig);
 
 // Save a chunk row
 async function saveChunk({ chunkId, docId, idx, text }) {
@@ -100,7 +116,7 @@ async function listChunksAfter({ afterId, limit }) {
 }
 
 // Create or update an artifact memory item for a document
-async function upsertMemoryArtifact({ tenantId, collection, externalId, namespaceId, title, sourceType, sourceUrl, metadata, expiresAt, principalId, visibility, acl }) {
+async function upsertMemoryArtifact({ tenantId, collection, externalId, namespaceId, title, sourceType, sourceUrl, metadata, expiresAt, principalId, visibility, acl, agentId, tags }) {
   return upsertMemoryItem({
     tenantId,
     collection,
@@ -114,11 +130,13 @@ async function upsertMemoryArtifact({ tenantId, collection, externalId, namespac
     expiresAt,
     principalId,
     visibility,
-    acl
+    acl,
+    agentId,
+    tags
   });
 }
 
-async function upsertMemoryItem({ tenantId, collection, itemType, externalId, namespaceId, title, sourceType, sourceUrl, metadata, createdAt, expiresAt, itemId, principalId, visibility, acl }) {
+async function upsertMemoryItem({ tenantId, collection, itemType, externalId, namespaceId, title, sourceType, sourceUrl, metadata, createdAt, expiresAt, itemId, principalId, visibility, acl, agentId, tags }) {
   await ensureTenant(tenantId);
   if (!itemType) {
     throw new Error("itemType is required");
@@ -127,6 +145,8 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
   const id = itemId || namespaceId || crypto.randomUUID();
   const cleanVisibility = visibility || "tenant";
   const aclList = Array.isArray(acl) && acl.length ? acl : null;
+  const tagList = Array.isArray(tags) && tags.length ? tags : null;
+  const cleanAgentId = agentId || null;
   const payload = [
     id,
     tenantId,
@@ -134,6 +154,8 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
     itemType,
     externalId || null,
     principalId || null,
+    cleanAgentId,
+    tagList,
     cleanVisibility,
     aclList,
     title || null,
@@ -145,13 +167,15 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
   ];
 
   let sql = `INSERT INTO memory_items(
-      id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals,
+      id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
       title, source_type, source_url, metadata, namespace_id, expires_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     ON CONFLICT (tenant_id, collection, item_type, external_id)
     DO UPDATE SET
       principal_id = EXCLUDED.principal_id,
+      agent_id = EXCLUDED.agent_id,
+      tags = EXCLUDED.tags,
       visibility = EXCLUDED.visibility,
       acl_principals = EXCLUDED.acl_principals,
       title = EXCLUDED.title,
@@ -159,19 +183,21 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
       source_url = EXCLUDED.source_url,
       metadata = EXCLUDED.metadata,
       expires_at = EXCLUDED.expires_at
-    RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, visibility, acl_principals,
+    RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
               title, source_type, source_url, metadata, tenant_id, collection`;
 
   if (createdAt) {
     payload.push(new Date(createdAt));
     sql = `INSERT INTO memory_items(
-        id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals,
+        id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
         title, source_type, source_url, metadata, namespace_id, expires_at, created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       ON CONFLICT (tenant_id, collection, item_type, external_id)
       DO UPDATE SET
         principal_id = EXCLUDED.principal_id,
+        agent_id = EXCLUDED.agent_id,
+        tags = EXCLUDED.tags,
         visibility = EXCLUDED.visibility,
         acl_principals = EXCLUDED.acl_principals,
         title = EXCLUDED.title,
@@ -179,7 +205,7 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
         source_url = EXCLUDED.source_url,
         metadata = EXCLUDED.metadata,
         expires_at = EXCLUDED.expires_at
-      RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, visibility, acl_principals,
+      RETURNING id, namespace_id, created_at, expires_at, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
                 title, source_type, source_url, metadata, tenant_id, collection`;
   }
 
@@ -187,7 +213,7 @@ async function upsertMemoryItem({ tenantId, collection, itemType, externalId, na
   return res.rows[0] || { id, namespace_id: namespaceId || id };
 }
 
-async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until, excludeExpired, principalId, privileges }) {
+async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until, excludeExpired, principalId, privileges, tags, agentId }) {
   if (!namespaceIds || namespaceIds.length === 0) return new Map();
 
   const clauses = ["namespace_id = ANY($1)"];
@@ -206,6 +232,14 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
   if (types && types.length) {
     params.push(types);
     clauses.push(`item_type = ANY($${params.length})`);
+  }
+  if (agentId) {
+    params.push(agentId);
+    clauses.push(`agent_id = $${params.length}`);
+  }
+  if (tags && tags.length) {
+    params.push(tags);
+    clauses.push(`tags && $${params.length}`);
   }
   if (since) {
     params.push(since);
@@ -237,7 +271,7 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals, title,
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
@@ -270,7 +304,7 @@ async function getMemoryItemById(id, tenantId, principalId) {
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals, title,
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
@@ -298,7 +332,7 @@ async function getArtifactByExternalId(tenantId, collection, externalId, princip
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals, title,
+    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
@@ -335,6 +369,20 @@ async function listExpiredMemoryItems({ tenantId, collection, before, limit, pri
      ORDER BY expires_at ASC
      LIMIT $${params.length}`,
     params
+  );
+  return res.rows;
+}
+
+async function listExpiredMemoryItemsGlobal({ before, limit }) {
+  const cutoff = before || new Date();
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? limit : 200;
+  const res = await pool.query(
+    `SELECT id, namespace_id, tenant_id, collection, expires_at
+     FROM memory_items
+     WHERE expires_at IS NOT NULL AND expires_at <= $1
+     ORDER BY expires_at ASC
+     LIMIT $2`,
+    [cutoff, cleanLimit]
   );
   return res.rows;
 }
@@ -382,45 +430,108 @@ async function listMemoryItemsForCompaction({ tenantId, collection, types, since
   return res.rows;
 }
 
+async function listMemoryItemsByExternalPrefix({ tenantId, collection, prefix }) {
+  const cleanPrefix = String(prefix || "").trim();
+  if (!cleanPrefix) return [];
+  const res = await pool.query(
+    `SELECT id, namespace_id, external_id
+     FROM memory_items
+     WHERE tenant_id = $1
+       AND collection = $2
+       AND external_id LIKE $3`,
+    [tenantId, collection, `${cleanPrefix}%`]
+  );
+  return res.rows;
+}
+
+async function createAuditLog({ tenantId, actorId, actorType, action, targetType, targetId, metadata, requestId, ip }) {
+  await ensureTenant(tenantId);
+  const res = await pool.query(
+    `INSERT INTO audit_logs(
+        tenant_id, actor_id, actor_type, action, target_type, target_id, metadata, request_id, ip
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, tenant_id, actor_id, actor_type, action, target_type, target_id, metadata, request_id, ip, created_at`,
+    [
+      tenantId,
+      actorId || null,
+      actorType || null,
+      action,
+      targetType || null,
+      targetId || null,
+      metadata ? JSON.stringify(metadata) : null,
+      requestId || null,
+      ip || null
+    ]
+  );
+  return res.rows[0] || null;
+}
+
 async function createMemoryLink({ tenantId, fromItemId, toItemId, relation, metadata }) {
   const res = await pool.query(
     `INSERT INTO memory_links(tenant_id, from_item_id, to_item_id, relation, metadata)
      VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (tenant_id, from_item_id, to_item_id, relation) DO NOTHING
      RETURNING id, tenant_id, from_item_id, to_item_id, relation, metadata, created_at`,
     [tenantId, fromItemId, toItemId, relation, metadata ? JSON.stringify(metadata) : null]
   );
   return res.rows[0];
 }
 
-async function createMemoryJob({ tenantId, jobType, status, input }) {
+async function createMemoryJob({ tenantId, jobType, status, input, maxAttempts, nextRunAt }) {
+  const cleanMax = Number.isFinite(maxAttempts) && maxAttempts > 0 ? maxAttempts : 3;
+  const cleanNextRun = nextRunAt ? new Date(nextRunAt) : null;
   const res = await pool.query(
-    `INSERT INTO memory_jobs(tenant_id, job_type, status, input)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, tenant_id, job_type, status, input, output, error, created_at, updated_at`,
-    [tenantId, jobType, status, input ? JSON.stringify(input) : null]
+    `INSERT INTO memory_jobs(tenant_id, job_type, status, input, max_attempts, next_run_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at`,
+    [tenantId, jobType, status, input ? JSON.stringify(input) : null, cleanMax, cleanNextRun]
   );
   return res.rows[0];
 }
 
-async function updateMemoryJob({ id, status, output, error }) {
+async function updateMemoryJob({ id, status, output, error, attempts, maxAttempts, nextRunAt }) {
+  const attemptsValue = Number.isFinite(attempts) ? attempts : null;
+  const maxAttemptsValue = Number.isFinite(maxAttempts) ? maxAttempts : null;
+  const nextRunValue = nextRunAt ? new Date(nextRunAt) : null;
   const res = await pool.query(
     `UPDATE memory_jobs
      SET status = COALESCE($2, status),
          output = COALESCE($3, output),
          error = COALESCE($4, error),
+         attempts = COALESCE($5, attempts),
+         max_attempts = COALESCE($6, max_attempts),
+         next_run_at = COALESCE($7, next_run_at),
          updated_at = NOW()
      WHERE id = $1
-     RETURNING id, tenant_id, job_type, status, input, output, error, created_at, updated_at`,
-    [id, status || null, output ? JSON.stringify(output) : null, error || null]
+     RETURNING id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at`,
+    [id, status || null, output ? JSON.stringify(output) : null, error || null, attemptsValue, maxAttemptsValue, nextRunValue]
   );
   return res.rows[0] || null;
 }
 
 async function getMemoryJobById(id, tenantId) {
   const res = await pool.query(
-    `SELECT id, tenant_id, job_type, status, input, output, error, created_at, updated_at
+    `SELECT id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at
      FROM memory_jobs
      WHERE id = $1 AND ($2::text IS NULL OR tenant_id = $2)`,
+    [id, tenantId || null]
+  );
+  return res.rows[0] || null;
+}
+
+async function claimMemoryJob({ id, tenantId }) {
+  const res = await pool.query(
+    `UPDATE memory_jobs
+     SET status = 'running',
+         error = NULL,
+         next_run_at = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+       AND ($2::text IS NULL OR tenant_id = $2)
+       AND status = 'queued'
+       AND (next_run_at IS NULL OR next_run_at <= NOW())
+     RETURNING id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at`,
     [id, tenantId || null]
   );
   return res.rows[0] || null;
@@ -560,7 +671,7 @@ async function listMemoryJobs({ tenantId, limit, status, jobType }) {
   }
 
   const res = await pool.query(
-    `SELECT id, tenant_id, job_type, status, input, output, error, created_at, updated_at
+    `SELECT id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at
      FROM memory_jobs
      WHERE tenant_id = $1
        AND (${statusClause})
@@ -568,6 +679,20 @@ async function listMemoryJobs({ tenantId, limit, status, jobType }) {
      ORDER BY created_at DESC
      LIMIT $4`,
     [tenantId, statusParam, jobType || null, cleanLimit]
+  );
+  return res.rows;
+}
+
+async function listDueMemoryJobs({ limit }) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 20;
+  const res = await pool.query(
+    `SELECT id, tenant_id, job_type
+     FROM memory_jobs
+     WHERE status = 'queued'
+       AND (next_run_at IS NULL OR next_run_at <= NOW())
+     ORDER BY next_run_at NULLS FIRST, id
+     LIMIT $1`,
+    [cleanLimit]
   );
   return res.rows;
 }
@@ -642,11 +767,76 @@ async function ensureTenant(tenantId, name) {
 // Fetch user by username
 async function getUserByUsername(username) {
   const res = await pool.query(
-    `SELECT id, username, password_hash, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name,
-            failed_attempts, lock_until, last_login
-     FROM users
-     WHERE username = $1`,
+    `SELECT u.id, u.username, u.password_hash, u.tenant_id, u.roles, u.disabled, u.sso_only, u.auth_provider, u.auth_subject,
+            u.email, u.full_name, u.failed_attempts, u.lock_until, u.last_login, t.auth_mode AS tenant_auth_mode
+     FROM users u
+     LEFT JOIN tenants t ON t.tenant_id = u.tenant_id
+     WHERE u.username = $1`,
     [username]
+  );
+  return res.rows[0] || null;
+}
+
+async function getTenantById(tenantId) {
+  const res = await pool.query(
+    `SELECT tenant_id, name, auth_mode, sso_providers, created_at
+     FROM tenants
+     WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  return res.rows[0] || null;
+}
+
+async function getTenantAuthMode(tenantId) {
+  const tenant = await getTenantById(tenantId);
+  return tenant ? tenant.auth_mode : null;
+}
+
+async function setTenantAuthMode(tenantId, authMode) {
+  await ensureTenant(tenantId);
+  const res = await pool.query(
+    `UPDATE tenants
+     SET auth_mode = $2
+     WHERE tenant_id = $1
+     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+    [tenantId, authMode]
+  );
+  return res.rows[0] || null;
+}
+
+async function setTenantSsoProviders(tenantId, providers) {
+  await ensureTenant(tenantId);
+  const res = await pool.query(
+    `UPDATE tenants
+     SET sso_providers = $2
+     WHERE tenant_id = $1
+     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+    [tenantId, providers]
+  );
+  return res.rows[0] || null;
+}
+
+async function setTenantSettings(tenantId, { authMode, ssoProviders }) {
+  await ensureTenant(tenantId);
+  const updates = [];
+  const params = [tenantId];
+  if (authMode !== undefined) {
+    params.push(authMode);
+    updates.push(`auth_mode = $${params.length}`);
+  }
+  if (ssoProviders !== undefined) {
+    params.push(ssoProviders);
+    updates.push(`sso_providers = $${params.length}`);
+  }
+  if (updates.length === 0) {
+    return getTenantById(tenantId);
+  }
+  const res = await pool.query(
+    `UPDATE tenants
+     SET ${updates.join(", ")}
+     WHERE tenant_id = $1
+     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+    params
   );
   return res.rows[0] || null;
 }
@@ -909,13 +1099,22 @@ module.exports = {
   deleteMemoryItemById,
   getArtifactByExternalId,
   listExpiredMemoryItems,
+  listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
+  listMemoryItemsByExternalPrefix,
+  createAuditLog,
   createMemoryLink,
   createMemoryJob,
+  claimMemoryJob,
   updateMemoryJob,
   getMemoryJobById,
   ensureTenant,
   getUserByUsername,
+  getTenantById,
+  getTenantAuthMode,
+  setTenantAuthMode,
+  setTenantSsoProviders,
+  setTenantSettings,
   createUser,
   upsertSsoUser,
   recordFailedLogin,
@@ -935,6 +1134,7 @@ module.exports = {
   recordServiceTokenUse,
   revokeServiceToken,
   deleteMemoryItemsByCollection,
+  listDueMemoryJobs,
   listMemoryJobs,
   runMigrations
 };

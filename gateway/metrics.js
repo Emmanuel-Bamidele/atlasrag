@@ -40,6 +40,7 @@ function summarize(ring, count, errorCount) {
 
   return {
     count,
+    error_count: errorCount,
     error_rate: errRate,
     avg_ms: avg,
     p50_ms: percentile(values, 50),
@@ -155,7 +156,27 @@ function getLatencyStats(tenantId) {
   return out;
 }
 
+function getAllTenantLatencyStats() {
+  const out = {};
+  for (const [tenantId, tenantStats] of tenants.entries()) {
+    const entry = {
+      overall: summarize(
+        tenantStats.overall.ring,
+        tenantStats.overall.count,
+        tenantStats.overall.errorCount
+      ),
+      routes: {}
+    };
+    for (const [key, stat] of tenantStats.routes.entries()) {
+      entry.routes[key] = summarize(stat.ring, stat.count, stat.errorCount);
+    }
+    out[tenantId] = entry;
+  }
+  return out;
+}
+
 module.exports = {
   recordLatency,
-  getLatencyStats
+  getLatencyStats,
+  getAllTenantLatencyStats
 };

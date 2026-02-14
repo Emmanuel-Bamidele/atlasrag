@@ -61,6 +61,21 @@ const client = new AtlasRAGClient({
 - `memoryCompact(data)`
 - `getJob(id)`
 
+## Tenant settings (admin)
+
+Admins can manage tenant login policy via `/v1/admin/tenant`:
+
+```js
+// Read current tenant settings
+const settings = await client.request("/v1/admin/tenant");
+
+// Update auth mode
+await client.request("/v1/admin/tenant", {
+  method: "PATCH",
+  body: { authMode: "sso_only", ssoProviders: ["google"] }
+});
+```
+
 ## Parameters
 
 Most methods accept `collection` and `tenantId` in `params` or `data`.
@@ -68,6 +83,10 @@ If you set them on the client via `setCollection()` / `setTenant()`, they are se
 Write/index/reflect endpoints require `Idempotency-Key`. Pass `idempotencyKey` in params/data to have the SDK send it as a header.
 Memory writes and reflect support access control via `visibility` (`tenant`, `private`, `acl`) and `acl` list (array of principal IDs). The principal is derived from the auth token subject; if you pass `principalId` it must match the token.
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
+Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
+Memory writes accept `agentId` and `tags` (array of strings). Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
+Job retries are idempotent: reruns replace derived memories instead of duplicating them.
+Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
 
 ## Examples
 

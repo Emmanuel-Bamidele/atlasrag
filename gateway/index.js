@@ -20,11 +20,16 @@ const {
   deleteMemoryItemById,
   getArtifactByExternalId,
   listExpiredMemoryItems,
+  listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
+  listMemoryItemsByExternalPrefix,
+  createAuditLog,
   createMemoryLink,
   createMemoryJob,
+  claimMemoryJob,
   updateMemoryJob,
   getMemoryJobById,
+  listDueMemoryJobs,
   listMemoryJobs,
   deleteMemoryItemsByCollection,
   beginIdempotencyKey,
@@ -35,6 +40,8 @@ const {
   getTenantUsageWindow,
   getTenantStorageStats,
   getTenantItemStats,
+  getTenantById,
+  setTenantSettings,
   recordFailedLogin,
   recordSuccessfulLogin,
   createServiceToken,
@@ -46,8 +53,8 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
-const { verifyCredentials, issueToken } = require("./auth");
-const { recordLatency, getLatencyStats } = require("./metrics");
+const { verifyCredentials, issueToken, parseAuthMode, normalizeAuthMode, isSsoAllowed } = require("./auth");
+const { recordLatency, getLatencyStats, getAllTenantLatencyStats } = require("./metrics");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
@@ -65,6 +72,41 @@ const app = express();
 
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET || "atlasrag-cookie-secret"));
+
+app.use((req, res, next) => {
+  const incoming = req.header("x-request-id");
+  const requestId = incoming ? String(incoming).trim() : crypto.randomUUID();
+  req.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  next();
+});
+
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    const path = req.path || "";
+    const isStaticAsset = /\.[a-z0-9]+$/i.test(path);
+    if (path === "/health" && res.statusCode < 400) return;
+    if (isStaticAsset) return;
+
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    const tenantId = resolveTenantForMetrics(req) || null;
+    const collection = req.collection ?? null;
+    const payload = {
+      level: "info",
+      event: "request",
+      request_id: req.requestId || null,
+      method: req.method,
+      path: req.originalUrl || req.path,
+      status: res.statusCode,
+      duration_ms: Number(ms.toFixed(2)),
+      tenant_id: tenantId,
+      collection
+    };
+    console.log(JSON.stringify(payload));
+  });
+  next();
+});
 
 // Static UI is public (safe)
 app.use(express.static("public"));
@@ -109,7 +151,17 @@ const REINDEX_SLEEP_MS = parseInt(process.env.REINDEX_SLEEP_MS || "0", 10);
 const REINDEX_LOG_EVERY = parseInt(process.env.REINDEX_LOG_EVERY || "500", 10);
 const REINDEX_TCP_ATTEMPTS = parseInt(process.env.REINDEX_TCP_ATTEMPTS || "12", 10);
 const REINDEX_TCP_DELAY_MS = parseInt(process.env.REINDEX_TCP_DELAY_MS || "2000", 10);
+const TTL_SWEEP_ENABLED = process.env.TTL_SWEEP_ENABLED !== "0";
+const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300000", 10);
+const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
+const JOB_MAX_ATTEMPTS = parseInt(process.env.JOB_MAX_ATTEMPTS || "3", 10);
+const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
+const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
+const JOB_SWEEP_INTERVAL_MS = parseInt(process.env.JOB_SWEEP_INTERVAL_MS || "5000", 10);
+const JOB_SWEEP_BATCH_SIZE = parseInt(process.env.JOB_SWEEP_BATCH_SIZE || "20", 10);
 let reindexStarted = false;
+let ttlSweepRunning = false;
+let jobSweepRunning = false;
 const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
   || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const DOC_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -117,9 +169,24 @@ const TENANT_RE = /^[a-zA-Z0-9._-]+$/;
 const COLLECTION_RE = /^[a-zA-Z0-9._-]+$/;
 const ITEM_TYPE_RE = /^[a-zA-Z0-9._-]+$/;
 const PRINCIPAL_RE = /^[a-zA-Z0-9._:@-]+$/;
+const TAG_RE = /^[a-zA-Z0-9._:@-]+$/;
+const AGENT_RE = /^[a-zA-Z0-9._:@-]+$/;
 const DEFAULT_COLLECTION = process.env.DEFAULT_COLLECTION || "default";
 const TENANT_SEARCH_MULTIPLIER = parseInt(process.env.TENANT_SEARCH_MULTIPLIER || "5", 10);
 const TENANT_SEARCH_CAP = parseInt(process.env.TENANT_SEARCH_CAP || "50", 10);
+const SSO_PROVIDERS = ["google", "azure", "okta"];
+const ROLE_DEFAULT = "reader";
+const ROLE_ALIASES = new Map([
+  ["admin", "admin"],
+  ["owner", "admin"],
+  ["indexer", "indexer"],
+  ["writer", "indexer"],
+  ["reader", "reader"]
+]);
+const MEMORY_TYPES = ["artifact", "semantic", "procedural", "episodic", "conversation", "summary"];
+const LEGACY_TYPE_ALIASES = new Map([
+  ["memory", "semantic"]
+]);
 
 function buildOpenApiDoc(req) {
   const envBase = process.env.OPENAPI_BASE_URL || process.env.PUBLIC_BASE_URL;
@@ -157,13 +224,25 @@ function normalizeCollection(value) {
   return clean;
 }
 
+function normalizeTypeValue(value) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return null;
+  if (!ITEM_TYPE_RE.test(clean)) return null;
+  if (LEGACY_TYPE_ALIASES.has(clean)) {
+    return LEGACY_TYPE_ALIASES.get(clean);
+  }
+  if (MEMORY_TYPES.includes(clean)) return clean;
+  return null;
+}
+
 function normalizeItemType(value) {
   const clean = String(value || "").trim();
-  if (!clean) return "memory";
-  if (!ITEM_TYPE_RE.test(clean)) {
-    throw new Error("type must use only letters, numbers, dot, dash, or underscore (no spaces)");
+  if (!clean) return "semantic";
+  const normalized = normalizeTypeValue(clean);
+  if (!normalized) {
+    throw new Error(`type must be one of: ${MEMORY_TYPES.join(", ")}`);
   }
-  return clean;
+  return normalized;
 }
 
 function normalizeVisibility(value) {
@@ -173,6 +252,67 @@ function normalizeVisibility(value) {
     throw new Error("visibility must be one of: tenant, private, acl");
   }
   return clean;
+}
+
+function normalizeAgentId(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return null;
+  if (!AGENT_RE.test(clean)) {
+    throw new Error("agentId must use only letters, numbers, dot, dash, underscore, colon, or @");
+  }
+  return clean;
+}
+
+function parseTagsInput(raw) {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : String(raw || "").split(",");
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    const clean = String(item || "").trim().toLowerCase();
+    if (!clean) continue;
+    if (!TAG_RE.test(clean)) {
+      throw new Error("tags must use only letters, numbers, dot, dash, underscore, colon, or @");
+    }
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  }
+  return out;
+}
+
+function normalizeSsoProvidersInput(raw) {
+  if (raw === undefined) return { provided: false, value: null };
+  if (raw === null) return { provided: true, value: null };
+  const list = Array.isArray(raw)
+    ? raw
+    : String(raw || "").split(",");
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    const clean = String(item || "").trim().toLowerCase();
+    if (!clean) continue;
+    if (!SSO_PROVIDERS.includes(clean)) {
+      throw new Error(`ssoProviders must be one of: ${SSO_PROVIDERS.join(", ")}`);
+    }
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  }
+  return { provided: true, value: out };
+}
+
+function resolveSsoProviders(tenant) {
+  if (!tenant || tenant.sso_providers == null) return Array.from(SSO_PROVIDERS);
+  return Array.isArray(tenant.sso_providers) ? tenant.sso_providers : [];
+}
+
+function isSsoProviderAllowed(tenant, provider) {
+  if (!tenant || tenant.sso_providers == null) return true;
+  if (!Array.isArray(tenant.sso_providers)) return false;
+  return tenant.sso_providers.includes(provider);
 }
 
 function normalizeAclList(raw, principalId) {
@@ -205,13 +345,15 @@ function parseTypeFilter(raw) {
   const out = [];
   const seen = new Set();
   for (const item of list) {
-    const clean = String(item || "").trim();
-    if (!clean) continue;
-    if (!ITEM_TYPE_RE.test(clean)) continue;
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      out.push(clean);
+    const normalized = normalizeTypeValue(item);
+    if (!normalized) continue;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      out.push(normalized);
     }
+  }
+  if (seen.has("semantic") && !seen.has("memory")) {
+    out.push("memory");
   }
   return out;
 }
@@ -281,11 +423,9 @@ function resolvePrincipalId(req) {
     if (!PRINCIPAL_RE.test(candidate)) {
       throw new Error("Invalid principal in request");
     }
-    const roles = req.user?.roles || [];
     const allowOverride = process.env.ALLOW_PRINCIPAL_OVERRIDE === "1"
       && req.user?.auth === "api_key"
-      && Array.isArray(roles)
-      && (roles.includes("admin") || roles.includes("owner"));
+      && hasRequiredRole(req, "admin");
     if (allowOverride) {
       return candidate;
     }
@@ -322,12 +462,49 @@ function hasAccessOverrideInput(req) {
   return Boolean(provided) || privileges.length > 0;
 }
 
+function normalizeRole(value) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return null;
+  return ROLE_ALIASES.get(clean) || null;
+}
+
+function isPrincipalTenantMatch(req) {
+  const principal = req.user?.principal_id || req.user?.sub;
+  const tenant = req.user?.tenant || req.user?.tid || req.user?.sub;
+  if (!principal || !tenant) return false;
+  return String(principal).trim() === String(tenant).trim();
+}
+
+function getEffectiveRoles(req) {
+  const rawRoles = Array.isArray(req.user?.roles) ? req.user.roles : [];
+  const out = new Set();
+  for (const role of rawRoles) {
+    const normalized = normalizeRole(role);
+    if (normalized) out.add(normalized);
+  }
+  if (isPrincipalTenantMatch(req)) {
+    out.add("admin");
+  }
+  if (out.size === 0) {
+    const fallback = req.user?.auth === "api_key" ? "indexer" : ROLE_DEFAULT;
+    out.add(fallback);
+  }
+  return out;
+}
+
+function hasRequiredRole(req, required) {
+  const roles = getEffectiveRoles(req);
+  if (roles.has("admin")) return true;
+  if (required === "admin") return false;
+  if (required === "indexer") return roles.has("indexer");
+  if (required === "reader") return roles.has("reader") || roles.has("indexer");
+  return false;
+}
+
 function allowAccessOverride(req) {
-  const roles = req.user?.roles || [];
   return process.env.ALLOW_PRINCIPAL_OVERRIDE === "1"
     && req.user?.auth === "api_key"
-    && Array.isArray(roles)
-    && (roles.includes("admin") || roles.includes("owner"));
+    && hasRequiredRole(req, "admin");
 }
 
 function resolveAccessContext(req) {
@@ -350,18 +527,18 @@ function resolveAccessContext(req) {
 }
 
 function normalizeRoles(input) {
-  if (Array.isArray(input)) {
-    return input
-      .map(value => String(value || "").trim())
-      .filter(Boolean);
+  const list = Array.isArray(input)
+    ? input
+    : (typeof input === "string" ? input.split(",") : []);
+  const out = [];
+  const seen = new Set();
+  for (const value of list) {
+    const normalized = normalizeRole(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
   }
-  if (typeof input === "string") {
-    return input
-      .split(",")
-      .map(value => value.trim())
-      .filter(Boolean);
-  }
-  return [];
+  return out;
 }
 
 function formatServiceToken(record) {
@@ -394,29 +571,36 @@ function buildCollectionsFromDocs(docs) {
 }
 
 function hasTokenAdminAccess(req) {
-  const roles = req.user?.roles || [];
-  if (Array.isArray(roles) && (roles.includes("admin") || roles.includes("owner"))) {
-    return true;
-  }
-  const principal = req.user?.principal_id || req.user?.sub;
-  const tenant = req.user?.tenant || req.user?.tid || req.user?.sub;
-  if (!principal || !tenant) return false;
-  return String(principal).trim() === String(tenant).trim();
+  return hasRequiredRole(req, "admin");
+}
+
+function requireRole(required) {
+  return (req, res, next) => {
+    if (!hasRequiredRole(req, required)) {
+      const message = required === "admin"
+        ? "Admin role required"
+        : (required === "indexer"
+          ? "Indexer or admin role required"
+          : "Reader, indexer, or admin role required");
+      if (req.path.startsWith("/v1")) {
+        return sendError(res, 403, message, "FORBIDDEN", null, null);
+      }
+      return res.status(403).json({ error: message });
+    }
+    next();
+  };
 }
 
 function requireAdmin(req, res, next) {
-  if (!hasTokenAdminAccess(req)) {
-    if (req.path.startsWith("/v1")) {
-      return sendError(res, 403, "Admin or owner role required", "FORBIDDEN", null, null);
-    }
-    return res.status(403).json({ error: "Admin or owner role required" });
-  }
-  next();
+  return requireRole("admin")(req, res, next);
 }
 
-function resolveCollection(req) {
+function resolveCollection(req, options = {}) {
   const provided = req.body?.collection || req.query?.collection;
-  return normalizeCollection(provided);
+  const collection = normalizeCollection(provided);
+  const track = options.track !== false;
+  if (req && track) req.collection = collection;
+  return collection;
 }
 
 function namespaceDocId(tenantId, collection, docId) {
@@ -472,6 +656,54 @@ function buildErrorPayload(message, code, tenantId, collection) {
     error: { message: String(message || "Request failed"), code: code || null },
     meta: buildMeta(tenantId, collection)
   };
+}
+
+function buildAuditActor(req) {
+  const auth = req.user?.auth || "system";
+  const actorId = req.user?.principal_id || req.user?.sub || null;
+  let actorType = "system";
+  if (auth === "api_key") actorType = "service";
+  else if (auth === "jwt") actorType = "user";
+  else if (auth) actorType = String(auth);
+  const tokenId = req.user?.token_id || null;
+  const roles = Array.isArray(req.user?.roles) ? req.user.roles : null;
+  return {
+    actorId,
+    actorType,
+    auth,
+    tokenId,
+    roles
+  };
+}
+
+function mergeAuditMetadata(base, actor) {
+  const metadata = { ...(base || {}) };
+  if (actor?.auth) metadata.auth = actor.auth;
+  if (actor?.tokenId) metadata.tokenId = actor.tokenId;
+  if (actor?.roles && actor.roles.length) metadata.roles = actor.roles;
+  return metadata;
+}
+
+async function recordAudit(req, tenantId, { action, targetType, targetId, metadata }) {
+  if (!tenantId || !action) return;
+  const actor = buildAuditActor(req);
+  const merged = mergeAuditMetadata(metadata, actor);
+  const payload = {
+    tenantId,
+    actorId: actor.actorId,
+    actorType: actor.actorType,
+    action,
+    targetType: targetType || null,
+    targetId: targetId || null,
+    metadata: Object.keys(merged).length ? merged : null,
+    requestId: req.requestId || null,
+    ip: req.ip || null
+  };
+  try {
+    await createAuditLog(payload);
+  } catch (err) {
+    console.warn("[audit] Failed to record audit log:", err?.message || err);
+  }
 }
 
 function toPositiveInt(value) {
@@ -530,6 +762,53 @@ function sendOk(res, data, tenantId, collection) {
 
 function sendError(res, status, message, code, tenantId, collection) {
   res.status(status).json(buildErrorPayload(message, code, tenantId, collection));
+}
+
+function escapePromLabel(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/"/g, "\\\"");
+}
+
+function formatPromLabels(labels) {
+  const entries = Object.entries(labels || {}).filter(([, v]) => v !== null && v !== undefined);
+  if (!entries.length) return "";
+  const parts = entries.map(([k, v]) => `${k}="${escapePromLabel(v)}"`);
+  return `{${parts.join(",")}}`;
+}
+
+function pushPromMetric(lines, name, labels, value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return;
+  lines.push(`${name}${formatPromLabels(labels)} ${value}`);
+}
+
+function emitPromLatencySummary(lines, summary, labels) {
+  if (!summary) return;
+  const base = labels || {};
+  const quantiles = [
+    ["0.5", summary.p50_ms],
+    ["0.9", summary.p90_ms],
+    ["0.95", summary.p95_ms],
+    ["0.99", summary.p99_ms]
+  ];
+  for (const [q, v] of quantiles) {
+    pushPromMetric(lines, "atlasrag_request_latency_ms", { ...base, quantile: q }, v);
+  }
+  if (Number.isFinite(summary.avg_ms) && Number.isFinite(summary.count)) {
+    const sum = summary.avg_ms * summary.count;
+    pushPromMetric(lines, "atlasrag_request_latency_ms_sum", base, sum);
+    pushPromMetric(lines, "atlasrag_request_latency_ms_count", base, summary.count);
+  }
+  if (Number.isFinite(summary.count)) {
+    pushPromMetric(lines, "atlasrag_requests_total", base, summary.count);
+  }
+  if (Number.isFinite(summary.error_count)) {
+    pushPromMetric(lines, "atlasrag_request_errors_total", base, summary.error_count);
+  }
+  if (Number.isFinite(summary.error_rate)) {
+    pushPromMetric(lines, "atlasrag_request_error_rate", base, summary.error_rate);
+  }
 }
 
 function stableStringify(value) {
@@ -678,6 +957,80 @@ function scheduleAutoReindex() {
     reindexAllChunks().catch((err) => {
       console.warn("[reindex] Failed:", err?.message || err);
     });
+  }, 1500);
+}
+
+async function runTtlSweepOnce() {
+  if (ttlSweepRunning) return;
+  ttlSweepRunning = true;
+  const batchSize = Number.isFinite(TTL_SWEEP_BATCH_SIZE) && TTL_SWEEP_BATCH_SIZE > 0 ? TTL_SWEEP_BATCH_SIZE : 200;
+  let totalDeleted = 0;
+  let vectorsDeleted = 0;
+  let vectorFailures = 0;
+  const cutoff = new Date();
+  try {
+    while (true) {
+      const items = await listExpiredMemoryItemsGlobal({ before: cutoff, limit: batchSize });
+      if (!items.length) break;
+      let batchDeleted = 0;
+      for (const item of items) {
+        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
+        if (result.failed > 0) {
+          vectorFailures += result.failed;
+          continue;
+        }
+        vectorsDeleted += result.deleted;
+        await deleteMemoryItemById(item.id);
+        totalDeleted += 1;
+        batchDeleted += 1;
+      }
+      if (batchDeleted === 0) break;
+      if (items.length < batchSize) break;
+    }
+    if (totalDeleted || vectorFailures) {
+      console.log(`[ttl] sweep deleted=${totalDeleted} vectors=${vectorsDeleted} failures=${vectorFailures}`);
+    }
+  } catch (err) {
+    console.warn("[ttl] sweep failed:", err?.message || err);
+  } finally {
+    ttlSweepRunning = false;
+  }
+}
+
+function scheduleTtlSweep() {
+  if (!TTL_SWEEP_ENABLED) return;
+  if (!Number.isFinite(TTL_SWEEP_INTERVAL_MS) || TTL_SWEEP_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runTtlSweepOnce().catch(() => {});
+    setInterval(() => {
+      runTtlSweepOnce().catch(() => {});
+    }, TTL_SWEEP_INTERVAL_MS);
+  }, 2000);
+}
+
+async function sweepDueMemoryJobs() {
+  if (jobSweepRunning) return;
+  jobSweepRunning = true;
+  const batchSize = Number.isFinite(JOB_SWEEP_BATCH_SIZE) && JOB_SWEEP_BATCH_SIZE > 0 ? JOB_SWEEP_BATCH_SIZE : 20;
+  try {
+    const jobs = await listDueMemoryJobs({ limit: batchSize });
+    for (const job of jobs) {
+      await dispatchMemoryJob(job.id, job.tenant_id, job.job_type);
+    }
+  } catch (err) {
+    console.warn("[jobs] sweep failed:", err?.message || err);
+  } finally {
+    jobSweepRunning = false;
+  }
+}
+
+function scheduleJobSweep() {
+  if (!Number.isFinite(JOB_SWEEP_INTERVAL_MS) || JOB_SWEEP_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    sweepDueMemoryJobs().catch(() => {});
+    setInterval(() => {
+      sweepDueMemoryJobs().catch(() => {});
+    }, JOB_SWEEP_INTERVAL_MS);
   }, 1500);
 }
 
@@ -934,6 +1287,8 @@ async function indexDocument(tenantId, collection, docId, text, source) {
     metadata: source?.metadata || null,
     expiresAt: source?.expiresAt || null,
     principalId,
+    agentId: source?.agentId || null,
+    tags: source?.tags || null,
     visibility: resolvedVisibility,
     acl: aclList
   });
@@ -1128,19 +1483,24 @@ async function indexMemoryText(namespaceId, text) {
   return { chunksIndexed: chunks.length, truncated };
 }
 
-async function deleteVectorsForDoc(namespaceId) {
+async function deleteVectorsForDoc(namespaceId, options = {}) {
+  const strict = options.strict === true;
   const rows = await getChunksByDocId(namespaceId);
   let deleted = 0;
+  let failed = 0;
   for (const row of rows) {
     try {
       await sendCmd(buildVdel(row.chunk_id));
       deleted += 1;
     } catch {
-      // ignore vector delete failures to avoid blocking cleanup
+      failed += 1;
     }
   }
+  if (strict && failed > 0) {
+    return { deleted, failed, removedDoc: false };
+  }
   await deleteDoc(namespaceId);
-  return deleted;
+  return { deleted, failed, removedDoc: true };
 }
 
 async function memoryWriteCore(req) {
@@ -1149,6 +1509,8 @@ async function memoryWriteCore(req) {
   const principalId = resolvePrincipalId(req);
   const collection = resolveCollection(req);
   const itemType = normalizeItemType(type);
+  const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+  const tags = parseTagsInput(req.body?.tags);
   const createdTime = createdAt ? parseTimeInput(createdAt, "createdAt") : null;
   const expiresAt = resolveExpiresAt(req.body);
   const resolvedVisibility = normalizeVisibility(visibility);
@@ -1173,6 +1535,8 @@ async function memoryWriteCore(req) {
     createdAt: createdTime,
     expiresAt,
     principalId,
+    agentId,
+    tags,
     visibility: resolvedVisibility,
     acl: aclList
   });
@@ -1199,6 +1563,78 @@ function parseJsonPayload(value) {
   }
 }
 
+function computeJobBackoff(attempt) {
+  const base = Number.isFinite(JOB_RETRY_BASE_MS) && JOB_RETRY_BASE_MS > 0 ? JOB_RETRY_BASE_MS : 2000;
+  const max = Number.isFinite(JOB_RETRY_MAX_MS) && JOB_RETRY_MAX_MS > 0 ? JOB_RETRY_MAX_MS : 30000;
+  const exp = Math.min(max, base * Math.pow(2, Math.max(0, attempt - 1)));
+  const jitter = Math.floor(exp * (Math.random() * 0.2));
+  return exp + jitter;
+}
+
+async function dispatchMemoryJob(jobId, tenantId, jobType) {
+  const type = jobType || null;
+  if (type === "reflect") {
+    await runReflectionJob(jobId, tenantId);
+    return;
+  }
+  if (type === "ttl_cleanup") {
+    await runTtlCleanupJob(jobId, tenantId);
+    return;
+  }
+  if (type === "compaction") {
+    await runCompactionJob(jobId, tenantId);
+    return;
+  }
+  if (!type) {
+    const job = await getMemoryJobById(jobId, tenantId);
+    if (!job) return;
+    await dispatchMemoryJob(jobId, tenantId, job.job_type);
+    return;
+  }
+  console.warn(`[jobs] Unknown job type ${type} for job ${jobId}`);
+}
+
+async function finalizeJobFailure(job, err, options = {}) {
+  const retryable = options.retryable !== false;
+  const message = String(err?.message || err);
+  const maxAttempts = Number.isFinite(job.max_attempts) && job.max_attempts > 0
+    ? job.max_attempts
+    : (Number.isFinite(JOB_MAX_ATTEMPTS) && JOB_MAX_ATTEMPTS > 0 ? JOB_MAX_ATTEMPTS : 3);
+  const attempts = Number.isFinite(job.attempts) ? job.attempts + 1 : 1;
+
+  if (!retryable || attempts >= maxAttempts) {
+    await updateMemoryJob({ id: job.id, status: "failed", error: message, attempts });
+    return { retried: false, attempts };
+  }
+
+  const delay = computeJobBackoff(attempts);
+  const nextRunAt = new Date(Date.now() + delay);
+  await updateMemoryJob({ id: job.id, status: "queued", error: message, attempts, nextRunAt });
+  setTimeout(() => {
+    dispatchMemoryJob(job.id, job.tenant_id, job.job_type).catch(() => {});
+  }, delay);
+  return { retried: true, attempts, nextRunAt };
+}
+
+async function cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExternalIds }) {
+  const items = await listMemoryItemsByExternalPrefix({
+    tenantId,
+    collection,
+    prefix: `job:${jobId}:`
+  });
+  const expected = new Set(expectedExternalIds || []);
+  for (const item of items) {
+    if (expected.size > 0 && item.external_id && expected.has(item.external_id)) {
+      continue;
+    }
+    const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
+    if (result.failed > 0) {
+      throw new Error(`Failed to delete vectors for memory ${item.id}`);
+    }
+    await deleteMemoryItemById(item.id);
+  }
+}
+
 async function loadArtifactText(namespaceId) {
   const rows = await getChunksByDocId(namespaceId);
   if (!rows.length) return "";
@@ -1206,12 +1642,9 @@ async function loadArtifactText(namespaceId) {
 }
 
 async function runReflectionJob(jobId, tenantId) {
+  const job = await claimMemoryJob({ id: jobId, tenantId });
+  if (!job) return;
   try {
-    await updateMemoryJob({ id: jobId, status: "running" });
-    const job = await getMemoryJobById(jobId, tenantId);
-    if (!job) {
-      return;
-    }
 
     const input = parseJsonPayload(job.input) || {};
     const collection = normalizeCollection(input.collection);
@@ -1223,25 +1656,42 @@ async function runReflectionJob(jobId, tenantId) {
     const requestedVisibility = input.visibility ? normalizeVisibility(input.visibility) : null;
     const requestedAcl = input.acl;
 
-    let artifact = null;
-    if (input.artifactId) {
-      artifact = await getMemoryItemById(input.artifactId, tenantId, principalId);
+    let sourceItem = null;
+    let sourceType = null;
+    if (input.conversationId) {
+      sourceItem = await getMemoryItemById(input.conversationId, tenantId, principalId);
+      sourceType = "conversation";
+    } else if (input.artifactId) {
+      sourceItem = await getMemoryItemById(input.artifactId, tenantId, principalId);
+      sourceType = "artifact";
     } else if (input.docId) {
-      artifact = await getArtifactByExternalId(tenantId, collection, input.docId, principalId);
+      sourceItem = await getArtifactByExternalId(tenantId, collection, input.docId, principalId);
+      sourceType = "artifact";
     }
 
-    if (!artifact) {
-      await updateMemoryJob({ id: jobId, status: "failed", error: "Artifact not found" });
+    if (!sourceItem) {
+      const message = sourceType === "conversation" ? "Conversation not found" : "Artifact not found";
+      await finalizeJobFailure(job, message, { retryable: false });
       return;
     }
-    if (artifact.item_type !== "artifact") {
-      await updateMemoryJob({ id: jobId, status: "failed", error: "Item is not an artifact" });
+    if (sourceType === "artifact" && sourceItem.item_type !== "artifact") {
+      await finalizeJobFailure(job, "Item is not an artifact", { retryable: false });
+      return;
+    }
+    if (sourceType === "conversation" && sourceItem.item_type !== "conversation") {
+      await finalizeJobFailure(job, "Item is not a conversation", { retryable: false });
       return;
     }
 
-    let text = await loadArtifactText(artifact.namespace_id);
+    const derivedAgentId = sourceItem.agent_id || null;
+    const derivedTags = Array.isArray(sourceItem.tags) && sourceItem.tags.length ? sourceItem.tags : null;
+
+    let text = await loadArtifactText(sourceItem.namespace_id);
     if (!text.trim()) {
-      await updateMemoryJob({ id: jobId, status: "failed", error: "Artifact has no text chunks" });
+      const message = sourceType === "conversation"
+        ? "Conversation has no text chunks"
+        : "Artifact has no text chunks";
+      await finalizeJobFailure(job, message, { retryable: false });
       return;
     }
 
@@ -1252,21 +1702,30 @@ async function runReflectionJob(jobId, tenantId) {
     const reflection = await reflectMemories({ text, types, maxItems });
     recordGenerationUsage(tenantId, reflection?.usage);
 
-    const ownerId = principalId || artifact.principal_id || null;
-    const resolvedVisibility = requestedVisibility || artifact.visibility || "tenant";
+    const expectedExternalIds = [];
+    const typeMap = {
+      semantic: reflection.semantic || [],
+      procedural: reflection.procedural || [],
+      summary: reflection.summary || []
+    };
+    for (const [type, items] of Object.entries(typeMap)) {
+      if (!Array.isArray(items) || items.length === 0) continue;
+      for (let i = 0; i < items.length; i += 1) {
+        expectedExternalIds.push(`job:${jobId}:${type}:${i + 1}`);
+      }
+    }
+    await cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExternalIds });
+
+    const ownerId = principalId || sourceItem.principal_id || null;
+    const resolvedVisibility = requestedVisibility || sourceItem.visibility || "tenant";
     const aclList = resolvedVisibility === "acl"
-      ? normalizeAclList(requestedAcl || artifact.acl_principals || [], ownerId)
+      ? normalizeAclList(requestedAcl || sourceItem.acl_principals || [], ownerId)
       : [];
     if (resolvedVisibility === "acl" && aclList.length === 0) {
       throw new Error("acl list is required when visibility is acl");
     }
 
     const created = [];
-    const typeMap = {
-      semantic: reflection.semantic || [],
-      procedural: reflection.procedural || [],
-      summary: reflection.summary || []
-    };
 
     for (const [type, items] of Object.entries(typeMap)) {
       if (!Array.isArray(items) || items.length === 0) continue;
@@ -1291,20 +1750,28 @@ async function runReflectionJob(jobId, tenantId) {
           sourceUrl: null,
           metadata: {
             origin: "reflect",
-            artifactId: artifact.id,
+            artifactId: sourceType === "artifact" ? sourceItem.id : null,
+            conversationId: sourceType === "conversation" ? sourceItem.id : null,
             jobId,
             type
           },
           principalId: ownerId,
+          agentId: derivedAgentId,
+          tags: derivedTags,
           visibility: resolvedVisibility,
           acl: aclList
         });
+
+        const cleanup = await deleteVectorsForDoc(memory.namespace_id, { strict: true });
+        if (cleanup.failed > 0) {
+          throw new Error(`Failed to delete vectors for memory ${memory.id}`);
+        }
 
         await indexMemoryText(memory.namespace_id, content);
         await createMemoryLink({
           tenantId,
           fromItemId: memory.id,
-          toItemId: artifact.id,
+          toItemId: sourceItem.id,
           relation: "derived_from",
           metadata: { jobId, type }
         });
@@ -1322,22 +1789,22 @@ async function runReflectionJob(jobId, tenantId) {
       id: jobId,
       status: "succeeded",
       output: {
-        artifactId: artifact.id,
+        artifactId: sourceType === "artifact" ? sourceItem.id : null,
+        conversationId: sourceType === "conversation" ? sourceItem.id : null,
         createdCount: created.length,
         created
       }
     });
   } catch (err) {
-    await updateMemoryJob({ id: jobId, status: "failed", error: String(err.message || err) });
+    await finalizeJobFailure(job, err);
   }
 }
 
 async function runTtlCleanupJob(jobId, tenantId) {
-  try {
-    await updateMemoryJob({ id: jobId, status: "running" });
-    const job = await getMemoryJobById(jobId, tenantId);
-    if (!job) return;
+  const job = await claimMemoryJob({ id: jobId, tenantId });
+  if (!job) return;
 
+  try {
     const input = parseJsonPayload(job.input) || {};
     const collection = normalizeCollection(input.collection);
     const before = parseTimeInput(input.before || new Date().toISOString(), "before");
@@ -1361,10 +1828,16 @@ async function runTtlCleanupJob(jobId, tenantId) {
 
     let vectorsDeleted = 0;
     let itemsDeleted = 0;
+    let vectorFailures = 0;
 
     if (!dryRun) {
       for (const item of items) {
-        vectorsDeleted += await deleteVectorsForDoc(item.namespace_id);
+        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
+        if (result.failed > 0) {
+          vectorFailures += result.failed;
+          continue;
+        }
+        vectorsDeleted += result.deleted;
         await deleteMemoryItemById(item.id);
         itemsDeleted += 1;
       }
@@ -1379,24 +1852,26 @@ async function runTtlCleanupJob(jobId, tenantId) {
         dryRun,
         matched: items.length,
         itemsDeleted,
-        vectorsDeleted
+        vectorsDeleted,
+        vectorFailures
       }
     });
   } catch (err) {
-    await updateMemoryJob({ id: jobId, status: "failed", error: String(err.message || err) });
+    await finalizeJobFailure(job, err);
   }
 }
 
 async function runCompactionJob(jobId, tenantId) {
+  const job = await claimMemoryJob({ id: jobId, tenantId });
+  if (!job) return;
   try {
-    await updateMemoryJob({ id: jobId, status: "running" });
-    const job = await getMemoryJobById(jobId, tenantId);
-    if (!job) return;
 
     const input = parseJsonPayload(job.input) || {};
     const collection = normalizeCollection(input.collection);
     const typeFilter = parseTypeFilter(input.types);
-    const types = typeFilter.length ? typeFilter : ["semantic", "procedural", "summary", "memory"];
+    const types = typeFilter.length
+      ? typeFilter
+      : ["semantic", "procedural", "summary", "episodic", "conversation", "memory"];
     const since = input.since ? parseTimeInput(input.since, "since") : null;
     const until = input.until ? parseTimeInput(input.until, "until") : null;
     const limit = parseInt(input.maxItems || "25", 10);
@@ -1446,11 +1921,7 @@ async function runCompactionJob(jobId, tenantId) {
     }
 
     if (!parts.length) {
-      await updateMemoryJob({
-        id: jobId,
-        status: "failed",
-        error: "No memory text available for compaction"
-      });
+      await finalizeJobFailure(job, "No memory text available for compaction", { retryable: false });
       return;
     }
 
@@ -1458,13 +1929,16 @@ async function runCompactionJob(jobId, tenantId) {
     const summary = await summarizeMemories({ text: combined });
     recordGenerationUsage(tenantId, summary?.usage);
     if (!summary.content) {
-      await updateMemoryJob({
-        id: jobId,
-        status: "failed",
-        error: "Compaction produced empty summary"
-      });
+      await finalizeJobFailure(job, "Compaction produced empty summary", { retryable: false });
       return;
     }
+
+    await cleanupJobDerivedItems({
+      jobId,
+      tenantId,
+      collection,
+      expectedExternalIds: [`job:${jobId}:compaction`]
+    });
 
     const ownerId = principalId || (included[0]?.principal_id || null);
     let resolvedVisibility = requestedVisibility;
@@ -1521,6 +1995,11 @@ async function runCompactionJob(jobId, tenantId) {
       acl: aclList
     });
 
+    const cleanup = await deleteVectorsForDoc(memory.namespace_id, { strict: true });
+    if (cleanup.failed > 0) {
+      throw new Error(`Failed to delete vectors for memory ${memory.id}`);
+    }
+
     await indexMemoryText(memory.namespace_id, summary.content);
 
     for (const item of included) {
@@ -1535,9 +2014,15 @@ async function runCompactionJob(jobId, tenantId) {
 
     let vectorsDeleted = 0;
     let deletedCount = 0;
+    let vectorFailures = 0;
     if (deleteOriginals) {
       for (const item of included) {
-        vectorsDeleted += await deleteVectorsForDoc(item.namespace_id);
+        const result = await deleteVectorsForDoc(item.namespace_id, { strict: true });
+        if (result.failed > 0) {
+          vectorFailures += result.failed;
+          continue;
+        }
+        vectorsDeleted += result.deleted;
         await deleteMemoryItemById(item.id);
         deletedCount += 1;
       }
@@ -1552,11 +2037,12 @@ async function runCompactionJob(jobId, tenantId) {
         createdCount: 1,
         sourceCount: included.length,
         deletedCount,
-        vectorsDeleted
+        vectorsDeleted,
+        vectorFailures
       }
     });
   } catch (err) {
-    await updateMemoryJob({ id: jobId, status: "failed", error: String(err.message || err) });
+    await finalizeJobFailure(job, err);
   }
 }
 
@@ -1643,7 +2129,7 @@ app.post("/v1/login", loginLimiter, async (req, res) => {
   const cleanPass = String(password || "").trim();
 
   if (!cleanUser || !cleanPass) {
-    return sendError(res, 400, "username and password required", "INVALID_REQUEST", null, null);
+    return sendError(res, 400, "username and password required", "INVALID_INPUT", null, null);
   }
 
   const maxAttempts = parseInt(process.env.AUTH_MAX_ATTEMPTS || "5", 10);
@@ -1663,7 +2149,7 @@ app.post("/v1/login", loginLimiter, async (req, res) => {
     if (result.user) {
       await recordFailedLogin(cleanUser, maxAttempts, lockMinutes);
     }
-    return sendError(res, 401, "Invalid credentials", "INVALID_CREDENTIALS", null, null);
+    return sendError(res, 401, "Invalid credentials", "AUTH_INVALID", null, null);
   }
 
   try {
@@ -1748,6 +2234,14 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
     if (!tenant || !TENANT_RE.test(tenant)) {
       return res.status(400).json({ error: "Invalid tenant from IdP" });
     }
+    const tenantRecord = await getTenantById(tenant);
+    const tenantAuthMode = normalizeAuthMode(tenantRecord?.auth_mode);
+    if (!isSsoAllowed(tenantAuthMode)) {
+      return res.status(403).json({ error: "Tenant requires password login." });
+    }
+    if (!isSsoProviderAllowed(tenantRecord, provider)) {
+      return res.status(403).json({ error: "SSO provider not allowed for tenant." });
+    }
 
     const subject = String(claims.sub || "").trim();
     if (!subject) {
@@ -1792,6 +2286,87 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
 });
 
 // --------------------------
+// Tenant settings (admin)
+// --------------------------
+app.get(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    const authMode = normalizeAuthMode(tenant?.auth_mode);
+    sendOk(res, {
+      tenant: {
+        id: tenantId,
+        name: tenant?.name || null,
+        authMode,
+        ssoProviders: resolveSsoProviders(tenant)
+      }
+    }, tenantId, null);
+  } catch (err) {
+    sendError(res, 500, "Failed to load tenant settings", "TENANT_SETTINGS_FAILED", tenantId, null);
+  }
+});
+
+app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const rawMode = req.body?.authMode ?? req.body?.auth_mode;
+    const rawProviders = req.body?.ssoProviders ?? req.body?.sso_providers;
+    const authMode = rawMode === undefined ? null : parseAuthMode(rawMode);
+    if (rawMode !== undefined && !authMode) {
+      return sendError(res, 400, "authMode must be one of: sso_only, sso_plus_password, password_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    let providersInput;
+    try {
+      providersInput = normalizeSsoProvidersInput(rawProviders);
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    if (rawMode === undefined && !providersInput.provided) {
+      return sendError(res, 400, "Provide authMode and/or ssoProviders", "INVALID_INPUT", tenantId, null);
+    }
+
+    const current = await getTenantById(tenantId);
+    const prevAuthMode = normalizeAuthMode(current?.auth_mode);
+    const prevProviders = Array.isArray(current?.sso_providers) ? current.sso_providers : null;
+    const nextAuthMode = authMode || prevAuthMode;
+    const nextProviders = providersInput.provided ? providersInput.value : current?.sso_providers ?? null;
+    if (nextAuthMode === "sso_only" && Array.isArray(nextProviders) && nextProviders.length === 0) {
+      return sendError(res, 400, "ssoProviders cannot be empty when authMode is sso_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    const tenant = await setTenantSettings(tenantId, {
+      authMode: rawMode === undefined ? undefined : authMode,
+      ssoProviders: providersInput.provided ? providersInput.value : undefined
+    });
+    const updatedAuthMode = normalizeAuthMode(tenant?.auth_mode || authMode);
+    const updatedProviders = Array.isArray(tenant?.sso_providers) ? tenant.sso_providers : null;
+    await recordAudit(req, tenantId, {
+      action: "tenant.auth_policy.update",
+      targetType: "tenant",
+      targetId: tenantId,
+      metadata: {
+        before: { authMode: prevAuthMode, ssoProviders: prevProviders },
+        after: { authMode: updatedAuthMode, ssoProviders: updatedProviders }
+      }
+    });
+    sendOk(res, {
+      tenant: {
+        id: tenantId,
+        name: tenant?.name || null,
+        authMode: updatedAuthMode,
+        ssoProviders: resolveSsoProviders(tenant)
+      }
+    }, tenantId, null);
+  } catch (err) {
+    sendError(res, 500, "Failed to update tenant settings", "TENANT_SETTINGS_UPDATE_FAILED", tenantId, null);
+  }
+});
+
+// --------------------------
 // Service tokens (admin)
 // --------------------------
 app.get(["/admin/service-tokens", "/v1/admin/service-tokens"], requireJwt, requireAdmin, async (req, res) => {
@@ -1811,13 +2386,13 @@ app.post(["/admin/service-tokens", "/v1/admin/service-tokens"], requireJwt, requ
     tenantId = resolveTenantId(req);
     const name = String(req.body?.name || "").trim();
     if (!name) {
-      return sendError(res, 400, "name is required", "INVALID_REQUEST", tenantId, null);
+      return sendError(res, 400, "name is required", "INVALID_INPUT", tenantId, null);
     }
 
     let principalId = req.body?.principalId || req.body?.principal_id || req.user?.sub || req.user?.principal_id;
     principalId = String(principalId || "").trim();
     if (!principalId || !PRINCIPAL_RE.test(principalId)) {
-      return sendError(res, 400, "Invalid principalId", "INVALID_REQUEST", tenantId, null);
+      return sendError(res, 400, "Invalid principalId", "INVALID_INPUT", tenantId, null);
     }
 
     const roles = normalizeRoles(req.body?.roles);
@@ -1825,7 +2400,7 @@ app.post(["/admin/service-tokens", "/v1/admin/service-tokens"], requireJwt, requ
     if (expiresAt) {
       const dt = new Date(expiresAt);
       if (Number.isNaN(dt.getTime())) {
-        return sendError(res, 400, "expiresAt must be a valid date", "INVALID_REQUEST", tenantId, null);
+        return sendError(res, 400, "expiresAt must be a valid date", "INVALID_INPUT", tenantId, null);
       }
       expiresAt = dt.toISOString();
     }
@@ -1857,12 +2432,23 @@ app.delete(["/admin/service-tokens/:id", "/v1/admin/service-tokens/:id"], requir
     tenantId = resolveTenantId(req);
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) {
-      return sendError(res, 400, "Invalid token id", "INVALID_REQUEST", tenantId, null);
+      return sendError(res, 400, "Invalid token id", "INVALID_INPUT", tenantId, null);
     }
     const record = await revokeServiceToken(id, tenantId);
     if (!record) {
       return sendError(res, 404, "Token not found", "NOT_FOUND", tenantId, null);
     }
+    await recordAudit(req, tenantId, {
+      action: "service_token.revoked",
+      targetType: "service_token",
+      targetId: String(record.id),
+      metadata: {
+        name: record.name || null,
+        principalId: record.principal_id || null,
+        roles: record.roles || [],
+        revokedAt: record.revoked_at || null
+      }
+    });
     sendOk(res, { token: formatServiceToken(record) }, tenantId, null);
   } catch (err) {
     sendError(res, 500, "Failed to revoke service token", "SERVICE_TOKEN_REVOKE_FAILED", tenantId, null);
@@ -1872,9 +2458,9 @@ app.delete(["/admin/service-tokens/:id", "/v1/admin/service-tokens/:id"], requir
 // --------------------------
 // Stats (protected)
 // --------------------------
-app.get("/stats", requireJwt, async (req, res) => {
+app.get("/stats", requireJwt, requireRole("reader"), async (req, res) => {
   const tenantId = resolveTenantId(req);
-  const collection = resolveCollection(req);
+  const collection = resolveCollection(req, { track: false });
   const reply = await sendCmd("STATS");
   const tcpStats = JSON.parse(reply);
   const gatewayStats = {
@@ -1883,12 +2469,12 @@ app.get("/stats", requireJwt, async (req, res) => {
   res.json({ ...tcpStats, gateway: gatewayStats, tenantId, collection });
 });
 
-app.get("/v1/stats", requireJwt, async (req, res) => {
+app.get("/v1/stats", requireJwt, requireRole("reader"), async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    collection = resolveCollection(req);
+    collection = resolveCollection(req, { track: false });
     const reply = await sendCmd("STATS");
     const tcpStats = JSON.parse(reply);
     const gatewayStats = {
@@ -1900,12 +2486,54 @@ app.get("/v1/stats", requireJwt, async (req, res) => {
   }
 });
 
+const metricsHandler = async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+  } catch (e) {
+    return sendError(res, 400, e, "INVALID_INPUT", null, null);
+  }
+
+  const isAdmin = hasTokenAdminAccess(req);
+  const lines = [
+    "# HELP atlasrag_request_latency_ms Request latency in milliseconds (rolling window).",
+    "# TYPE atlasrag_request_latency_ms summary",
+    "# HELP atlasrag_requests_total Requests observed in rolling window.",
+    "# TYPE atlasrag_requests_total gauge",
+    "# HELP atlasrag_request_errors_total Error responses (>=500) observed in rolling window.",
+    "# TYPE atlasrag_request_errors_total gauge",
+    "# HELP atlasrag_request_error_rate Error rate observed in rolling window.",
+    "# TYPE atlasrag_request_error_rate gauge"
+  ];
+
+  const emitGroup = (group, baseLabels) => {
+    emitPromLatencySummary(lines, group.overall, { ...baseLabels, scope: "overall" });
+    for (const [route, summary] of Object.entries(group.routes || {})) {
+      emitPromLatencySummary(lines, summary, { ...baseLabels, scope: "route", route });
+    }
+  };
+
+  if (isAdmin) {
+    emitGroup(getLatencyStats(), { tenant_id: "__all__" });
+  }
+
+  const tenantStats = isAdmin ? getAllTenantLatencyStats() : { [tenantId]: getLatencyStats(tenantId) };
+  for (const [tid, stats] of Object.entries(tenantStats)) {
+    emitGroup(stats, { tenant_id: tid });
+  }
+
+  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  res.send(`${lines.join("\n")}\n`);
+};
+
+app.get(["/metrics", "/v1/metrics"], requireJwt, requireRole("reader"), metricsHandler);
+
 app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
     tenantId = resolveTenantId(req);
-    collection = resolveCollection(req);
+    collection = resolveCollection(req, { track: false });
     const reply = await sendCmd("STATS");
     const tcpStats = JSON.parse(reply);
     const gatewayStats = {
@@ -1968,7 +2596,7 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
 
 // GET /docs/list
 // - list docs for the current tenant
-app.get("/collections", requireJwt, async (req, res) => {
+app.get("/collections", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
     const overrideInput = hasAccessOverrideInput(req);
@@ -1983,7 +2611,7 @@ app.get("/collections", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/v1/collections", requireJwt, async (req, res) => {
+app.get("/v1/collections", requireJwt, requireRole("reader"), async (req, res) => {
   let tenantId = null;
   try {
     tenantId = resolveTenantId(req);
@@ -2005,6 +2633,7 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
   try {
     tenantId = resolveTenantId(req);
     collection = normalizeCollection(req.params.collection);
+    req.collection = collection;
     const docs = await listDocsForTenant(tenantId, collection, null, []);
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
@@ -2017,6 +2646,15 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
       }
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
+    await recordAudit(req, tenantId, {
+      action: "collection.deleted",
+      targetType: "collection",
+      targetId: collection,
+      metadata: {
+        deletedDocs: docs.length,
+        deletedMemoryItems
+      }
+    });
     res.json({
       ok: true,
       collection,
@@ -2036,6 +2674,7 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
   try {
     tenantId = resolveTenantId(req);
     collection = normalizeCollection(req.params.collection);
+    req.collection = collection;
     const docs = await listDocsForTenant(tenantId, collection, null, []);
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
@@ -2048,6 +2687,15 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
       }
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
+    await recordAudit(req, tenantId, {
+      action: "collection.deleted",
+      targetType: "collection",
+      targetId: collection,
+      metadata: {
+        deletedDocs: docs.length,
+        deletedMemoryItems
+      }
+    });
     sendOk(res, {
       collection,
       deletedDocs: docs.length,
@@ -2059,7 +2707,7 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
   }
 });
 
-app.get("/docs/list", requireJwt, async (req, res) => {
+app.get("/docs/list", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
@@ -2071,7 +2719,7 @@ app.get("/docs/list", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/v1/docs", requireJwt, async (req, res) => {
+app.get("/v1/docs", requireJwt, requireRole("reader"), async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
@@ -2090,7 +2738,7 @@ app.get("/v1/docs", requireJwt, async (req, res) => {
 // - embed chunks
 // - store vectors in C++ (VSET)
 // - store chunk text in Postgres
-app.post("/docs", requireJwt, async (req, res) => {
+app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
   const { docId, text } = req.body || {};
 
   const cleanDocId = String(docId || "").trim();
@@ -2106,13 +2754,15 @@ app.post("/docs", requireJwt, async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
+    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
     const { chunksIndexed, truncated } = await indexDocument(
       tenantId,
       collection,
       cleanDocId,
       text,
-      { type: "text", expiresAt, principalId, visibility: req.body?.visibility, acl: req.body?.acl }
+      { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
     );
     res.json({ ok: true, docId: cleanDocId, collection, tenantId, chunksIndexed, truncated });
   } catch (e) {
@@ -2120,13 +2770,13 @@ app.post("/docs", requireJwt, async (req, res) => {
   }
 });
 
-app.post("/v1/docs", requireJwt, async (req, res) => {
+app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
   const { docId, text } = req.body || {};
 
   const cleanDocId = String(docId || "").trim();
 
   if (!cleanDocId || !text) {
-    return res.status(400).json(buildErrorPayload("docId and text required", "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload("docId and text required", "INVALID_INPUT", null, null));
   }
   if (!isValidDocId(cleanDocId)) {
     return res.status(400).json(buildErrorPayload("docId must use only letters, numbers, dot, dash, or underscore (no spaces)", "INVALID_DOC_ID", null, null));
@@ -2135,12 +2785,16 @@ app.post("/v1/docs", requireJwt, async (req, res) => {
   let tenantId = null;
   let collection = null;
   let principalId = null;
+  let agentId = null;
+  let tags = [];
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
+    agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    tags = parseTagsInput(req.body?.tags);
   } catch (e) {
-    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
 
   return handleIdempotentRequest({
@@ -2158,7 +2812,7 @@ app.post("/v1/docs", requireJwt, async (req, res) => {
           collection,
           cleanDocId,
           text,
-          { type: "text", expiresAt, principalId, visibility: req.body?.visibility, acl: req.body?.acl }
+          { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
         );
         return {
           status: 200,
@@ -2178,7 +2832,7 @@ app.post("/v1/docs", requireJwt, async (req, res) => {
 // - fetch URL
 // - extract text
 // - index like /docs
-app.post("/docs/url", requireJwt, async (req, res) => {
+app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
   const { docId, url } = req.body || {};
   const cleanDocId = String(docId || "").trim();
   const cleanUrl = String(url || "").trim();
@@ -2194,6 +2848,8 @@ app.post("/docs/url", requireJwt, async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
+    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
     const fetched = await fetchUrlText(cleanUrl);
     const { chunksIndexed, truncated } = await indexDocument(
@@ -2201,7 +2857,7 @@ app.post("/docs/url", requireJwt, async (req, res) => {
       collection,
       cleanDocId,
       fetched.text,
-      { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, visibility: req.body?.visibility, acl: req.body?.acl }
+      { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
     );
 
     res.json({
@@ -2221,13 +2877,13 @@ app.post("/docs/url", requireJwt, async (req, res) => {
   }
 });
 
-app.post("/v1/docs/url", requireJwt, async (req, res) => {
+app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
   const { docId, url } = req.body || {};
   const cleanDocId = String(docId || "").trim();
   const cleanUrl = String(url || "").trim();
 
   if (!cleanDocId || !cleanUrl) {
-    return res.status(400).json(buildErrorPayload("docId and url required", "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload("docId and url required", "INVALID_INPUT", null, null));
   }
   if (!isValidDocId(cleanDocId)) {
     return res.status(400).json(buildErrorPayload("docId must use only letters, numbers, dot, dash, or underscore (no spaces)", "INVALID_DOC_ID", null, null));
@@ -2236,12 +2892,16 @@ app.post("/v1/docs/url", requireJwt, async (req, res) => {
   let tenantId = null;
   let collection = null;
   let principalId = null;
+  let agentId = null;
+  let tags = [];
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
+    agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    tags = parseTagsInput(req.body?.tags);
   } catch (e) {
-    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
 
   return handleIdempotentRequest({
@@ -2260,7 +2920,7 @@ app.post("/v1/docs/url", requireJwt, async (req, res) => {
           collection,
           cleanDocId,
           fetched.text,
-          { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, visibility: req.body?.visibility, acl: req.body?.acl }
+          { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
         );
 
         return {
@@ -2293,7 +2953,7 @@ app.post("/v1/docs/url", requireJwt, async (req, res) => {
 //  2) VSEARCH top-k
 //  3) fetch chunks from Postgres
 //  4) call OpenAI to generate answer using sources
-app.post("/ask", requireJwt, async (req, res) => {
+app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
   const { question } = req.body || {};
   const k = parseInt(req.body?.k || "5", 10);
@@ -2332,13 +2992,13 @@ app.post("/ask", requireJwt, async (req, res) => {
   }
 });
 
-app.post("/v1/ask", requireJwt, async (req, res) => {
+app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
   const { question } = req.body || {};
   const k = parseInt(req.body?.k || "5", 10);
   const docIds = parseDocFilter(req.body?.docIds);
 
   if (!question || !question.trim()) {
-    return sendError(res, 400, "question is required", "INVALID_REQUEST", null, null);
+    return sendError(res, 400, "question is required", "INVALID_INPUT", null, null);
   }
 
   let tenantId = null;
@@ -2373,7 +3033,7 @@ app.post("/v1/ask", requireJwt, async (req, res) => {
 // - remove text rows from Postgres
 // - NOTE: vectors remain unless you also track chunk IDs.
 // For MVP, we just delete text. Next iteration we can also delete vectors.
-app.delete("/docs/:docId", requireJwt, async (req, res) => {
+app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) => {
   const docId = String(req.params.docId || "").trim();
   if (!docId) return res.status(400).json({ error: "docId required" });
   if (!isValidDocId(docId)) {
@@ -2389,6 +3049,15 @@ app.delete("/docs/:docId", requireJwt, async (req, res) => {
       await deleteDoc(legacy);
     }
   }
+  await recordAudit(req, tenantId, {
+    action: "doc.deleted",
+    targetType: "doc",
+    targetId: docId,
+    metadata: {
+      collection,
+      namespaceId: namespaced
+    }
+  });
   res.json({
     ok: true,
     docId,
@@ -2398,9 +3067,9 @@ app.delete("/docs/:docId", requireJwt, async (req, res) => {
   });
 });
 
-app.delete("/v1/docs/:docId", requireJwt, async (req, res) => {
+app.delete("/v1/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) => {
   const docId = String(req.params.docId || "").trim();
-  if (!docId) return sendError(res, 400, "docId required", "INVALID_REQUEST", null, null);
+  if (!docId) return sendError(res, 400, "docId required", "INVALID_INPUT", null, null);
   if (!isValidDocId(docId)) {
     return sendError(res, 400, "docId must use only letters, numbers, dot, dash, or underscore (no spaces)", "INVALID_DOC_ID", null, null);
   }
@@ -2418,6 +3087,15 @@ app.delete("/v1/docs/:docId", requireJwt, async (req, res) => {
         await deleteDoc(legacy);
       }
     }
+    await recordAudit(req, tenantId, {
+      action: "doc.deleted",
+      targetType: "doc",
+      targetId: docId,
+      metadata: {
+        collection,
+        namespaceId: namespaced
+      }
+    });
     sendOk(res, {
       docId,
       note: "Deleted chunk text; vector deletion is a next improvement."
@@ -2431,7 +3109,7 @@ app.delete("/v1/docs/:docId", requireJwt, async (req, res) => {
 // - embed query
 // - VSEARCH top-k
 // - fetch chunk texts from Postgres for previews
-app.get("/search", requireJwt, async (req, res) => {
+app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
   const q = req.query.q;
   const k = parseInt(req.query.k || "5", 10);
   const docIds = parseDocFilter(req.query.docIds || req.query.docs);
@@ -2471,12 +3149,12 @@ app.get("/search", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/v1/search", requireJwt, async (req, res) => {
+app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
   const q = req.query.q;
   const k = parseInt(req.query.k || "5", 10);
   const docIds = parseDocFilter(req.query.docIds || req.query.docs);
 
-  if (!q) return sendError(res, 400, "q query param required", "INVALID_REQUEST", null, null);
+  if (!q) return sendError(res, 400, "q query param required", "INVALID_INPUT", null, null);
 
   let tenantId = null;
   let collection = null;
@@ -2534,6 +3212,8 @@ const memoryWriteLegacy = async (req, res) => {
         type: result.memory.item_type,
         externalId: result.memory.external_id || null,
         principalId: result.memory.principal_id || null,
+        agentId: result.memory.agent_id || null,
+        tags: result.memory.tags || [],
         visibility: result.memory.visibility || "tenant",
         acl: result.memory.acl_principals || [],
         title: result.memory.title || null,
@@ -2557,7 +3237,7 @@ const memoryWriteV1 = async (req, res) => {
   const { text } = req.body || {};
 
   if (!text || !String(text).trim()) {
-    return res.status(400).json(buildErrorPayload("text is required", "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload("text is required", "INVALID_INPUT", null, null));
   }
 
   let tenantId = null;
@@ -2568,7 +3248,7 @@ const memoryWriteV1 = async (req, res) => {
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
   } catch (e) {
-    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
 
   return handleIdempotentRequest({
@@ -2587,12 +3267,14 @@ const memoryWriteV1 = async (req, res) => {
             memory: {
               id: result.memory.id,
               namespaceId: result.memory.namespace_id,
-            type: result.memory.item_type,
-            externalId: result.memory.external_id || null,
-            principalId: result.memory.principal_id || null,
-            visibility: result.memory.visibility || "tenant",
-            acl: result.memory.acl_principals || [],
-            title: result.memory.title || null,
+              type: result.memory.item_type,
+              externalId: result.memory.external_id || null,
+              principalId: result.memory.principal_id || null,
+              agentId: result.memory.agent_id || null,
+              tags: result.memory.tags || [],
+              visibility: result.memory.visibility || "tenant",
+              acl: result.memory.acl_principals || [],
+              title: result.memory.title || null,
               sourceType: result.memory.source_type || null,
               sourceUrl: result.memory.source_url || null,
               metadata: result.memory.metadata || null,
@@ -2613,10 +3295,10 @@ const memoryWriteV1 = async (req, res) => {
   });
 };
 
-app.post(["/memory", "/memory/write"], requireJwt, memoryWriteLegacy);
-app.post(["/v1/memory", "/v1/memory/write"], requireJwt, memoryWriteV1);
+app.post(["/memory", "/memory/write"], requireJwt, requireRole("indexer"), memoryWriteLegacy);
+app.post(["/v1/memory", "/v1/memory/write"], requireJwt, requireRole("indexer"), memoryWriteV1);
 
-app.post("/memory/recall", requireJwt, async (req, res) => {
+app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) => {
   const { query, k, types, since, until } = req.body || {};
   const limit = parseInt(k || "5", 10);
 
@@ -2633,6 +3315,8 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
     const untilTime = parseTimeInput(until, "until");
+    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    const tags = parseTagsInput(req.body?.tags);
 
     const results = await searchChunks({
       tenantId,
@@ -2652,7 +3336,9 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
       until: untilTime,
       excludeExpired: true,
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      agentId,
+      tags
     });
 
     const recalled = [];
@@ -2669,6 +3355,8 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
           type: mem.item_type,
           externalId: mem.external_id || null,
           principalId: mem.principal_id || null,
+          agentId: mem.agent_id || null,
+          tags: mem.tags || [],
           visibility: mem.visibility || "tenant",
           acl: mem.acl_principals || [],
           title: mem.title || null,
@@ -2695,12 +3383,12 @@ app.post("/memory/recall", requireJwt, async (req, res) => {
   }
 });
 
-app.post("/v1/memory/recall", requireJwt, async (req, res) => {
+app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res) => {
   const { query, k, types, since, until } = req.body || {};
   const limit = parseInt(k || "5", 10);
 
   if (!query || !String(query).trim()) {
-    return sendError(res, 400, "query is required", "INVALID_REQUEST", null, null);
+    return sendError(res, 400, "query is required", "INVALID_INPUT", null, null);
   }
 
   let tenantId = null;
@@ -2712,6 +3400,8 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
     const untilTime = parseTimeInput(until, "until");
+    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
+    const tags = parseTagsInput(req.body?.tags);
 
     const results = await searchChunks({
       tenantId,
@@ -2731,7 +3421,9 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
       until: untilTime,
       excludeExpired: true,
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      agentId,
+      tags
     });
 
     const recalled = [];
@@ -2748,6 +3440,8 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
           type: mem.item_type,
           externalId: mem.external_id || null,
           principalId: mem.principal_id || null,
+          agentId: mem.agent_id || null,
+          tags: mem.tags || [],
           visibility: mem.visibility || "tenant",
           acl: mem.acl_principals || [],
           title: mem.title || null,
@@ -2772,10 +3466,10 @@ app.post("/v1/memory/recall", requireJwt, async (req, res) => {
 });
 
 const memoryReflectLegacy = async (req, res) => {
-  const { docId, artifactId, types, maxItems, visibility, acl } = req.body || {};
+  const { docId, artifactId, conversationId, types, maxItems, visibility, acl } = req.body || {};
 
-  if (!docId && !artifactId) {
-    return res.status(400).json({ error: "docId or artifactId is required", tenantId: null, collection: null });
+  if (!docId && !artifactId && !conversationId) {
+    return res.status(400).json({ error: "docId, artifactId, or conversationId is required", tenantId: null, collection: null });
   }
   if (docId && !isValidDocId(docId)) {
     return res.status(400).json({ error: "docId must use only letters, numbers, dot, dash, or underscore (no spaces)", tenantId: null, collection: null });
@@ -2803,9 +3497,11 @@ const memoryReflectLegacy = async (req, res) => {
       tenantId,
       jobType: "reflect",
       status: "queued",
+      maxAttempts: JOB_MAX_ATTEMPTS,
       input: {
         docId: docId || null,
         artifactId: artifactId || null,
+        conversationId: conversationId || null,
         types: reflectTypes,
         maxItems: limit,
         collection,
@@ -2834,10 +3530,10 @@ const memoryReflectLegacy = async (req, res) => {
 };
 
 const memoryReflectV1 = async (req, res) => {
-  const { docId, artifactId, types, maxItems, visibility, acl } = req.body || {};
+  const { docId, artifactId, conversationId, types, maxItems, visibility, acl } = req.body || {};
 
-  if (!docId && !artifactId) {
-    return res.status(400).json(buildErrorPayload("docId or artifactId is required", "INVALID_REQUEST", null, null));
+  if (!docId && !artifactId && !conversationId) {
+    return res.status(400).json(buildErrorPayload("docId, artifactId, or conversationId is required", "INVALID_INPUT", null, null));
   }
   if (docId && !isValidDocId(docId)) {
     return res.status(400).json(buildErrorPayload("docId must use only letters, numbers, dot, dash, or underscore (no spaces)", "INVALID_DOC_ID", null, null));
@@ -2851,18 +3547,18 @@ const memoryReflectV1 = async (req, res) => {
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
   } catch (e) {
-    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_REQUEST", null, null));
+    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
 
   const reflectTypes = normalizeReflectTypes(types);
   const limit = parseInt(maxItems || "5", 10);
   if (!Number.isFinite(limit) || limit <= 0) {
-    return res.status(400).json(buildErrorPayload("maxItems must be a positive number", "INVALID_REQUEST", tenantId, collection));
+    return res.status(400).json(buildErrorPayload("maxItems must be a positive number", "INVALID_INPUT", tenantId, collection));
   }
   const resolvedVisibility = normalizeVisibility(visibility);
   const aclList = resolvedVisibility === "acl" ? normalizeAclList(acl, principalId) : [];
   if (resolvedVisibility === "acl" && aclList.length === 0) {
-    return res.status(400).json(buildErrorPayload("acl list is required when visibility is acl", "INVALID_REQUEST", tenantId, collection));
+    return res.status(400).json(buildErrorPayload("acl list is required when visibility is acl", "INVALID_INPUT", tenantId, collection));
   }
 
   return handleIdempotentRequest({
@@ -2875,6 +3571,7 @@ const memoryReflectV1 = async (req, res) => {
     payloadForHash: {
       docId: docId || null,
       artifactId: artifactId || null,
+      conversationId: conversationId || null,
       types: reflectTypes,
       maxItems: limit,
       collection,
@@ -2889,9 +3586,11 @@ const memoryReflectV1 = async (req, res) => {
           tenantId,
           jobType: "reflect",
           status: "queued",
+          maxAttempts: JOB_MAX_ATTEMPTS,
           input: {
             docId: docId || null,
             artifactId: artifactId || null,
+            conversationId: conversationId || null,
             types: reflectTypes,
             maxItems: limit,
             collection,
@@ -2924,8 +3623,8 @@ const memoryReflectV1 = async (req, res) => {
   });
 };
 
-app.post("/memory/reflect", requireJwt, memoryReflectLegacy);
-app.post("/v1/memory/reflect", requireJwt, memoryReflectV1);
+app.post("/memory/reflect", requireJwt, requireRole("indexer"), memoryReflectLegacy);
+app.post("/v1/memory/reflect", requireJwt, requireRole("indexer"), memoryReflectV1);
 
 const memoryCleanupLegacy = async (req, res) => {
   const { before, limit, dryRun } = req.body || {};
@@ -2946,6 +3645,7 @@ const memoryCleanupLegacy = async (req, res) => {
       tenantId,
       jobType: "ttl_cleanup",
       status: "queued",
+      maxAttempts: JOB_MAX_ATTEMPTS,
       input: {
         before: cutoff.toISOString(),
         limit: max,
@@ -2989,6 +3689,7 @@ const memoryCleanupV1 = async (req, res) => {
       tenantId,
       jobType: "ttl_cleanup",
       status: "queued",
+      maxAttempts: JOB_MAX_ATTEMPTS,
       input: {
         before: cutoff.toISOString(),
         limit: max,
@@ -3022,6 +3723,7 @@ const memoryCompactLegacy = async (req, res) => {
       tenantId,
       jobType: "compaction",
       status: "queued",
+      maxAttempts: JOB_MAX_ATTEMPTS,
       input: {
         types: types ?? null,
         since: since || null,
@@ -3065,6 +3767,7 @@ const memoryCompactV1 = async (req, res) => {
       tenantId,
       jobType: "compaction",
       status: "queued",
+      maxAttempts: JOB_MAX_ATTEMPTS,
       input: {
         types: types ?? null,
         since: since || null,
@@ -3089,12 +3792,12 @@ const memoryCompactV1 = async (req, res) => {
   }
 };
 
-app.post("/memory/cleanup", requireJwt, memoryCleanupLegacy);
-app.post("/v1/memory/cleanup", requireJwt, memoryCleanupV1);
-app.post("/memory/compact", requireJwt, memoryCompactLegacy);
-app.post("/v1/memory/compact", requireJwt, memoryCompactV1);
+app.post("/memory/cleanup", requireJwt, requireRole("admin"), memoryCleanupLegacy);
+app.post("/v1/memory/cleanup", requireJwt, requireRole("admin"), memoryCleanupV1);
+app.post("/memory/compact", requireJwt, requireRole("admin"), memoryCompactLegacy);
+app.post("/v1/memory/compact", requireJwt, requireRole("admin"), memoryCompactV1);
 
-app.get("/jobs", requireJwt, async (req, res) => {
+app.get("/jobs", requireJwt, requireRole("reader"), async (req, res) => {
   let tenantId = null;
   try {
     tenantId = resolveTenantId(req);
@@ -3113,6 +3816,9 @@ app.get("/jobs", requireJwt, async (req, res) => {
       input: parseJsonPayload(job.input),
       output: parseJsonPayload(job.output),
       error: job.error || null,
+      attempts: job.attempts ?? 0,
+      maxAttempts: job.max_attempts ?? null,
+      nextRunAt: job.next_run_at || null,
       createdAt: job.created_at,
       updatedAt: job.updated_at
     }));
@@ -3122,7 +3828,7 @@ app.get("/jobs", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/v1/jobs", requireJwt, async (req, res) => {
+app.get("/v1/jobs", requireJwt, requireRole("reader"), async (req, res) => {
   let tenantId = null;
   try {
     tenantId = resolveTenantId(req);
@@ -3141,6 +3847,9 @@ app.get("/v1/jobs", requireJwt, async (req, res) => {
       input: parseJsonPayload(job.input),
       output: parseJsonPayload(job.output),
       error: job.error || null,
+      attempts: job.attempts ?? 0,
+      maxAttempts: job.max_attempts ?? null,
+      nextRunAt: job.next_run_at || null,
       createdAt: job.created_at,
       updatedAt: job.updated_at
     }));
@@ -3150,7 +3859,7 @@ app.get("/v1/jobs", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/jobs/:id", requireJwt, async (req, res) => {
+app.get("/jobs/:id", requireJwt, requireRole("reader"), async (req, res) => {
   const id = parseInt(req.params.id || "0", 10);
   if (!Number.isFinite(id) || id <= 0) {
     return res.status(400).json({ error: "invalid job id", tenantId: null, collection: null });
@@ -3177,6 +3886,9 @@ app.get("/jobs/:id", requireJwt, async (req, res) => {
         input,
         output,
         error: job.error || null,
+        attempts: job.attempts ?? 0,
+        maxAttempts: job.max_attempts ?? null,
+        nextRunAt: job.next_run_at || null,
         createdAt: job.created_at,
         updatedAt: job.updated_at
       },
@@ -3188,10 +3900,10 @@ app.get("/jobs/:id", requireJwt, async (req, res) => {
   }
 });
 
-app.get("/v1/jobs/:id", requireJwt, async (req, res) => {
+app.get("/v1/jobs/:id", requireJwt, requireRole("reader"), async (req, res) => {
   const id = parseInt(req.params.id || "0", 10);
   if (!Number.isFinite(id) || id <= 0) {
-    return sendError(res, 400, "invalid job id", "INVALID_REQUEST", null, null);
+    return sendError(res, 400, "invalid job id", "INVALID_INPUT", null, null);
   }
 
   let tenantId = null;
@@ -3214,6 +3926,9 @@ app.get("/v1/jobs/:id", requireJwt, async (req, res) => {
         input,
         output,
         error: job.error || null,
+        attempts: job.attempts ?? 0,
+        maxAttempts: job.max_attempts ?? null,
+        nextRunAt: job.next_run_at || null,
         createdAt: job.created_at,
         updatedAt: job.updated_at
       }
@@ -3229,6 +3944,8 @@ async function start() {
     app.listen(3000, () => {
       console.log("HTTP gateway listening on http://localhost:3000");
       scheduleAutoReindex();
+      scheduleTtlSweep();
+      scheduleJobSweep();
     });
   } catch (err) {
     console.error("Failed to start gateway:", err);
