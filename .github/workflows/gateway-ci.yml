@@ -1,0 +1,111 @@
+name: Gateway CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  gateway-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: gateway/package-lock.json
+
+      - name: Install gateway dependencies
+        working-directory: gateway
+        run: npm ci
+
+      - name: Prepare CI env file
+        run: |
+          cat > .env.ci << 'EOF'
+          POSTGRES_DB=atlasrag
+          POSTGRES_USER=atlasrag
+          POSTGRES_PASSWORD=atlasrag
+          OPENAI_API_KEY=
+          JWT_SECRET=ci_jwt_secret
+          JWT_ISSUER=atlasrag
+          JWT_AUDIENCE=atlasrag
+          JWT_EXPIRES_IN=1h
+          COOKIE_SECRET=ci_cookie_secret
+          COOKIE_SECURE=0
+          PUBLIC_BASE_URL=http://localhost:3000
+          OPENAPI_BASE_URL=http://localhost:3000
+          MIGRATIONS_AUTO=1
+          MIGRATIONS_ATTEMPTS=30
+          MIGRATIONS_DELAY_MS=1000
+          RATE_LIMIT_MAX=500
+          TENANT_RATE_LIMIT_MAX=500
+          LOGIN_RATE_LIMIT_MAX=200
+          AUTH_MAX_ATTEMPTS=20
+          AUTH_LOCK_MINUTES=1
+          REINDEX_ON_START=auto
+          ALLOW_PRINCIPAL_OVERRIDE=0
+          TELEMETRY_ENABLED=0
+          FETCH_USER_AGENT=atlasrag-ci
+          EOF
+
+      - name: Start services
+        run: docker compose --env-file .env.ci up -d --build
+
+      - name: Wait for gateway health
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:3000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose --env-file .env.ci logs gateway
+          exit 1
+
+      - name: Ensure e2e user
+        working-directory: gateway
+        env:
+          E2E_USERNAME: ci_admin
+          E2E_PASSWORD: ci_admin_password
+          E2E_TENANT: ci_admin
+          E2E_ROLES: admin
+          PGHOST: 127.0.0.1
+          PGPORT: "5432"
+          PGDATABASE: atlasrag
+          PGUSER: atlasrag
+          PGPASSWORD: atlasrag
+        run: npm run ci:ensure-user
+
+      - name: Run unit tests
+        working-directory: gateway
+        run: npm run test:unit
+
+      - name: Run integration tests (public MCP)
+        working-directory: gateway
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+        run: npm run test:integration
+
+      - name: Run API end-to-end tests
+        working-directory: gateway
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+          E2E_USERNAME: ci_admin
+          E2E_PASSWORD: ci_admin_password
+        run: npm run test:e2e
+
+      - name: Print service logs on failure
+        if: failure()
+        run: docker compose --env-file .env.ci logs --no-color
+
+      - name: Stop services
+        if: always()
+        run: docker compose --env-file .env.ci down -v

@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/compute_value_score.test.js"
+    "test": "npm run test:unit",
+    "test:unit": "node tests/compute_value_score.test.js && node tests/lifecycle_min_age.test.js && node tests/chunking_strategy.test.js",
+    "test:integration": "node tests/mcp_public_endpoints.test.js",
+    "test:e2e": "node tests/api_e2e.test.js",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "ci:ensure-user": "node scripts/ensure_user.js"
   },
   "keywords": [],
   "author": "",
