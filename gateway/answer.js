@@ -104,6 +104,12 @@ function fallbackFromChunks(chunks) {
   };
 }
 
+function estimateTokenCountFromChars(charCount) {
+  const chars = Number(charCount || 0);
+  if (!Number.isFinite(chars) || chars <= 0) return 0;
+  return Math.ceil(chars / 4);
+}
+
 // Build a prompt that forces the model to use only the provided context.
 // We also request citations by chunk_id.
 function buildPrompt(question, chunks) {
@@ -134,7 +140,10 @@ ${context}
 }
 
 // Generate answer text from OpenAI Responses API
-async function generateAnswer(question, chunks) {
+async function generateAnswer(question, chunks, options = {}) {
+  const onPromptBuilt = typeof options?.onPromptBuilt === "function"
+    ? options.onPromptBuilt
+    : null;
 
   // If no chunks, we can't answer
   if (!chunks || chunks.length === 0) {
@@ -153,6 +162,25 @@ async function generateAnswer(question, chunks) {
   }
 
   const input = buildPrompt(question, safeChunks);
+  if (onPromptBuilt) {
+    try {
+      onPromptBuilt({
+        promptChars: input.length,
+        promptTokensEst: estimateTokenCountFromChars(input.length),
+        memoriesIncluded: safeChunks.length,
+        chunks: safeChunks.map((chunk) => ({
+          chunkId: chunk.chunk_id || null,
+          docId: chunk.doc_id || null,
+          memoryId: chunk.memory_id || chunk.memoryId || null,
+          score: Number.isFinite(Number(chunk._retrieval_score))
+            ? Number(chunk._retrieval_score)
+            : null
+        }))
+      });
+    } catch (err) {
+      // Telemetry callbacks should never affect request execution.
+    }
+  }
 
   let resp = null;
   try {

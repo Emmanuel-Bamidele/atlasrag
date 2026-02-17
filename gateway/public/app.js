@@ -18,6 +18,10 @@ function clearBanner(el){
 const AUTH_TOKEN_KEY = "atlasragAuthToken";
 const AUTH_TYPE_KEY = "atlasragAuthType";
 const LEGACY_JWT_KEY = "atlasragJwt";
+const UI_THEME_KEY = "atlasragUiTheme";
+const UI_THEME_USER_SET_KEY = "atlasragUiThemeUserSet";
+const SYSTEM_THEME_QUERY = "(prefers-color-scheme: light)";
+let activeThemePreference = "system";
 let metricsLoaded = false;
 let usageLoaded = false;
 let metricsLoading = false;
@@ -59,6 +63,83 @@ function clearStoredAuth(){
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_TYPE_KEY);
   localStorage.removeItem(LEGACY_JWT_KEY);
+}
+
+function setThemeButtonState(theme){
+  const btn = $("themeToggleBtn");
+  const icon = $("themeToggleIcon");
+  if (!btn) return;
+
+  const isLight = theme === "light";
+  btn.setAttribute("aria-pressed", isLight ? "true" : "false");
+  btn.setAttribute("aria-label", isLight ? "Switch to dark theme" : "Switch to light theme");
+  btn.setAttribute("title", isLight ? "Switch to dark theme" : "Switch to light theme");
+  if (icon){
+    icon.textContent = isLight ? "◑" : "◐";
+  }
+}
+
+function getSystemTheme(){
+  return (window.matchMedia && window.matchMedia(SYSTEM_THEME_QUERY).matches) ? "light" : "dark";
+}
+
+function resolveTheme(preference){
+  if (preference === "light" || preference === "dark"){
+    return preference;
+  }
+  return getSystemTheme();
+}
+
+function renderTheme(preference){
+  const active = resolveTheme(preference);
+  document.body.classList.toggle("light-theme", active === "light");
+  setThemeButtonState(active);
+}
+
+function applyThemePreference(preference, options = {}){
+  const next = (preference === "light" || preference === "dark") ? preference : "system";
+  const persist = options.persist === true;
+  const userSet = options.userSet === true;
+  activeThemePreference = next;
+  renderTheme(next);
+  if (persist){
+    localStorage.setItem(UI_THEME_KEY, next);
+    localStorage.setItem(UI_THEME_USER_SET_KEY, userSet ? "1" : "0");
+  }
+}
+
+function initTheme(){
+  const saved = localStorage.getItem(UI_THEME_KEY);
+  const userSet = localStorage.getItem(UI_THEME_USER_SET_KEY) === "1";
+  const initial = (userSet && (saved === "light" || saved === "dark")) ? saved : "system";
+  applyThemePreference(initial, { persist: false });
+
+  if (!userSet){
+    localStorage.removeItem(UI_THEME_KEY);
+    localStorage.removeItem(UI_THEME_USER_SET_KEY);
+  }
+
+  const btn = $("themeToggleBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const active = resolveTheme(activeThemePreference);
+    const next = active === "light" ? "dark" : "light";
+    applyThemePreference(next, { persist: true, userSet: true });
+  });
+
+  if (window.matchMedia){
+    const mq = window.matchMedia(SYSTEM_THEME_QUERY);
+    const onSystemThemeChange = () => {
+      if (activeThemePreference === "system"){
+        renderTheme("system");
+      }
+    };
+    if (typeof mq.addEventListener === "function"){
+      mq.addEventListener("change", onSystemThemeChange);
+    }else if (typeof mq.addListener === "function"){
+      mq.addListener(onSystemThemeChange);
+    }
+  }
 }
 
 function apiHeaders(){
@@ -1090,6 +1171,7 @@ async function saveTenantSettings(){
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  initTheme();
   initDocTabs();
   $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");

@@ -1272,6 +1272,67 @@ async function getTenantItemStats(tenantId) {
   return res.rows[0] || { documents: 0, memory_items: 0, collections: 0 };
 }
 
+async function getMemoryStateSnapshot(tenantId) {
+  const cleanTenantId = tenantId ? String(tenantId).trim() : null;
+  const params = [cleanTenantId];
+  const whereClause = "($1::text IS NULL OR tenant_id = $1)";
+
+  const totalsRes = await pool.query(
+    `SELECT COUNT(*)::bigint AS total_items,
+            COALESCE(SUM(
+              CASE
+                WHEN metadata IS NULL THEN 0
+                WHEN (metadata ? '_tokens_est') AND (metadata->>'_tokens_est') ~ '^[0-9]+(\\.[0-9]+)?$'
+                  THEN (metadata->>'_tokens_est')::double precision
+                WHEN (metadata ? 'tokens_est') AND (metadata->>'tokens_est') ~ '^[0-9]+(\\.[0-9]+)?$'
+                  THEN (metadata->>'tokens_est')::double precision
+                ELSE 0
+              END
+            ), 0)::bigint AS approx_tokens,
+            COUNT(*) FILTER (WHERE value_score IS NULL)::bigint AS value_null,
+            COUNT(*) FILTER (WHERE value_score < 0)::bigint AS value_lt_0,
+            COUNT(*) FILTER (WHERE value_score >= 0 AND value_score < 0.25)::bigint AS value_0_025,
+            COUNT(*) FILTER (WHERE value_score >= 0.25 AND value_score < 0.5)::bigint AS value_025_05,
+            COUNT(*) FILTER (WHERE value_score >= 0.5 AND value_score < 0.75)::bigint AS value_05_075,
+            COUNT(*) FILTER (WHERE value_score >= 0.75 AND value_score < 1)::bigint AS value_075_1,
+            COUNT(*) FILTER (WHERE value_score >= 1)::bigint AS value_gte_1
+     FROM memory_items
+     WHERE ${whereClause}`,
+    params
+  );
+
+  const typesRes = await pool.query(
+    `SELECT item_type, COUNT(*)::bigint AS count
+     FROM memory_items
+     WHERE ${whereClause}
+     GROUP BY item_type
+     ORDER BY item_type ASC`,
+    params
+  );
+
+  const typeDistribution = {};
+  for (const row of typesRes.rows) {
+    typeDistribution[row.item_type] = Number(row.count || 0);
+  }
+
+  const row = totalsRes.rows[0] || {};
+  return {
+    tenant_id: cleanTenantId || null,
+    total_items: Number(row.total_items || 0),
+    approx_tokens: Number(row.approx_tokens || 0),
+    type_distribution: typeDistribution,
+    value_distribution: {
+      null: Number(row.value_null || 0),
+      lt_0: Number(row.value_lt_0 || 0),
+      "0_0.25": Number(row.value_0_025 || 0),
+      "0.25_0.5": Number(row.value_025_05 || 0),
+      "0.5_0.75": Number(row.value_05_075 || 0),
+      "0.75_1": Number(row.value_075_1 || 0),
+      gte_1: Number(row.value_gte_1 || 0)
+    }
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1342,6 +1403,7 @@ module.exports = {
   getTenantUsageWindow,
   getTenantStorageStats,
   getTenantItemStats,
+  getMemoryStateSnapshot,
   getIdempotencyKey,
   beginIdempotencyKey,
   touchIdempotencyKey,

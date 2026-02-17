@@ -1,0 +1,32 @@
+        <!-- PAGE: USAGE (ORG ADMIN) -->
+        <section class="page" id="pageUsage" role="tabpanel">
+          <div class="metrics">
+            <div class="metrics-head">
+              <div>
+                <h3>Organization usage</h3>
+                <p>Admin view of requests, tokens, storage, and latency for your tenant.</p>
+              </div>
+              <div class="metrics-meta">Updated: <span id="usageUpdated">-</span></div>
+            </div>
+
+            <p class="hint" style="margin-top:6px;">Requires admin privileges.</p>
+
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn secondary" id="usageRefreshBtn">Refresh usage</button>
+            </div>
+
+            <div class="metrics-grid" id="usageCards"></div>
+          </div>
+
+          <div class="doc-block" style="margin-top:16px;">
+            <div class="doc-label">Per-route usage</div>
+            <div id="usageRoutesTable">(no data)</div>
+          </div>
+
+          <details class="details">
+            <summary>Usage JSON</summary>
+            <pre id="usageRaw">(no output)</pre>
+          </details>
+
+          <div class="banner" id="usageBanner"></div>
+        </section>

@@ -1,0 +1,139 @@
+
+.doc-list{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10,22,24,0.6);
+}
+
+.btn.tiny{
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
+.stat{
+  border:1px solid var(--line);
+  background: rgba(10,22,24,0.6);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.stat-label{
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat-value{
+  margin-top: 8px;
+  font-size: 20px;
+  font-family: var(--display);
+}
+
+.stat-meta{
+  margin-top: 6px;
+  color: rgba(232,242,242,0.75);
+  font-size: 12px;
+}
+
+.stat-tabs{
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stat-tab{
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.stat-tab.active{
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.22);
+}
+
+.page{ display:none; }
+.page.active{ display:block; animation: fadeUp .35s ease; }
+
+@keyframes fadeUp{
+  from{ opacity:0; transform: translateY(8px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+.reveal{
+  animation: fadeUp .4s ease forwards;
+  opacity:0;
+}
+
+.details{
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(6,14,16,0.4);
+}
+
+.details summary{
+  cursor:pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.details.section{
+  padding: 0;
+  background: rgba(6,14,16,0.55);
+}
+
+.details.section summary{
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.details.section[open] summary{
+  border-bottom: 1px solid var(--line);
+}
+
+.details.section .section-body{
+  padding: 10px 12px 12px;
+}
+
+.details pre{
+  margin: 10px 0 0;
+  background: rgba(6,14,16,0.6);
+  border: 1px solid rgba(226,232,240,0.12);
+  border-radius: 12px;
+  padding: 12px;
+  overflow:auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(232,242,242,0.92);
+  font-family: var(--mono);
+}
+
+.footer{
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 12px;
+}

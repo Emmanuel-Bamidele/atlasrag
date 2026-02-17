@@ -1,0 +1,26 @@
+        <!-- PAGE: COLLECTIONS -->
+        <section class="page" id="pageCollections" role="tabpanel">
+          <div class="metrics">
+            <div class="metrics-head">
+              <div>
+                <h3>Collections</h3>
+                <p>All collections for your tenant, with document titles and delete controls.</p>
+              </div>
+              <div class="metrics-meta">Updated: <span id="collectionsUpdated">-</span></div>
+            </div>
+
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn secondary" id="collectionsRefreshBtn">Refresh collections</button>
+            </div>
+
+            <div class="doc-block" style="margin-top:16px;">
+              <div class="doc-label">Collection list</div>
+              <div id="collectionsTable">(no data)</div>
+              <p class="hint">Deleting a collection removes stored chunk text and memory items. Vector deletion is not yet supported.</p>
+            </div>
+
+          </div>
+
+          <div class="banner" id="collectionsBanner"></div>
+        </section>
+

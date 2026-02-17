@@ -1,0 +1,183 @@
+        <!-- PAGE: PLAYGROUND -->
+        <section class="page active" id="pagePlayground" role="tabpanel">
+          <div class="playground">
+            <div class="playground-head">
+              <div>
+                <h2>Playground</h2>
+                <p>Ingest content, then search or ask with the same context — all in one place.</p>
+              </div>
+              <div class="play-steps">
+                <div class="play-step"><span>1</span>Ingest</div>
+                <div class="play-step"><span>2</span>Search</div>
+                <div class="play-step"><span>3</span>Ask</div>
+              </div>
+            </div>
+
+            <div class="play-tabs" role="tablist" aria-label="Playground sections">
+              <button class="play-tab active" id="playTabIngest" role="tab" aria-selected="true">Ingest</button>
+              <button class="play-tab" id="playTabSearch" role="tab" aria-selected="false">Search</button>
+              <button class="play-tab" id="playTabAsk" role="tab" aria-selected="false">Ask</button>
+            </div>
+
+            <div class="play-pane active" id="playPaneIngest" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Ingest</h3>
+                  <p>Paste text, upload a file, or index a link.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="docId">Doc ID</label>
+                    <input id="docId" placeholder="example: onboarding-notes">
+                    <div class="hint">Use letters, numbers, dot, dash, or underscore (no spaces).</div>
+                  </div>
+                  <div class="field">
+                    <label>Indexing pipeline</label>
+                    <div class="hint">
+                      We split the text into chunks, embed each chunk, store vectors in the C++ TCP service,
+                      and store chunk text in Postgres for previews and citations.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="field" style="margin-top:16px;">
+                  <label for="docText">Document Text</label>
+                  <textarea id="docText" placeholder="Paste a document here..."></textarea>
+                  <div class="hint">You can also load a local file or index directly from a URL.</div>
+                </div>
+
+                <div class="row" style="margin-top:16px;">
+                  <div class="field">
+                    <label for="docFile">Upload file (text/markdown/json)</label>
+                    <input type="file" id="docFile" accept=".txt,.md,.markdown,.json,.csv,.log,text/*,application/json">
+                    <div class="hint">We read the file in your browser and fill Document Text.</div>
+                  </div>
+                  <div class="field">
+                  <label for="docUrl">Index from URL</label>
+                  <input id="docUrl" placeholder="https://example.com/article">
+                  <div class="hint">If a URL is provided, the server fetches and indexes it.</div>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn" id="indexBtn">Index content</button>
+                <button class="btn secondary" id="indexClearBtn">Reset</button>
+              </div>
+
+                <div class="banner" id="indexBanner"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="indexRaw">(no output)</pre>
+                </details>
+              </div>
+            </div>
+
+            <div class="play-pane" id="playPaneSearch" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Search</h3>
+                  <p>Semantic search across your indexed documents.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="searchQ">Query</label>
+                    <input id="searchQ" placeholder="example: write-ahead logging">
+                  </div>
+                  <div class="field">
+                    <label for="searchK">Top K</label>
+                    <input id="searchK" value="5" placeholder="example: 5">
+                    <div class="hint">Higher K returns more chunks (slower + more context).</div>
+                  </div>
+                </div>
+
+                <details class="details play-scope">
+                  <summary>Doc scope (optional)</summary>
+                  <div class="row" style="margin-top:12px;">
+                    <div class="field">
+                      <label for="searchDocs">Docs to search</label>
+                      <select id="searchDocs" multiple size="6"></select>
+                      <div class="hint">Leave empty to search all accessible docs. Use Cmd/Ctrl to multi-select.</div>
+                    </div>
+                    <div class="field">
+                      <label>Docs list</label>
+                      <div class="actions">
+                        <button class="btn secondary" id="searchDocsRefreshBtn">Refresh list</button>
+                        <button class="btn secondary" id="searchDocsAllBtn">All docs</button>
+                      </div>
+                      <div class="hint" id="searchDocsStatus">-</div>
+                    </div>
+                  </div>
+                </details>
+
+                <div class="actions">
+                  <button class="btn" id="searchBtn">Search</button>
+                  <button class="btn secondary" id="searchClearBtn">Clear</button>
+                </div>
+
+                <div class="banner" id="searchBanner"></div>
+                <div class="cards" id="searchCards"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="searchRaw">(no output)</pre>
+                </details>
+              </div>
+            </div>
+
+            <div class="play-pane" id="playPaneAsk" role="tabpanel">
+              <div class="play-card">
+                <div class="play-card-head">
+                  <h3>Ask</h3>
+                  <p>RAG answer grounded in your indexed sources.</p>
+                </div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="askQ">Question</label>
+                    <input id="askQ" placeholder="example: Explain WAL and why it matters">
+                  </div>
+                  <div class="field">
+                    <label for="askK">Top K sources</label>
+                    <input id="askK" value="5" placeholder="example: 5">
+                    <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
+                  </div>
+                </div>
+
+                <details class="details play-scope">
+                  <summary>Doc scope (optional)</summary>
+                  <div class="row" style="margin-top:12px;">
+                    <div class="field">
+                      <label for="askDocs">Docs to query</label>
+                      <select id="askDocs" multiple size="6"></select>
+                      <div class="hint">Leave empty to query all accessible docs. Use Cmd/Ctrl to multi-select.</div>
+                    </div>
+                    <div class="field">
+                      <label>Docs list</label>
+                      <div class="actions">
+                        <button class="btn secondary" id="askDocsRefreshBtn">Refresh list</button>
+                        <button class="btn secondary" id="askDocsAllBtn">All docs</button>
+                      </div>
+                      <div class="hint" id="askDocsStatus">-</div>
+                    </div>
+                  </div>
+                </details>
+
+                <div class="actions">
+                  <button class="btn" id="askBtn">Generate answer</button>
+                  <button class="btn secondary" id="askClearBtn">Clear</button>
+                </div>
+
+                <div class="banner" id="askBanner"></div>
+                <div class="cards" id="askAnswerCard"></div>
+
+                <details class="details">
+                  <summary>Raw response (debug)</summary>
+                  <pre id="askRaw">(no output)</pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        </section>

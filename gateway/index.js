@@ -1,5 +1,7 @@
 // index.js
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 
 const { embedTexts } = require("./ai");
 const { chunkText } = require("./chunk");
@@ -46,6 +48,7 @@ const {
   getTenantUsageWindow,
   getTenantStorageStats,
   getTenantItemStats,
+  getMemoryStateSnapshot,
   getTenantById,
   setTenantSettings,
   recordFailedLogin,
@@ -80,8 +83,32 @@ const {
   resolveTenant,
   getUserProfile
 } = require("./sso");
+const {
+  createRequestId: createTelemetryRequestId,
+  getTelemetryMeta,
+  isTelemetryEnabled,
+  logTelemetry
+} = require("./telemetry");
 
 const app = express();
+const PUBLIC_DIR = path.join(__dirname, "public");
+const UI_TEMPLATE_PATH = path.join(PUBLIC_DIR, "index.html");
+const UI_PARTIALS_DIR = path.join(PUBLIC_DIR, "partials");
+
+function renderPublicUiTemplate() {
+  const template = fs.readFileSync(UI_TEMPLATE_PATH, "utf8");
+  return template.replace(/<!--\s*@@include:([a-z0-9._-]+)\s*-->/gi, (match, partialName) => {
+    const clean = String(partialName || "").trim().toLowerCase();
+    if (!/^[a-z0-9._-]+$/.test(clean)) {
+      throw new Error(`Invalid UI partial include: ${partialName}`);
+    }
+    const partialPath = path.join(UI_PARTIALS_DIR, `${clean}.html`);
+    if (!fs.existsSync(partialPath)) {
+      throw new Error(`Missing UI partial: ${clean}.html`);
+    }
+    return fs.readFileSync(partialPath, "utf8");
+  });
+}
 
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET || "atlasrag-cookie-secret"));
@@ -91,6 +118,42 @@ app.use((req, res, next) => {
   const requestId = incoming ? String(incoming).trim() : crypto.randomUUID();
   req.requestId = requestId;
   res.setHeader("X-Request-Id", requestId);
+  next();
+});
+
+app.use((req, res, next) => {
+  if (!isTelemetryEnabled()) {
+    return next();
+  }
+  const path = req.path || "";
+  const isStaticAsset = /\.[a-z0-9]+$/i.test(path);
+  if (isStaticAsset) {
+    return next();
+  }
+
+  const start = process.hrtime.bigint();
+  logTelemetry("request_start", {
+    requestId: req.requestId,
+    tenantId: resolveTenantForMetrics(req)
+  }, {
+    method: req.method,
+    path: req.originalUrl || req.path
+  });
+
+  res.on("finish", () => {
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    logTelemetry("request_finish", {
+      requestId: req.requestId,
+      tenantId: resolveTenantForMetrics(req)
+    }, {
+      method: req.method,
+      path: req.originalUrl || req.path,
+      status: res.statusCode,
+      latency_ms: Number(elapsedMs.toFixed(2)),
+      collection: req.collection ?? null
+    });
+  });
+
   next();
 });
 
@@ -121,8 +184,17 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get(["/", "/index.html"], (req, res, next) => {
+  try {
+    const html = renderPublicUiTemplate();
+    res.type("html").send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Static UI is public (safe)
-app.use(express.static("public"));
+app.use(express.static(PUBLIC_DIR));
 
 // Apply rate limiting to ALL API routes
 app.use(limiter);
@@ -197,12 +269,14 @@ const MEMORY_LIFECYCLE_COMPACT_DELETE_ORIGINALS = process.env.MEMORY_LIFECYCLE_C
 const MEMORY_PROMOTION_MAX_ITEMS = parseInt(process.env.MEMORY_PROMOTION_MAX_ITEMS || "3", 10);
 const MEMORY_PROMOTION_COOLDOWN_HOURS = parseInt(process.env.MEMORY_PROMOTION_COOLDOWN_HOURS || "24", 10);
 const MEMORY_COMPACT_COOLDOWN_HOURS = parseInt(process.env.MEMORY_COMPACT_COOLDOWN_HOURS || "24", 10);
+const MEMORY_SNAPSHOT_INTERVAL_MS = parseInt(process.env.TELEMETRY_SNAPSHOT_INTERVAL_MS || "300000", 10);
 let reindexStarted = false;
 let ttlSweepRunning = false;
 let jobSweepRunning = false;
 let valueDecayRunning = false;
 let redundancyRunning = false;
 let lifecycleRunning = false;
+let memorySnapshotRunning = false;
 const redundancyPending = new Set();
 const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
   || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
@@ -282,6 +356,43 @@ function resolveTenantForMetrics(req) {
   const clean = String(candidate || "").trim();
   if (!clean || !TENANT_RE.test(clean)) return null;
   return clean;
+}
+
+function buildTelemetryContext({ requestId, tenantId, collection, source } = {}) {
+  return {
+    requestId: requestId || null,
+    tenantId: tenantId || null,
+    collection: collection || null,
+    source: source || null
+  };
+}
+
+function emitTelemetry(eventType, context = {}, payload = {}) {
+  if (!isTelemetryEnabled()) return;
+  logTelemetry(eventType, {
+    requestId: context.requestId || null,
+    tenantId: context.tenantId || null
+  }, {
+    ...(context.collection ? { collection: context.collection } : {}),
+    ...(context.source ? { source: context.source } : {}),
+    ...payload
+  });
+}
+
+function emitLifecycleActionTelemetry(action, item, details = {}, context = {}) {
+  if (!isTelemetryEnabled()) return;
+  emitTelemetry("memory_lifecycle", {
+    requestId: context.requestId || null,
+    tenantId: item?.tenant_id || context.tenantId || null,
+    collection: item?.collection || context.collection || null,
+    source: context.source || "lifecycle"
+  }, {
+    action,
+    memory_id: item?.id || null,
+    namespace_id: item?.namespace_id || null,
+    item_type: item?.item_type || null,
+    ...details
+  });
 }
 
 function logIndex(message) {
@@ -962,7 +1073,7 @@ function safeUsageRecord(promise) {
   });
 }
 
-function recordEmbeddingUsage(tenantId, usage) {
+function recordEmbeddingUsage(tenantId, usage, telemetryContext) {
   if (!tenantId) return;
   const tokens = parseEmbeddingUsage(usage);
   if (!tokens.total) return;
@@ -971,9 +1082,19 @@ function recordEmbeddingUsage(tenantId, usage) {
     embeddingTokens: tokens.total,
     embeddingRequests: 1
   }));
+  emitTelemetry("token_usage", buildTelemetryContext({
+    requestId: telemetryContext?.requestId,
+    tenantId,
+    collection: telemetryContext?.collection || null,
+    source: telemetryContext?.source || "embedding"
+  }), {
+    token_kind: "embedding",
+    token_total: tokens.total,
+    token_prompt: tokens.prompt
+  });
 }
 
-function recordGenerationUsage(tenantId, usage) {
+function recordGenerationUsage(tenantId, usage, telemetryContext) {
   if (!tenantId) return;
   const tokens = parseGenerationUsage(usage);
   if (!tokens.total) return;
@@ -984,6 +1105,17 @@ function recordGenerationUsage(tenantId, usage) {
     generationTotalTokens: tokens.total,
     generationRequests: 1
   }));
+  emitTelemetry("token_usage", buildTelemetryContext({
+    requestId: telemetryContext?.requestId,
+    tenantId,
+    collection: telemetryContext?.collection || null,
+    source: telemetryContext?.source || "generation"
+  }), {
+    token_kind: "generation",
+    token_input: tokens.input,
+    token_output: tokens.output,
+    token_total: tokens.total
+  });
 }
 
 function sendOk(res, data, tenantId, collection) {
@@ -1493,7 +1625,7 @@ async function fetchUrlText(rawUrl) {
   return { text, contentType, truncated };
 }
 
-async function indexDocument(tenantId, collection, docId, text, source) {
+async function indexDocument(tenantId, collection, docId, text, source, options = {}) {
   const startAt = Date.now();
   let cleanText = String(text || "");
   cleanText = cleanText.trim();
@@ -1544,7 +1676,12 @@ async function indexDocument(tenantId, collection, docId, text, source) {
   const texts = chunks.map(c => c.text);
   const embedStart = Date.now();
   const { vectors, usage } = await embedTexts(texts);
-  recordEmbeddingUsage(tenantId, usage);
+  recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
+    requestId: options?.telemetry?.requestId,
+    tenantId,
+    collection,
+    source: options?.telemetry?.source || "document_index"
+  }));
   logIndex(`embedded collection=${collection} docId=${docId} vectors=${vectors.length} ms=${Date.now() - embedStart}`);
 
   for (let i = 0; i < chunks.length; i++) {
@@ -1588,9 +1725,14 @@ async function listDocsForTenant(tenantId, collection, principalId, privileges) 
   return docs;
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry }) {
   const { vectors: [qvec], usage } = await embedTexts([query]);
-  recordEmbeddingUsage(tenantId, usage);
+  recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
+    requestId: telemetry?.requestId,
+    tenantId,
+    collection,
+    source: telemetry?.source || "search_query"
+  }));
 
   const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
   const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
@@ -1641,7 +1783,14 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry }) {
+  const telemetryContext = buildTelemetryContext({
+    requestId: telemetry?.requestId,
+    tenantId,
+    collection,
+    source: telemetry?.source || "answer_question"
+  });
+
   const results = await searchChunks({
     tenantId,
     collection,
@@ -1650,36 +1799,120 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     docIds,
     principalId,
     privileges,
-    enforceArtifactVisibility: true
+    enforceArtifactVisibility: true,
+    telemetry: buildTelemetryContext({
+      requestId: telemetryContext.requestId,
+      tenantId,
+      collection,
+      source: "answer_retrieval_query"
+    })
   });
-  const chunks = results.map(r => r._row).filter(Boolean);
 
-  const namespaceIds = chunks.map(c => c.doc_id);
+  let memoryMap = new Map();
+  const namespaceIds = results.map(r => r._row.doc_id);
   if (namespaceIds.length) {
     try {
-      const memoryMap = await getMemoryItemsByNamespaceIds({
+      memoryMap = await getMemoryItemsByNamespaceIds({
         namespaceIds,
         types: ["artifact"],
         excludeExpired: true,
         principalId,
         privileges
       });
+
+      const retrieved = [];
       const usedItems = [];
       const seen = new Set();
-      for (const id of namespaceIds) {
-        const mem = memoryMap.get(id);
-        if (!mem || seen.has(mem.id)) continue;
+      for (const result of results) {
+        const mem = memoryMap.get(result._row.doc_id);
+        if (!mem) continue;
+        retrieved.push({
+          memory_id: mem.id,
+          namespace_id: mem.namespace_id,
+          item_type: mem.item_type,
+          chunk_id: result.chunkId,
+          score: result.score,
+          value_score: mem.value_score ?? null
+        });
+        if (seen.has(mem.id)) continue;
         seen.add(mem.id);
         usedItems.push(mem);
       }
+
+      emitTelemetry("memory_retrieval", telemetryContext, {
+        operation: "answer_question",
+        query_chars: String(question || "").length,
+        retrieved_count: retrieved.length,
+        retrieved
+      });
+
       await recordMemoryEventsForItems(usedItems, "used_in_answer");
+      emitTelemetry("memory_used", telemetryContext, {
+        operation: "answer_question",
+        memory_count: usedItems.length,
+        memory_ids: usedItems.map((mem) => mem.id)
+      });
     } catch (err) {
       console.warn("[memory_events] Failed to record used_in_answer:", err?.message || err);
+      emitTelemetry("memory_retrieval", telemetryContext, {
+        operation: "answer_question",
+        query_chars: String(question || "").length,
+        retrieved_count: results.length,
+        retrieved: results.map((result) => ({
+          memory_id: null,
+          namespace_id: result?._row?.doc_id || null,
+          chunk_id: result?.chunkId || null,
+          score: result?.score ?? null
+        })),
+        warning: "memory_lookup_failed"
+      });
     }
   }
 
-  const { answer, citations, usage } = await generateAnswer(question, chunks);
-  recordGenerationUsage(tenantId, usage);
+  const chunks = results.map((result) => {
+    const memory = memoryMap.get(result._row.doc_id);
+    return {
+      ...result._row,
+      _retrieval_score: result.score,
+      memory_id: memory?.id || null,
+      memory_type: memory?.item_type || null
+    };
+  }).filter(Boolean);
+
+  const { answer, citations, usage } = await generateAnswer(question, chunks, {
+    onPromptBuilt: (promptStats) => {
+      const memoryIds = [];
+      const seen = new Set();
+      const chunkIds = [];
+      for (const chunk of promptStats?.chunks || []) {
+        if (chunk?.chunkId) {
+          chunkIds.push(chunk.chunkId);
+        }
+        const memoryId = chunk?.memoryId;
+        if (!memoryId || seen.has(memoryId)) continue;
+        seen.add(memoryId);
+        memoryIds.push(memoryId);
+      }
+      emitTelemetry("prompt_constructed", telemetryContext, {
+        operation: "answer_question",
+        question_chars: String(question || "").length,
+        prompt_chars: Number(promptStats?.promptChars || 0),
+        prompt_tokens_est: Number(promptStats?.promptTokensEst || 0),
+        chunk_count: chunkIds.length,
+        memory_count: memoryIds.length || Number(promptStats?.memoriesIncluded || 0),
+        chunk_ids: chunkIds,
+        memory_ids: memoryIds
+      });
+    }
+  });
+
+  recordGenerationUsage(tenantId, usage, buildTelemetryContext({
+    requestId: telemetryContext.requestId,
+    tenantId,
+    collection,
+    source: "answer_generation"
+  }));
+
   const mapped = citations.map((c) => {
     const parsed = parseChunkId(c);
     if (!parsed) {
@@ -1695,7 +1928,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   return { answer, citations: mapped, chunksUsed: chunks.length };
 }
 
-async function indexMemoryText(namespaceId, text) {
+async function indexMemoryText(namespaceId, text, options = {}) {
   const startAt = Date.now();
   let cleanText = String(text || "");
   cleanText = cleanText.trim();
@@ -1719,7 +1952,12 @@ async function indexMemoryText(namespaceId, text) {
   const texts = chunks.map(c => c.text);
   const { vectors, usage } = await embedTexts(texts);
   const parsed = parseNamespacedDocId(namespaceId);
-  recordEmbeddingUsage(parsed?.tenantId, usage);
+  recordEmbeddingUsage(parsed?.tenantId, usage, buildTelemetryContext({
+    requestId: options?.telemetry?.requestId,
+    tenantId: parsed?.tenantId,
+    collection: parsed?.collection || null,
+    source: options?.telemetry?.source || "memory_index"
+  }));
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkId = chunks[i].chunkId;
@@ -1835,7 +2073,14 @@ async function memoryWriteCore(req) {
     pinned
   });
 
-  const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text);
+  const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text, {
+    telemetry: buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "memory_write_index"
+    })
+  });
   scheduleRedundancyUpdate(memory);
 
   try {
@@ -2054,7 +2299,12 @@ async function runReflectionJob(jobId, tenantId) {
     }
 
     const reflection = await reflectMemories({ text, types, maxItems });
-    recordGenerationUsage(tenantId, reflection?.usage);
+    recordGenerationUsage(tenantId, reflection?.usage, buildTelemetryContext({
+      requestId: `job:${jobId}`,
+      tenantId,
+      collection,
+      source: "job_reflection_generation"
+    }));
 
     const expectedExternalIds = [];
     const typeMap = {
@@ -2121,7 +2371,14 @@ async function runReflectionJob(jobId, tenantId) {
           throw new Error(`Failed to delete vectors for memory ${memory.id}`);
         }
 
-        await indexMemoryText(memory.namespace_id, content);
+        await indexMemoryText(memory.namespace_id, content, {
+          telemetry: buildTelemetryContext({
+            requestId: `job:${jobId}`,
+            tenantId,
+            collection,
+            source: "job_reflection_index"
+          })
+        });
         scheduleRedundancyUpdate(memory);
         await createMemoryLink({
           tenantId,
@@ -2286,7 +2543,12 @@ async function runCompactionJob(jobId, tenantId) {
 
     const combined = parts.join("\n\n---\n\n");
     const summary = await summarizeMemories({ text: combined });
-    recordGenerationUsage(tenantId, summary?.usage);
+    recordGenerationUsage(tenantId, summary?.usage, buildTelemetryContext({
+      requestId: `job:${jobId}`,
+      tenantId,
+      collection,
+      source: "job_compaction_generation"
+    }));
     if (!summary.content) {
       await finalizeJobFailure(job, "Compaction produced empty summary", { retryable: false });
       return;
@@ -2359,7 +2621,14 @@ async function runCompactionJob(jobId, tenantId) {
       throw new Error(`Failed to delete vectors for memory ${memory.id}`);
     }
 
-    await indexMemoryText(memory.namespace_id, summary.content);
+    await indexMemoryText(memory.namespace_id, summary.content, {
+      telemetry: buildTelemetryContext({
+        requestId: `job:${jobId}`,
+        tenantId,
+        collection,
+        source: "job_compaction_index"
+      })
+    });
     scheduleRedundancyUpdate(memory);
 
     for (const item of included) {
@@ -2378,7 +2647,11 @@ async function runCompactionJob(jobId, tenantId) {
     let queuedDeletes = 0;
     if (deleteOriginals) {
       for (const item of included) {
-        const result = await deleteMemoryItemFully(item, { reason: "compaction_job" });
+        const result = await deleteMemoryItemFully(item, {
+          reason: "compaction_job",
+          requestId: `job:${jobId}`,
+          source: "job_compaction"
+        });
         if (result?.deleted) {
           vectorsDeleted += result.vectorsDeleted || 0;
           deletedCount += 1;
@@ -2390,6 +2663,19 @@ async function runCompactionJob(jobId, tenantId) {
         }
       }
     }
+
+    emitLifecycleActionTelemetry("compact", memory, {
+      status: "created",
+      reason: "compaction_job",
+      source_count: included.length,
+      source_memory_ids: included.map((item) => item.id),
+      deleted_originals: deletedCount,
+      vector_failures: vectorFailures,
+      queued_delete_reconciles: queuedDeletes
+    }, {
+      requestId: `job:${jobId}`,
+      source: "job_compaction"
+    });
 
     await updateMemoryJob({
       id: jobId,
@@ -2475,6 +2761,16 @@ async function deleteMemoryItemFully(item, options = {}) {
   if (result.failed > 0) {
     const job = await enqueueDeleteReconcileJob(item, options.reason, result.failed);
     console.warn(`[delete] vdel failed memory=${item.id} failed=${result.failed} job=${job?.id || "none"}`);
+    emitLifecycleActionTelemetry("delete", item, {
+      status: "queued_reconcile",
+      reason: options.reason || null,
+      vectors_deleted: result.deleted || 0,
+      vector_failures: result.failed || 0,
+      reconcile_job_id: job?.id || null
+    }, {
+      requestId: options.requestId || null,
+      source: options.source || "delete"
+    });
     return {
       deleted: false,
       queued: Boolean(job),
@@ -2484,6 +2780,14 @@ async function deleteMemoryItemFully(item, options = {}) {
     };
   }
   await deleteMemoryItemById(item.id);
+  emitLifecycleActionTelemetry("delete", item, {
+    status: "deleted",
+    reason: options.reason || null,
+    vectors_deleted: result.deleted || 0
+  }, {
+    requestId: options.requestId || null,
+    source: options.source || "delete"
+  });
   return { deleted: true, queued: false, failed: 0, vectorsDeleted: result.deleted };
 }
 
@@ -2521,7 +2825,7 @@ async function isRecentExternalPrefix({ tenantId, collection, prefix, cooldownHo
   return items.some(item => item.created_at && now - new Date(item.created_at).getTime() < maxAgeMs);
 }
 
-async function promoteMemoryItem(item) {
+async function promoteMemoryItem(item, options = {}) {
   if (!item) return { created: 0 };
   const cooldownHit = await isRecentExternalPrefix({
     tenantId: item.tenant_id,
@@ -2539,7 +2843,12 @@ async function promoteMemoryItem(item) {
     types: ["semantic", "procedural"],
     maxItems: MEMORY_PROMOTION_MAX_ITEMS
   });
-  recordGenerationUsage(item.tenant_id, reflection?.usage);
+  recordGenerationUsage(item.tenant_id, reflection?.usage, buildTelemetryContext({
+    requestId: options.requestId || null,
+    tenantId: item.tenant_id,
+    collection: item.collection,
+    source: "promotion_generation"
+  }));
 
   const expectedExternalIds = [];
   const typeMap = {
@@ -2598,7 +2907,14 @@ async function promoteMemoryItem(item) {
         throw new Error(`Failed to delete vectors for memory ${memory.id}`);
       }
 
-      await indexMemoryText(memory.namespace_id, content);
+      await indexMemoryText(memory.namespace_id, content, {
+        telemetry: buildTelemetryContext({
+          requestId: options.requestId || null,
+          tenantId: item.tenant_id,
+          collection: item.collection,
+          source: "promotion_index"
+        })
+      });
       scheduleRedundancyUpdate(memory);
       await createMemoryLink({
         tenantId: item.tenant_id,
@@ -2609,6 +2925,18 @@ async function promoteMemoryItem(item) {
       });
       created.push(memory.id);
     }
+  }
+
+  if (created.length > 0) {
+    emitLifecycleActionTelemetry("promote", item, {
+      status: "created",
+      reason: options.reason || "value_threshold",
+      created_count: created.length,
+      created_memory_ids: created
+    }, {
+      requestId: options.requestId || null,
+      source: options.source || "promotion"
+    });
   }
 
   return { created: created.length };
@@ -2634,7 +2962,13 @@ async function compactLowValueGroup(seed, options = {}) {
     k: MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE,
     docIds: [],
     principalId: null,
-    privileges: null
+    privileges: null,
+    telemetry: buildTelemetryContext({
+      requestId: options.requestId || null,
+      tenantId: seed.tenant_id,
+      collection: seed.collection,
+      source: "lifecycle_compaction_search"
+    })
   });
 
   const namespaceIds = results.map(r => r._row.doc_id);
@@ -2685,7 +3019,12 @@ async function compactLowValueGroup(seed, options = {}) {
 
   const combined = parts.join("\n\n---\n\n");
   const summary = await summarizeMemories({ text: combined });
-  recordGenerationUsage(seed.tenant_id, summary?.usage);
+  recordGenerationUsage(seed.tenant_id, summary?.usage, buildTelemetryContext({
+    requestId: options.requestId || null,
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
+    source: "lifecycle_compaction_generation"
+  }));
   if (!summary.content) return { created: 0, skipped: "empty" };
 
   await cleanupExternalItems({
@@ -2728,7 +3067,14 @@ async function compactLowValueGroup(seed, options = {}) {
     throw new Error(`Failed to delete vectors for memory ${memory.id}`);
   }
 
-  await indexMemoryText(memory.namespace_id, summary.content);
+  await indexMemoryText(memory.namespace_id, summary.content, {
+    telemetry: buildTelemetryContext({
+      requestId: options.requestId || null,
+      tenantId: seed.tenant_id,
+      collection: seed.collection,
+      source: "lifecycle_compaction_index"
+    })
+  });
   scheduleRedundancyUpdate(memory);
 
   for (const item of included) {
@@ -2741,6 +3087,8 @@ async function compactLowValueGroup(seed, options = {}) {
     });
   }
 
+  let deletedOriginals = 0;
+  let queuedOriginalDeletes = 0;
   if (MEMORY_LIFECYCLE_COMPACT_DELETE_ORIGINALS) {
     const deleteBudget = options.deleteBudget || null;
     if (deleteBudget && !canConsumeDeleteBudget(deleteBudget, included.length)) {
@@ -2748,13 +3096,34 @@ async function compactLowValueGroup(seed, options = {}) {
     } else {
       if (deleteBudget) consumeDeleteBudget(deleteBudget, included.length);
       for (const item of included) {
-        const result = await deleteMemoryItemFully(item, { reason: "compaction_original" });
+        const result = await deleteMemoryItemFully(item, {
+          reason: "compaction_original",
+          requestId: options.requestId || null,
+          source: "lifecycle_compaction"
+        });
+        if (result?.deleted) {
+          deletedOriginals += 1;
+        }
         if (result?.queued) {
+          queuedOriginalDeletes += 1;
           console.warn(`[lifecycle] queued delete reconcile for compacted item id=${item.id}`);
         }
       }
     }
   }
+
+  emitLifecycleActionTelemetry("compact", seed, {
+    status: "created",
+    reason: options.reason || "low_value",
+    summary_memory_id: memory.id,
+    source_count: included.length,
+    source_memory_ids: included.map((item) => item.id),
+    deleted_originals: deletedOriginals,
+    queued_delete_reconciles: queuedOriginalDeletes
+  }, {
+    requestId: options.requestId || null,
+    source: options.source || "lifecycle_compaction"
+  });
 
   return { created: 1, sourceCount: included.length };
 }
@@ -2896,6 +3265,7 @@ function scheduleRedundancySweep() {
 async function runLifecycleOnce() {
   if (lifecycleRunning) return;
   lifecycleRunning = true;
+  const lifecycleRequestId = isTelemetryEnabled() ? createTelemetryRequestId("lifecycle") : null;
   const batchSize = Number.isFinite(MEMORY_LIFECYCLE_BATCH_SIZE) && MEMORY_LIFECYCLE_BATCH_SIZE > 0 ? MEMORY_LIFECYCLE_BATCH_SIZE : 50;
   const now = new Date();
   const deleteBudget = createDeleteBudget(MEMORY_LIFECYCLE_MAX_DELETES);
@@ -2912,42 +3282,107 @@ async function runLifecycleOnce() {
         if (isExpiredMemory(item, now)) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=expired`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "dry_run",
+              attempted_action: "delete_expired"
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             continue;
           }
           if (!consumeDeleteBudget(deleteBudget, 1)) {
             console.warn(`[lifecycle] delete cap reached; skipping expired delete id=${item.id}`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "delete_budget_exhausted",
+              attempted_action: "delete_expired"
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             continue;
           }
-          const result = await deleteMemoryItemFully(item, { reason: "expired" });
+          const result = await deleteMemoryItemFully(item, {
+            reason: "expired",
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
           if (result?.deleted) deleted += 1;
           if (result?.queued) queuedDeletes += 1;
           continue;
         }
-        if (item.pinned) continue;
+        if (item.pinned) {
+          emitLifecycleActionTelemetry("retain", item, {
+            reason: "pinned"
+          }, {
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
+          continue;
+        }
 
         const valueScore = await ensureValueScore(item);
         if (valueScore > MEMORY_LIFECYCLE_PROMOTE_THRESHOLD) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=promote id=${item.id} value=${valueScore.toFixed(4)}`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "dry_run",
+              attempted_action: "promote",
+              value_score: valueScore
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
           } else {
-            const result = await promoteMemoryItem(item);
+            const result = await promoteMemoryItem(item, {
+              reason: "value_threshold",
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             if (result?.created) promoted += 1;
           }
           continue;
         }
         if (isBelowMinAgeForLifecycle(item, now, MEMORY_LIFECYCLE_MIN_AGE_HOURS)) {
+          emitLifecycleActionTelemetry("retain", item, {
+            reason: "below_min_age",
+            value_score: Number.isFinite(valueScore) ? valueScore : null
+          }, {
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
           continue;
         }
         if (valueScore < MEMORY_LIFECYCLE_DELETE_THRESHOLD) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=value value=${valueScore.toFixed(4)}`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "dry_run",
+              attempted_action: "delete_low_value",
+              value_score: valueScore
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             continue;
           }
           if (!consumeDeleteBudget(deleteBudget, 1)) {
             console.warn(`[lifecycle] delete cap reached; skipping low-value delete id=${item.id}`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "delete_budget_exhausted",
+              attempted_action: "delete_low_value",
+              value_score: valueScore
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             continue;
           }
-          const result = await deleteMemoryItemFully(item, { reason: "low_value" });
+          const result = await deleteMemoryItemFully(item, {
+            reason: "low_value",
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
           if (result?.deleted) deleted += 1;
           if (result?.queued) queuedDeletes += 1;
           continue;
@@ -2955,12 +3390,32 @@ async function runLifecycleOnce() {
         if (valueScore < MEMORY_LIFECYCLE_SUMMARY_THRESHOLD) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=compact id=${item.id} value=${valueScore.toFixed(4)}`);
+            emitLifecycleActionTelemetry("retain", item, {
+              reason: "dry_run",
+              attempted_action: "compact",
+              value_score: valueScore
+            }, {
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
           } else {
-            const result = await compactLowValueGroup(item, { deleteBudget });
+            const result = await compactLowValueGroup(item, {
+              deleteBudget,
+              reason: "low_value_group",
+              requestId: lifecycleRequestId,
+              source: "lifecycle_sweep"
+            });
             if (result?.created) summarized += 1;
           }
           continue;
         }
+        emitLifecycleActionTelemetry("retain", item, {
+          reason: "value_band",
+          value_score: valueScore
+        }, {
+          requestId: lifecycleRequestId,
+          source: "lifecycle_sweep"
+        });
       }
       afterId = items[items.length - 1].id;
       if (items.length < batchSize) break;
@@ -2983,6 +3438,42 @@ function scheduleLifecycleSweep() {
       runLifecycleOnce().catch(() => {});
     }, MEMORY_LIFECYCLE_INTERVAL_MS);
   }, 3500);
+}
+
+async function runMemorySnapshotOnce() {
+  if (!isTelemetryEnabled()) return;
+  if (memorySnapshotRunning) return;
+  memorySnapshotRunning = true;
+  try {
+    const snapshot = await getMemoryStateSnapshot(null);
+    emitTelemetry("memory_snapshot", buildTelemetryContext({
+      requestId: createTelemetryRequestId("snapshot"),
+      tenantId: "all",
+      collection: null,
+      source: "periodic_snapshot"
+    }), {
+      scope: "global",
+      total_items: snapshot.total_items,
+      approx_tokens: snapshot.approx_tokens,
+      type_distribution: snapshot.type_distribution || {},
+      value_distribution: snapshot.value_distribution || {}
+    });
+  } catch (err) {
+    console.warn("[telemetry] memory snapshot failed:", err?.message || err);
+  } finally {
+    memorySnapshotRunning = false;
+  }
+}
+
+function scheduleMemorySnapshots() {
+  if (!isTelemetryEnabled()) return;
+  if (!Number.isFinite(MEMORY_SNAPSHOT_INTERVAL_MS) || MEMORY_SNAPSHOT_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runMemorySnapshotOnce().catch(() => {});
+    setInterval(() => {
+      runMemorySnapshotOnce().catch(() => {});
+    }, MEMORY_SNAPSHOT_INTERVAL_MS);
+  }, 2000);
 }
 
 // --------------------------
@@ -3705,7 +4196,8 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
       collection,
       cleanDocId,
       text,
-      { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
+      { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+      { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_legacy" }) }
     );
     res.json({ ok: true, docId: cleanDocId, collection, tenantId, chunksIndexed, truncated });
   } catch (e) {
@@ -3755,7 +4247,8 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
           collection,
           cleanDocId,
           text,
-          { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
+          { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+          { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_v1" }) }
         );
         return {
           status: 200,
@@ -3800,7 +4293,8 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
       collection,
       cleanDocId,
       fetched.text,
-      { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
+      { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+      { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_legacy" }) }
     );
 
     res.json({
@@ -3863,7 +4357,8 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
           collection,
           cleanDocId,
           fetched.text,
-          { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl }
+          { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+          { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_v1" }) }
         );
 
         return {
@@ -3918,7 +4413,13 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "ask_legacy"
+      })
     });
     const citationIds = result.citations.map(c => c.chunkId);
 
@@ -3957,7 +4458,13 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "ask_v1"
+      })
     });
     sendOk(res, {
       question,
@@ -4072,7 +4579,13 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       docIds,
       principalId: access.principalId,
       privileges: access.privileges,
-      enforceArtifactVisibility: true
+      enforceArtifactVisibility: true,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "search_legacy"
+      })
     });
 
     res.json({
@@ -4113,7 +4626,13 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       docIds,
       principalId: access.principalId,
       privileges: access.privileges,
-      enforceArtifactVisibility: true
+      enforceArtifactVisibility: true,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "search_v1"
+      })
     });
     sendOk(res, {
       query: q,
@@ -4223,6 +4742,12 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     collection = resolveCollection(req);
+    const telemetryContext = buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "memory_recall_legacy"
+    });
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
     const untilTime = parseTimeInput(until, "until");
@@ -4236,7 +4761,8 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       k: limit,
       docIds: [],
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      telemetry: telemetryContext
     });
 
     const namespaceIds = results.map(r => r._row.doc_id);
@@ -4272,6 +4798,18 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     }
 
     await recordMemoryEventsForItems(recalledItems, "retrieved");
+    emitTelemetry("memory_retrieval", telemetryContext, {
+      operation: "memory_recall",
+      query_chars: String(query || "").length,
+      retrieved_count: recalled.length,
+      retrieved: recalled.map((entry) => ({
+        memory_id: entry?.memory?.id || null,
+        item_type: entry?.memory?.type || null,
+        chunk_id: entry?.chunkId || null,
+        score: entry?.score ?? null,
+        value_score: entry?.memory?.valueScore ?? null
+      }))
+    });
 
     res.json({
       ok: true,
@@ -4300,6 +4838,12 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     collection = resolveCollection(req);
+    const telemetryContext = buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "memory_recall_v1"
+    });
     const typeFilter = parseTypeFilter(types);
     const sinceTime = parseTimeInput(since, "since");
     const untilTime = parseTimeInput(until, "until");
@@ -4313,7 +4857,8 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       k: limit,
       docIds: [],
       principalId: access.principalId,
-      privileges: access.privileges
+      privileges: access.privileges,
+      telemetry: telemetryContext
     });
 
     const namespaceIds = results.map(r => r._row.doc_id);
@@ -4349,6 +4894,18 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     }
 
     await recordMemoryEventsForItems(recalledItems, "retrieved");
+    emitTelemetry("memory_retrieval", telemetryContext, {
+      operation: "memory_recall",
+      query_chars: String(query || "").length,
+      retrieved_count: recalled.length,
+      retrieved: recalled.map((entry) => ({
+        memory_id: entry?.memory?.id || null,
+        item_type: entry?.memory?.type || null,
+        chunk_id: entry?.chunkId || null,
+        score: entry?.score ?? null,
+        value_score: entry?.memory?.valueScore ?? null
+      }))
+    });
 
     sendOk(res, {
       query,
@@ -4907,12 +5464,25 @@ async function start() {
     await runMigrations();
     app.listen(3000, () => {
       console.log("HTTP gateway listening on http://localhost:3000");
+      if (isTelemetryEnabled()) {
+        const telemetryMeta = getTelemetryMeta();
+        emitTelemetry("telemetry_session", buildTelemetryContext({
+          requestId: createTelemetryRequestId("telemetry"),
+          tenantId: "system",
+          source: "startup"
+        }), {
+          file_path: telemetryMeta.filePath,
+          run_id: telemetryMeta.runId,
+          config_id: telemetryMeta.configId
+        });
+      }
       scheduleAutoReindex();
       scheduleTtlSweep();
       scheduleJobSweep();
       scheduleValueDecay();
       scheduleRedundancySweep();
       scheduleLifecycleSweep();
+      scheduleMemorySnapshots();
     });
   } catch (err) {
     console.error("Failed to start gateway:", err);

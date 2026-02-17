@@ -15,3 +15,8 @@ backups/
 
 # TLS certs
 deploy/certs/
+
+# Temporary telemetry and analysis artifacts
+telemetry/
+telemetry_analysis/
+gateway/telemetry/

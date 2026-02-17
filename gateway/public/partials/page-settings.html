@@ -1,0 +1,154 @@
+        <!-- PAGE: SETTINGS -->
+        <section class="page" id="pageSettings" role="tabpanel">
+          <div class="doc-tabs" data-doc-tabs="settings">
+            <button class="doc-tab active" data-doc-tab="auth" type="button">Authenticate</button>
+            <button class="doc-tab" data-doc-tab="keys" type="button">API Keys</button>
+            <button class="doc-tab" data-doc-tab="tenant" type="button">Tenant</button>
+          </div>
+          <div class="doc-panels" data-doc-panels="settings">
+            <div class="doc-panel active" data-doc-panel="auth">
+              <div class="row">
+                <div class="field">
+                  <label for="authType">Auth type</label>
+                  <select id="authType">
+                    <option value="bearer">JWT (Bearer)</option>
+                    <option value="api_key">Service token (API key)</option>
+                  </select>
+                  <div class="hint">Use service tokens for server-to-server integrations.</div>
+                </div>
+                <div class="field">
+                  <label for="apiKey">Access token / API key</label>
+                  <input id="apiKey" placeholder="paste JWT or API key">
+                  <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="loginUser">Login (username)</label>
+                  <input id="loginUser" placeholder="username">
+                  <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+                </div>
+                <div class="field">
+                  <label for="loginPass">Login (password)</label>
+                  <input id="loginPass" type="password" placeholder="password">
+                </div>
+              </div>
+
+              <div class="field" style="margin-top:12px;">
+                <label>Tips</label>
+                <div class="hint">
+                  - Index at least one document before searching or asking.<br>
+                  - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
+                  - Health check only verifies gateway to TCP reachability.<br>
+                  - API keys are created by admins via <span class="mono">POST /v1/admin/service-tokens</span>.
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="loginBtn">Login and save token</button>
+                <a class="btn secondary" href="/auth/google/login">Login with Google SSO</a>
+                <a class="btn secondary" href="/auth/azure/login">Login with Azure SSO</a>
+                <a class="btn secondary" href="/auth/okta/login">Login with Okta SSO</a>
+                <button class="btn" id="saveKeyBtn">Save token</button>
+                <button class="btn danger" id="clearKeyBtn">Forget token</button>
+              </div>
+
+              <div class="banner" id="settingsBanner"></div>
+            </div>
+            <div class="doc-panel" data-doc-panel="keys">
+              <div class="row">
+                <div class="field">
+                  <label for="apiKeyName">Create API key (admin)</label>
+                  <input id="apiKeyName" placeholder="ci-pipeline">
+                  <div class="hint">Admins can issue service tokens for server-to-server use.</div>
+                </div>
+              </div>
+
+              <details class="details" style="margin-top:12px;">
+                <summary>Advanced options</summary>
+                <div class="row" style="margin-top:12px;">
+                  <div class="field">
+                    <label for="apiKeyPrincipal">Principal ID (optional)</label>
+                    <input id="apiKeyPrincipal" placeholder="svc:ci">
+                    <div class="hint">Defaults to your token subject if omitted.</div>
+                  </div>
+                </div>
+              </details>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="apiKeyRoles">Roles (comma separated)</label>
+                  <input id="apiKeyRoles" placeholder="indexer,reader">
+                  <div class="hint">Valid roles: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span>.</div>
+                </div>
+                <div class="field">
+                  <label for="apiKeyExpires">Expires at</label>
+                  <input id="apiKeyExpires" type="datetime-local">
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="createApiKeyBtn">Create API key</button>
+                <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this API key</button>
+                <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy API key</button>
+              </div>
+
+              <div class="doc-block">
+                <div class="doc-label">New API key (masked)</div>
+                <pre class="doc-code" id="createdApiKey">(not created)</pre>
+              </div>
+              <div class="banner" id="apiKeyBanner"></div>
+            </div>
+            <div class="doc-panel" data-doc-panel="tenant">
+              <div class="row">
+                <div class="field">
+                  <label for="tenantAuthTenantId">Tenant ID</label>
+                  <input id="tenantAuthTenantId" readonly>
+                </div>
+                <div class="field">
+                  <label for="tenantAuthTenantName">Tenant name</label>
+                  <input id="tenantAuthTenantName" readonly>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantAuthMode">Auth mode</label>
+                  <select id="tenantAuthMode">
+                    <option value="sso_plus_password">SSO + password</option>
+                    <option value="sso_only">SSO only</option>
+                    <option value="password_only">Password only</option>
+                  </select>
+                  <div class="hint">Admins can enforce SSO-only or password-only login per tenant.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label>Allowed SSO providers</label>
+                  <div class="hint" style="margin-bottom:6px;">Uncheck all to disable SSO for this tenant.</div>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoGoogle" value="google">
+                    Google
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoAzure" value="azure">
+                    Azure
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" id="tenantSsoOkta" value="okta">
+                    Okta
+                  </label>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
+                <button class="btn" id="tenantAuthSaveBtn">Save auth mode</button>
+              </div>
+
+              <div class="banner" id="tenantAuthBanner"></div>
+            </div>
+          </div>
+        </section>

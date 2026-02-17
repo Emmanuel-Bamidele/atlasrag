@@ -1,0 +1,30 @@
+        <!-- PAGE: JOBS -->
+        <section class="page" id="pageJobs" role="tabpanel">
+          <div class="row">
+            <div class="field">
+              <label for="jobIdInput">Job ID (optional)</label>
+              <input id="jobIdInput" placeholder="123">
+              <div class="hint">Leave empty to load all in‑progress jobs for your tenant.</div>
+            </div>
+            <div class="field">
+              <label>Actions</label>
+              <div class="actions">
+                <button class="btn" id="jobFetchBtn">Fetch by ID</button>
+                <button class="btn secondary" id="jobListBtn">Load in‑progress</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-block">
+            <div class="doc-label">Job details</div>
+            <pre class="doc-code" id="jobDetails">(no job loaded)</pre>
+          </div>
+
+          <div class="doc-block">
+            <div class="doc-label">Recent jobs</div>
+            <div id="jobListTable">(no data)</div>
+          </div>
+
+          <div class="banner" id="jobsBanner"></div>
+        </section>
+
