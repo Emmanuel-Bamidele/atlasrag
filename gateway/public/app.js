@@ -30,6 +30,13 @@ let lastUsageStats = null;
 const usageWindowByCard = {};
 const USAGE_WINDOWS = ["24h", "7d", "all"];
 const USAGE_WINDOW_LABELS = { "24h": "24h", "7d": "7d", "all": "All" };
+const MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024;
+const PDFJS_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const MAMMOTH_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
+const externalScriptCache = new Map();
+const DOC_CONNECT_BASE_URL_PLACEHOLDER = "https://YOUR_ATLASRAG_BASE_URL";
+const DOC_CONNECT_SERVER_NAME = "atlasrag-docs";
 
 function loadStoredAuth(){
   let token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -161,6 +168,25 @@ function requireKeyOrWarn(bannerEl){
     return false;
   }
   return true;
+}
+
+async function copyTextToClipboard(text){
+  const value = String(text || "");
+  if (!value) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const tmp = document.createElement("textarea");
+  tmp.value = value;
+  tmp.setAttribute("readonly", "true");
+  tmp.style.position = "absolute";
+  tmp.style.left = "-9999px";
+  document.body.appendChild(tmp);
+  tmp.select();
+  document.execCommand("copy");
+  document.body.removeChild(tmp);
 }
 
 function escapeHtml(s){
@@ -328,6 +354,118 @@ function suggestDocIdFromFilename(name){
   return slugifyDocId(base);
 }
 
+function getFileExtension(name){
+  const raw = String(name || "").trim().toLowerCase();
+  if (!raw) return "";
+  const parts = raw.split(".");
+  if (parts.length < 2) return "";
+  return parts[parts.length - 1];
+}
+
+function detectUploadFileType(file){
+  const ext = getFileExtension(file?.name);
+  const mime = String(file?.type || "").toLowerCase();
+  if (ext === "pdf" || mime.includes("application/pdf")) return "pdf";
+  if (ext === "docx" || mime.includes("wordprocessingml.document")) return "docx";
+  if (ext === "doc" || mime.includes("application/msword")) return "doc";
+  return "text";
+}
+
+function normalizeExtractedText(value){
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function loadExternalScript(url, globalName){
+  if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
+  if (externalScriptCache.has(url)) return externalScriptCache.get(url);
+
+  const promise = new Promise((resolve, reject) => {
+    const existing = Array.from(document.getElementsByTagName("script"))
+      .find((script) => script.src === url);
+
+    const onReady = () => {
+      if (!globalName || window[globalName]) {
+        resolve(globalName ? window[globalName] : true);
+      } else {
+        reject(new Error(`Loaded script but missing ${globalName}`));
+      }
+    };
+
+    if (existing) {
+      if (existing.dataset.ready === "1") {
+        onReady();
+        return;
+      }
+      existing.addEventListener("load", onReady, { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load script: ${url}`)), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.addEventListener("load", () => {
+      script.dataset.ready = "1";
+      onReady();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`Failed to load script: ${url}`)), { once: true });
+    document.head.appendChild(script);
+  });
+
+  const cached = promise.catch((err) => {
+    externalScriptCache.delete(url);
+    throw err;
+  });
+  externalScriptCache.set(url, cached);
+  return cached;
+}
+
+async function extractTextFromPdfFile(file){
+  await loadExternalScript(PDFJS_LIB_URL, "pdfjsLib");
+  const pdfjs = window.pdfjsLib;
+  if (!pdfjs || !pdfjs.getDocument) {
+    throw new Error("PDF parser failed to load");
+  }
+  if (pdfjs.GlobalWorkerOptions) {
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+  }
+
+  const buffer = await file.arrayBuffer();
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
+  const pdf = await loadingTask.promise;
+  const lines = [];
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const textLine = (textContent.items || [])
+      .map((item) => String(item?.str || ""))
+      .join(" ")
+      .trim();
+    if (textLine) lines.push(textLine);
+  }
+
+  return normalizeExtractedText(lines.join("\n\n"));
+}
+
+async function extractTextFromDocxFile(file){
+  await loadExternalScript(MAMMOTH_LIB_URL, "mammoth");
+  const mammoth = window.mammoth;
+  if (!mammoth || typeof mammoth.extractRawText !== "function") {
+    throw new Error("Word parser failed to load");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+  return normalizeExtractedText(result?.value || "");
+}
+
 function suggestDocIdFromUrl(value){
   try{
     const url = new URL(String(value || ""));
@@ -336,6 +474,126 @@ function suggestDocIdFromUrl(value){
   }catch{
     return "";
   }
+}
+
+function resolveDocConnectBaseUrl(){
+  const raw = String(window.location?.origin || "").trim();
+  if (!raw || raw === "null") return DOC_CONNECT_BASE_URL_PLACEHOLDER;
+  return raw.replace(/\/+$/, "");
+}
+
+function buildDocConnectContent(baseUrl){
+  const root = String(baseUrl || DOC_CONNECT_BASE_URL_PLACEHOLDER).replace(/\/+$/, "");
+  const docsUrl = `${root}/#pageDocsTop`;
+  const apiDocsUrl = `${root}/docs`;
+  const llmsUrl = `${root}/llms.txt`;
+  const mcpUrl = `${root}/mcp`;
+  const serverName = DOC_CONNECT_SERVER_NAME;
+
+  const cursorConfig = {
+    mcpServers: {
+      [serverName]: {
+        url: mcpUrl
+      }
+    }
+  };
+
+  const vscodeConfig = {
+    servers: {
+      [serverName]: {
+        url: mcpUrl
+      }
+    }
+  };
+
+  const antigravityConfig = {
+    mcpServers: {
+      [serverName]: {
+        serverUrl: mcpUrl
+      }
+    }
+  };
+
+  return {
+    docsUrl,
+    apiDocsUrl,
+    llmsUrl,
+    mcpUrl,
+    claudeProjectCmd: `claude mcp add --transport http ${serverName} ${mcpUrl}`,
+    claudeUserCmd: `claude mcp add --transport http ${serverName} --scope user ${mcpUrl}`,
+    codexCmd: `codex mcp add ${serverName} --url ${mcpUrl}`,
+    cursorConfig: JSON.stringify(cursorConfig, null, 2),
+    vscodeConfig: JSON.stringify(vscodeConfig, null, 2),
+    antigravityConfig: JSON.stringify(antigravityConfig, null, 2),
+    quickPrompt: [
+      "Use AtlasRAG documentation as your source of truth.",
+      `Documentation UI tab: ${docsUrl}`,
+      `API docs: ${apiDocsUrl}`,
+      `llms.txt: ${llmsUrl}`,
+      `MCP server: ${mcpUrl}`,
+      "When answering, cite the endpoint path and required headers for each AtlasRAG API call."
+    ].join("\n")
+  };
+}
+
+function setTextById(id, value){
+  const el = $(id);
+  if (!el) return;
+  el.textContent = String(value || "");
+}
+
+function setLinkById(id, value){
+  const el = $(id);
+  if (!el) return;
+  const text = String(value || "");
+  el.textContent = text;
+  if (el.tagName === "A") {
+    el.setAttribute("href", text);
+  }
+}
+
+function initDocsAgentConnect(){
+  const section = $("docAgentConnect");
+  if (!section) return;
+
+  const bannerEl = $("docAgentConnectBanner");
+  if (bannerEl) clearBanner(bannerEl);
+
+  const content = buildDocConnectContent(resolveDocConnectBaseUrl());
+  setLinkById("atlasDocsLink", content.docsUrl);
+  setLinkById("atlasApiDocsLink", content.apiDocsUrl);
+  setLinkById("atlasLlmsLink", content.llmsUrl);
+  setLinkById("atlasMcpLink", content.mcpUrl);
+  setLinkById("atlasMcpInlineLink", content.mcpUrl);
+  setTextById("mcpDesktopUrl", content.mcpUrl);
+
+  setTextById("mcpClaudeProjectCmd", content.claudeProjectCmd);
+  setTextById("mcpClaudeUserCmd", content.claudeUserCmd);
+  setTextById("mcpCodexCmd", content.codexCmd);
+  setTextById("mcpCursorConfig", content.cursorConfig);
+  setTextById("mcpVsCodeConfig", content.vscodeConfig);
+  setTextById("mcpAntigravityConfig", content.antigravityConfig);
+  setTextById("mcpQuickPrompt", content.quickPrompt);
+
+  const copyButtons = Array.from(section.querySelectorAll("[data-copy-target]"));
+  copyButtons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const targetId = btn.getAttribute("data-copy-target");
+      const targetEl = targetId ? $(targetId) : null;
+      const value = String(targetEl?.textContent || "").trim();
+      if (!value) {
+        if (bannerEl) setBanner(bannerEl, "err", "Nothing to copy.");
+        return;
+      }
+
+      try {
+        await copyTextToClipboard(value);
+        if (bannerEl) setBanner(bannerEl, "ok", "Copied to clipboard.");
+      } catch {
+        if (bannerEl) setBanner(bannerEl, "err", "Failed to copy.");
+      }
+    });
+  });
 }
 
 function showPage(pageId){
@@ -368,6 +626,87 @@ function showPage(pageId){
   }
   if (pageId === "pageUsage" && !usageLoaded){
     loadUsage();
+  }
+}
+
+const HASH_PAGE_ROUTES = new Map([
+  ["pageproduct", "pageProduct"],
+  ["pageplayground", "pagePlayground"],
+  ["pagemetrics", "pageMetrics"],
+  ["pageusage", "pageUsage"],
+  ["pagejobs", "pageJobs"],
+  ["pagecollections", "pageCollections"],
+  ["pagedocs", "pageDocs"],
+  ["pagedocstop", "pageDocs"],
+  ["pagesettings", "pageSettings"],
+  ["docs", "pageDocs"],
+  ["documentation", "pageDocs"]
+]);
+
+function resolvePageIdFromHash(rawHash){
+  const clean = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim()).toLowerCase();
+  if (!clean) return null;
+  if (HASH_PAGE_ROUTES.has(clean)) return HASH_PAGE_ROUTES.get(clean);
+  if (clean.startsWith("doc-") || clean.startsWith("amv-")) return "pageDocs";
+  return null;
+}
+
+function openPageFromHash(options = {}){
+  const rawHash = String(window.location?.hash || "");
+  if (!rawHash) return false;
+  const targetId = rawHash.replace(/^#/, "").trim();
+  const pageId = resolvePageIdFromHash(rawHash);
+  if (!pageId) return false;
+
+  showPage(pageId);
+  if (pageId === "pageDocs") {
+    syncDocsPanelFromHash(rawHash);
+  }
+
+  if (targetId && options.scroll !== false) {
+    const behavior = options.smooth ? "smooth" : "auto";
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({ behavior, block: "start" });
+      }
+    });
+  }
+
+  return true;
+}
+
+function activateDocPanel(groupId, panelName){
+  const group = document.querySelector(`.doc-tabs[data-doc-tabs="${groupId}"]`);
+  const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
+  if (!group || !panelWrap) return false;
+
+  const buttons = Array.from(group.querySelectorAll(".doc-tab"));
+  const panels = Array.from(panelWrap.querySelectorAll(".doc-panel"));
+  const hasTarget = buttons.some((btn) => btn.dataset.docTab === panelName);
+  if (!hasTarget) return false;
+
+  buttons.forEach((btn) => {
+    const isActive = btn.dataset.docTab === panelName;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  panels.forEach((panel) => {
+    const isActive = panel.dataset.docPanel === panelName;
+    panel.classList.toggle("active", isActive);
+  });
+  return true;
+}
+
+function syncDocsPanelFromHash(rawHash){
+  const clean = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim()).toLowerCase();
+  if (!clean) return;
+  if (clean.startsWith("amv-")) {
+    activateDocPanel("docs", "amv");
+    return;
+  }
+  if (clean.startsWith("doc-") || clean === "pagedocstop" || clean === "pagedocs" || clean === "docs") {
+    activateDocPanel("docs", "core");
   }
 }
 
@@ -1173,6 +1512,7 @@ async function saveTenantSettings(){
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initDocTabs();
+  initDocsAgentConnect();
   $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");
   $("tabUsage").onclick = () => showPage("pageUsage");
@@ -1182,6 +1522,13 @@ window.addEventListener("DOMContentLoaded", () => {
   $("playTabIngest").onclick = () => showPlayPane("playPaneIngest");
   $("playTabSearch").onclick = () => showPlayPane("playPaneSearch");
   $("playTabAsk").onclick = () => showPlayPane("playPaneAsk");
+
+  if (!openPageFromHash({ smooth: false })) {
+    showPage("pagePlayground");
+  }
+  window.addEventListener("hashchange", () => {
+    openPageFromHash({ smooth: true });
+  });
 
   refreshHealth();
   setInterval(refreshHealth, 12000);
@@ -1336,19 +1683,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
     try{
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(token);
-      } else {
-        const tmp = document.createElement("textarea");
-        tmp.value = token;
-        tmp.setAttribute("readonly", "true");
-        tmp.style.position = "absolute";
-        tmp.style.left = "-9999px";
-        document.body.appendChild(tmp);
-        tmp.select();
-        document.execCommand("copy");
-        document.body.removeChild(tmp);
-      }
+      await copyTextToClipboard(token);
       setBanner($("apiKeyBanner"), "ok", "API key copied to clipboard.");
     }catch(e){
       setBanner($("apiKeyBanner"), "err", "Failed to copy API key.");
@@ -1390,13 +1725,30 @@ window.addEventListener("DOMContentLoaded", () => {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
       setBanner($("indexBanner"), "err", "File too large. Max size is 5 MB.");
       return;
     }
 
+    const uploadType = detectUploadFileType(file);
     try{
-      const text = await file.text();
+      let text = "";
+      if (uploadType === "pdf") {
+        setBanner($("indexBanner"), "ok", `Extracting text from PDF "${file.name}"...`);
+        text = await extractTextFromPdfFile(file);
+      } else if (uploadType === "docx") {
+        setBanner($("indexBanner"), "ok", `Extracting text from Word file "${file.name}"...`);
+        text = await extractTextFromDocxFile(file);
+      } else if (uploadType === "doc") {
+        throw new Error("Legacy .doc is not supported. Save as .docx and upload again.");
+      } else {
+        text = normalizeExtractedText(await file.text());
+      }
+
+      if (!text.trim()) {
+        throw new Error("No extractable text found in file.");
+      }
+
       $("docText").value = text;
 
       if (!$("docId").value.trim()) {
@@ -1404,7 +1756,10 @@ window.addEventListener("DOMContentLoaded", () => {
         $("docId").value = suggested;
       }
 
-      setBanner($("indexBanner"), "ok", `Loaded "${file.name}" (${text.length} chars).`);
+      const kindLabel = uploadType === "pdf"
+        ? "PDF"
+        : (uploadType === "docx" ? "Word (.docx)" : "text");
+      setBanner($("indexBanner"), "ok", `Loaded ${kindLabel} file "${file.name}" (${text.length} chars).`);
     }catch(e){
       setBanner($("indexBanner"), "err", "Failed to read file: " + e);
     }

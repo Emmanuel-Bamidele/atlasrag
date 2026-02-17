@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks(doc_id);
+CREATE INDEX IF NOT EXISTS chunks_text_fts_idx ON chunks USING GIN (to_tsvector('simple', text));
 
 -- Tenants and users (production auth)
 CREATE TABLE IF NOT EXISTS tenants (

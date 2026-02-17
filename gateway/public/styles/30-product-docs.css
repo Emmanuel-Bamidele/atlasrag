@@ -443,6 +443,45 @@
   border-color: rgba(61,213,200,0.5);
 }
 
+.doc-backtop{
+  position: fixed;
+  right: clamp(12px, 2.6vw, 28px);
+  bottom: clamp(12px, 2.6vw, 28px);
+  z-index: 22;
+  margin: 0;
+}
+
+.doc-backtop a{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(10,22,24,0.6);
+  box-shadow: 0 10px 22px rgba(2,8,10,0.3);
+}
+
+.doc-backtop a:hover{
+  border-color: rgba(61,213,200,0.5);
+}
+
+@media (max-width: 760px){
+  .doc-backtop{
+    right: 10px;
+    bottom: 10px;
+  }
+
+  .doc-backtop a{
+    min-height: 34px;
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+}
+
 .amv-paper{
   display:flex;
   flex-direction:column;

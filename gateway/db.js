@@ -69,6 +69,74 @@ async function getChunksByIds(ids) {
   return map;
 }
 
+async function runLexicalChunkQuery({
+  tsQueryFn,
+  tenantPrefix,
+  collectionPrefix,
+  query,
+  limit,
+  namespacedDocIds
+}) {
+  const params = [query, limit, tenantPrefix, tenantPrefix.length];
+  const clauses = [
+    "LEFT(c.doc_id, $4) = $3",
+    `to_tsvector('simple', c.text) @@ ${tsQueryFn}('simple', $1)`
+  ];
+
+  if (collectionPrefix) {
+    params.push(collectionPrefix);
+    clauses.push(`c.doc_id LIKE $${params.length}`);
+  }
+  if (Array.isArray(namespacedDocIds) && namespacedDocIds.length > 0) {
+    params.push(namespacedDocIds);
+    clauses.push(`c.doc_id = ANY($${params.length})`);
+  }
+
+  const res = await pool.query(
+    `SELECT c.chunk_id, c.doc_id, c.idx, c.text,
+            ts_rank_cd(to_tsvector('simple', c.text), ${tsQueryFn}('simple', $1)) AS lexical_score
+     FROM chunks c
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY lexical_score DESC, c.idx ASC
+     LIMIT $2`,
+    params
+  );
+  return res.rows;
+}
+
+async function searchChunksLexical({ tenantId, collection, query, limit, namespacedDocIds }) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery) return [];
+
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
+  const tenantPrefix = `${tenantId}::`;
+  const collectionPrefix = collection ? `${tenantId}::${collection}::%` : null;
+
+  try {
+    return await runLexicalChunkQuery({
+      tsQueryFn: "websearch_to_tsquery",
+      tenantPrefix,
+      collectionPrefix,
+      query: cleanQuery,
+      limit: cleanLimit,
+      namespacedDocIds
+    });
+  } catch (err) {
+    const message = String(err?.message || "");
+    if (!/tsquery|syntax/i.test(message)) {
+      throw err;
+    }
+    return runLexicalChunkQuery({
+      tsQueryFn: "plainto_tsquery",
+      tenantPrefix,
+      collectionPrefix,
+      query: cleanQuery,
+      limit: cleanLimit,
+      namespacedDocIds
+    });
+  }
+}
+
 // Get all chunks for a doc (ordered)
 async function getChunksByDocId(docId) {
   const res = await pool.query(
@@ -1361,6 +1429,7 @@ async function runMigrations() {
 module.exports = {
   saveChunk,
   getChunksByIds,
+  searchChunksLexical,
   getChunksByDocId,
   deleteDoc,
   countChunks,

@@ -1,7 +1,7 @@
         <!-- PAGE: DOCUMENTATION -->
         <section class="page" id="pageDocs" role="tabpanel">
           <article class="docs-article">
-            <header class="docs-header">
+            <header class="docs-header" id="pageDocsTop">
               <h3>Developer documentation</h3>
               <p>Everything you need to integrate quickly: quickstart, auth, APIs, SDKs, and Python examples.</p>
             </header>
@@ -20,6 +20,7 @@
                     <a href="#doc-tenant-auth">Tenant auth mode</a>
                     <a href="#doc-security">Security</a>
                     <a href="#doc-api-ref">API Reference</a>
+                    <a href="#doc-agent-integrations">AI assistant connections</a>
                     <a href="#doc-sdks">SDKs</a>
                     <a href="#doc-examples">Examples</a>
                     <a href="#doc-client-examples">Client examples</a>
@@ -68,6 +69,12 @@
     "text": "Your document text..."
   }'</pre>
                 </div>
+                <p class="hint">
+                  Playground upload supports <span class="mono">.txt</span>, <span class="mono">.md</span>, <span class="mono">.json</span>,
+                  <span class="mono">.csv</span>, <span class="mono">.log</span>, <span class="mono">.pdf</span>, and <span class="mono">.docx</span>.
+                  PDF and <span class="mono">.docx</span> are extracted to plain text in the browser before indexing.
+                  API ingest via <span class="mono">POST /v1/docs</span> remains JSON text (no multipart file upload).
+                </p>
                 <ol start="5">
                   <li>Search or Ask with <span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span>.</li>
                 </ol>
@@ -204,6 +211,10 @@
                   Full OpenAPI schema is available at <span class="mono">/openapi.json</span>, with Swagger UI at <span class="mono">/docs</span>.
                   All versioned routes live under <span class="mono">/v1</span>; legacy routes remain as aliases.
                 </p>
+                <p class="hint">
+                  File uploads are currently a Playground UI capability. Public ingest APIs expect <span class="mono">docId + text</span>
+                  JSON payloads; use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
+                </p>
                 <ul>
                   <li><span class="mono">/v1/docs</span> index + list documents</li>
                   <li><span class="mono">/v1/docs/url</span> index content from a URL</li>
@@ -277,6 +288,102 @@
               </div>
             </details>
 
+            <details class="details section" id="doc-agent-integrations" open>
+              <summary>AI assistant connections</summary>
+              <div class="section-body" id="docAgentConnect">
+                <p>
+                  Connect AtlasRAG documentation to your assistants so they can fetch current integration guidance directly from your docs stack.
+                  This includes <span class="mono">llms.txt</span>, a built-in MCP endpoint, and quick access patterns for ChatGPT and Claude.
+                </p>
+
+                <div class="doc-block">
+                  <div class="doc-label">Quick access URLs</div>
+                  <ul>
+                    <li>Documentation page: <a class="mono" id="atlasDocsLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a></li>
+                    <li>API reference: <a class="mono" id="atlasApiDocsLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a></li>
+                    <li>llms.txt: <a class="mono" id="atlasLlmsLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a></li>
+                    <li>MCP server endpoint: <a class="mono" id="atlasMcpLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a></li>
+                  </ul>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Use our MCP server</div>
+                  <p>
+                    The AtlasRAG docs MCP server is available at
+                    <a class="mono" id="atlasMcpInlineLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a>.
+                  </p>
+                  <p>
+                    Once connected, your assistant can search AtlasRAG documentation in real time for API usage, authentication setup,
+                    AMV-L and TTL lifecycle behavior, and implementation patterns.
+                  </p>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with Claude Code</div>
+                  <pre class="doc-code" id="mcpClaudeProjectCmd">(loading command)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpClaudeProjectCmd">Copy project command</button>
+                  </div>
+                  <p class="hint">Project (local) scope: adds the MCP server only for the current working directory.</p>
+                  <pre class="doc-code" id="mcpClaudeUserCmd">(loading command)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpClaudeUserCmd">Copy user-scope command</button>
+                  </div>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with Claude Desktop</div>
+                  <ol>
+                    <li>Open Claude Desktop.</li>
+                    <li>Go to <span class="mono">Settings &gt; Connectors</span>.</li>
+                    <li>Add this MCP server URL: <span class="mono" id="mcpDesktopUrl">(loading)</span>.</li>
+                  </ol>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with Codex CLI</div>
+                  <pre class="doc-code" id="mcpCodexCmd">(loading command)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpCodexCmd">Copy Codex command</button>
+                  </div>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with Cursor</div>
+                  <pre class="doc-code" id="mcpCursorConfig">(loading config)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpCursorConfig">Copy Cursor config</button>
+                  </div>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with VS Code</div>
+                  <pre class="doc-code" id="mcpVsCodeConfig">(loading config)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpVsCodeConfig">Copy VS Code config</button>
+                  </div>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Connect with Antigravity</div>
+                  <pre class="doc-code" id="mcpAntigravityConfig">(loading config)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpAntigravityConfig">Copy Antigravity config</button>
+                  </div>
+                </div>
+
+                <div class="doc-block">
+                  <div class="doc-label">Quick prompt for ChatGPT and Claude</div>
+                  <pre class="doc-code" id="mcpQuickPrompt">(loading prompt)</pre>
+                  <div class="actions">
+                    <button class="btn secondary" type="button" data-copy-target="mcpQuickPrompt">Copy prompt</button>
+                  </div>
+                </div>
+
+                <div class="banner" id="docAgentConnectBanner"></div>
+              </div>
+            </details>
+
             <details class="details section" id="doc-sdks" open>
               <summary>SDKs</summary>
               <div class="section-body">
@@ -291,6 +398,15 @@
               <summary>Examples</summary>
               <div class="section-body">
                 <p>cURL:</p>
+                <div class="doc-block">
+                  <div class="doc-label">Playground upload (UI)</div>
+                  <p class="hint">
+                    In the Playground Ingest tab, choose a local file to auto-fill Document Text.
+                    Supported: <span class="mono">.txt</span>, <span class="mono">.md</span>, <span class="mono">.json</span>,
+                    <span class="mono">.csv</span>, <span class="mono">.log</span>, <span class="mono">.pdf</span>, <span class="mono">.docx</span>.
+                    Legacy <span class="mono">.doc</span> is not supported.
+                  </p>
+                </div>
                 <div class="doc-block">
                   <div class="doc-label">Index text</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
@@ -1055,6 +1171,9 @@ else: retain</pre>
                   </details>
                 </div>
               </div>
+            </div>
+            <div class="doc-backtop">
+              <a class="mono" href="#pageDocsTop">Back to top</a>
             </div>
           </article>
         </section>

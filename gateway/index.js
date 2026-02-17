@@ -10,6 +10,7 @@ const { sendCmd, buildVset, buildVsearch, buildVdel, parseVsearchReply } = requi
 const {
   saveChunk,
   getChunksByIds,
+  searchChunksLexical,
   getChunksByDocId,
   deleteDoc,
   countChunks,
@@ -208,6 +209,8 @@ app.use((req, res, next) => {
     const isApi = routePath.startsWith("/v1") ||
       routePath.startsWith("/docs") ||
       routePath.startsWith("/openapi") ||
+      routePath.startsWith("/mcp") ||
+      routePath.startsWith("/llms") ||
       routePath.startsWith("/ask") ||
       routePath.startsWith("/search") ||
       routePath.startsWith("/stats") ||
@@ -290,6 +293,17 @@ const AGENT_RE = /^[a-zA-Z0-9._:@-]+$/;
 const DEFAULT_COLLECTION = process.env.DEFAULT_COLLECTION || "default";
 const TENANT_SEARCH_MULTIPLIER = parseInt(process.env.TENANT_SEARCH_MULTIPLIER || "5", 10);
 const TENANT_SEARCH_CAP = parseInt(process.env.TENANT_SEARCH_CAP || "50", 10);
+const CHUNK_STRATEGY = String(process.env.CHUNK_STRATEGY || "token").toLowerCase() === "char" ? "char" : "token";
+const CHUNK_MAX_CHARS = parseInt(process.env.CHUNK_MAX_CHARS || "900", 10);
+const CHUNK_MAX_TOKENS = parseInt(process.env.CHUNK_MAX_TOKENS || "220", 10);
+const CHUNK_OVERLAP_TOKENS = parseInt(process.env.CHUNK_OVERLAP_TOKENS || "40", 10);
+const HYBRID_RETRIEVAL_ENABLED = process.env.HYBRID_RETRIEVAL_ENABLED !== "0";
+const HYBRID_VECTOR_WEIGHT = parseFloat(process.env.HYBRID_VECTOR_WEIGHT || "0.72");
+const HYBRID_LEXICAL_WEIGHT = parseFloat(process.env.HYBRID_LEXICAL_WEIGHT || "0.28");
+const HYBRID_LEXICAL_MULTIPLIER = parseInt(process.env.HYBRID_LEXICAL_MULTIPLIER || "2", 10);
+const HYBRID_LEXICAL_CAP = parseInt(process.env.HYBRID_LEXICAL_CAP || "120", 10);
+const HYBRID_RERANK_OVERLAP_BOOST = parseFloat(process.env.HYBRID_RERANK_OVERLAP_BOOST || "0.12");
+const HYBRID_RERANK_EXACT_BOOST = parseFloat(process.env.HYBRID_RERANK_EXACT_BOOST || "0.08");
 const SSO_PROVIDERS = ["google", "azure", "okta"];
 const ROLE_DEFAULT = "reader";
 const ROLE_ALIASES = new Map([
@@ -313,6 +327,10 @@ const MEMORY_EVENT_DEFAULTS = {
 };
 const MEMORY_TASK_EVENT_TYPES = new Set(["task_success", "task_fail"]);
 const OPENAPI_HIDDEN_TAGS = new Set(["Metrics"]);
+const MCP_SERVER_NAME = "atlasrag-docs";
+const MCP_SERVER_VERSION = "1.0.0";
+const MCP_PROTOCOL_VERSION = "2024-11-05";
+const MCP_RESOURCE_URI_PREFIX = "atlasrag://docs/";
 
 function filterPublicOpenApiDoc(doc) {
   const inputTags = Array.isArray(doc?.tags) ? doc.tags : [];
@@ -339,11 +357,23 @@ function filterPublicOpenApiDoc(doc) {
   };
 }
 
+function resolvePublicBaseUrl(req) {
+  const envBase = process.env.PUBLIC_BASE_URL || process.env.OPENAPI_BASE_URL;
+  if (envBase) return String(envBase).trim().replace(/\/+$/, "");
+
+  const forwardedProto = String(req.get("x-forwarded-proto") || req.protocol || "http")
+    .split(",")[0]
+    .trim() || "http";
+  const forwardedHost = String(req.get("x-forwarded-host") || req.get("host") || "")
+    .split(",")[0]
+    .trim();
+  if (!forwardedHost) return "http://localhost:3000";
+  return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
+}
+
 function buildOpenApiDoc(req, options = {}) {
   const { publicView = false } = options;
-  const envBase = process.env.OPENAPI_BASE_URL || process.env.PUBLIC_BASE_URL;
-  const host = req.get("host");
-  const baseUrl = envBase || (host ? `${req.protocol}://${host}` : "http://localhost:3000");
+  const baseUrl = resolvePublicBaseUrl(req);
   const doc = {
     ...openApiSpec,
     servers: [{ url: baseUrl }]
@@ -846,11 +876,6 @@ function buildErrorPayload(message, code, tenantId, collection) {
     error: { message: String(message || "Request failed"), code: code || null },
     meta: buildMeta(tenantId, collection)
   };
-}
-
-function clampNumber(value, min, max) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
 }
 
 function withTokenEstimate(metadata, text) {
@@ -1502,6 +1527,54 @@ function parseDocFilter(raw) {
   return out;
 }
 
+function clampNumber(value, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
+}
+
+function normalizeRangeScore(value, min, max) {
+  if (!Number.isFinite(value)) return 0;
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return 0;
+  if (max <= min) return 1;
+  return (value - min) / (max - min);
+}
+
+function tokenizeForRerank(text) {
+  return String(text || "")
+    .toLowerCase()
+    .match(/[a-z0-9_]+/g) || [];
+}
+
+function computeTokenOverlapScore(queryTokens, text) {
+  if (!queryTokens || queryTokens.length === 0) return 0;
+  const textTokens = new Set(tokenizeForRerank(text));
+  if (textTokens.size === 0) return 0;
+
+  let hits = 0;
+  for (const token of queryTokens) {
+    if (textTokens.has(token)) hits += 1;
+  }
+  return hits / queryTokens.length;
+}
+
+function buildChunkingOptions() {
+  const maxChars = Number.isFinite(CHUNK_MAX_CHARS) && CHUNK_MAX_CHARS > 0 ? CHUNK_MAX_CHARS : 900;
+  const maxTokens = Number.isFinite(CHUNK_MAX_TOKENS) && CHUNK_MAX_TOKENS > 0 ? CHUNK_MAX_TOKENS : 220;
+  const rawOverlap = Number.isFinite(CHUNK_OVERLAP_TOKENS) && CHUNK_OVERLAP_TOKENS >= 0 ? CHUNK_OVERLAP_TOKENS : 40;
+  const overlapTokens = Math.max(0, Math.min(rawOverlap, Math.max(0, maxTokens - 1)));
+  return {
+    strategy: CHUNK_STRATEGY,
+    maxChars,
+    maxTokens,
+    overlapTokens
+  };
+}
+
+const CHUNKING_OPTIONS = buildChunkingOptions();
+
 function normalizeWhitespace(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
@@ -1550,6 +1623,334 @@ function extractTextFromHtml(html) {
   out = out.replace(/<[^>]+>/g, " ");
   out = decodeHtmlEntities(out);
   return out;
+}
+
+function readLocalDocsCorpusEntry({ id, title, routePath, filePath }) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf8");
+    const text = normalizeWhitespace(extractTextFromHtml(raw));
+    if (!text) return null;
+    return {
+      id,
+      title,
+      routePath,
+      text,
+      textLower: text.toLowerCase(),
+      titleLower: String(title || "").toLowerCase()
+    };
+  } catch (err) {
+    console.warn(`[mcp] failed to read docs corpus entry ${id}:`, err?.message || err);
+    return null;
+  }
+}
+
+function buildMcpDocsCorpus() {
+  const entries = [
+    readLocalDocsCorpusEntry({
+      id: "guide",
+      title: "AtlasRAG Integration Guide",
+      routePath: "/#pageDocsTop",
+      filePath: path.join(UI_PARTIALS_DIR, "page-docs.html")
+    }),
+    readLocalDocsCorpusEntry({
+      id: "api-reference",
+      title: "AtlasRAG API Reference",
+      routePath: "/docs",
+      filePath: path.join(PUBLIC_DIR, "docs", "index.html")
+    })
+  ].filter(Boolean);
+
+  if (entries.length === 0) {
+    console.warn("[mcp] docs corpus is empty; /mcp search will return no matches.");
+  }
+  return entries;
+}
+
+const MCP_DOCS_CORPUS = buildMcpDocsCorpus();
+
+function getMcpDocUrl(req, routePath) {
+  const cleanPath = String(routePath || "/").trim() || "/";
+  try {
+    return new URL(cleanPath, `${resolvePublicBaseUrl(req)}/`).toString();
+  } catch {
+    return cleanPath;
+  }
+}
+
+function scoreMcpDocCandidate(queryLower, queryTokens, doc) {
+  if (!queryLower || !doc) return 0;
+  const overlap = computeTokenOverlapScore(queryTokens, doc.textLower);
+  const exact = doc.textLower.includes(queryLower) ? 0.55 : 0;
+  const titleBoost = queryTokens.some((token) => token.length >= 3 && doc.titleLower.includes(token)) ? 0.2 : 0;
+  return overlap + exact + titleBoost;
+}
+
+function buildMcpExcerpt(text, queryTokens, maxChars = 340) {
+  const clean = normalizeWhitespace(text);
+  if (!clean) return "";
+
+  const lower = clean.toLowerCase();
+  let hit = -1;
+  for (const token of queryTokens) {
+    if (!token || token.length < 3) continue;
+    const index = lower.indexOf(token);
+    if (index >= 0 && (hit === -1 || index < hit)) {
+      hit = index;
+    }
+  }
+
+  if (hit < 0) {
+    return clean.length <= maxChars ? clean : `${clean.slice(0, maxChars)}...`;
+  }
+
+  const start = Math.max(0, hit - Math.floor(maxChars / 3));
+  const end = Math.min(clean.length, start + maxChars);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < clean.length ? "..." : "";
+  return `${prefix}${clean.slice(start, end)}${suffix}`;
+}
+
+function searchMcpDocs(query, topK = 4) {
+  const queryText = normalizeWhitespace(query).toLowerCase();
+  if (!queryText) return [];
+
+  const queryTokens = tokenizeForRerank(queryText);
+  const limit = clampNumber(topK, 1, 8);
+
+  return MCP_DOCS_CORPUS
+    .map((doc) => ({
+      doc,
+      score: scoreMcpDocCandidate(queryText, queryTokens, doc)
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((item) => ({
+      id: item.doc.id,
+      title: item.doc.title,
+      routePath: item.doc.routePath,
+      score: Number(item.score.toFixed(4)),
+      excerpt: buildMcpExcerpt(item.doc.text, queryTokens)
+    }));
+}
+
+function findMcpResourceByUri(rawUri) {
+  const uri = String(rawUri || "").trim();
+  if (!uri.startsWith(MCP_RESOURCE_URI_PREFIX)) return null;
+  const id = uri.slice(MCP_RESOURCE_URI_PREFIX.length);
+  if (!id) return null;
+  return MCP_DOCS_CORPUS.find((item) => item.id === id) || null;
+}
+
+function listMcpResources(req) {
+  return MCP_DOCS_CORPUS.map((doc) => ({
+    uri: `${MCP_RESOURCE_URI_PREFIX}${doc.id}`,
+    name: doc.title,
+    description: `AtlasRAG documentation resource: ${doc.title}`,
+    mimeType: "text/plain",
+    annotations: {
+      url: getMcpDocUrl(req, doc.routePath)
+    }
+  }));
+}
+
+function listMcpTools() {
+  return [
+    {
+      name: "search_docs",
+      description: "Search AtlasRAG documentation for setup, APIs, auth, and AMV-L details.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Natural language query for AtlasRAG docs." },
+          top_k: { type: "integer", minimum: 1, maximum: 8, description: "Number of top results to return." }
+        },
+        required: ["query"]
+      }
+    },
+    {
+      name: "read_docs_page",
+      description: "Read a full AtlasRAG docs resource by page id or resource URI.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          page_id: { type: "string", description: "Known page id: guide or api-reference." },
+          uri: { type: "string", description: "Resource URI from resources/list." }
+        }
+      }
+    }
+  ];
+}
+
+function handleMcpToolCall(params, req) {
+  const name = String(params?.name || "").trim();
+  const args = (params && typeof params.arguments === "object" && params.arguments !== null)
+    ? params.arguments
+    : {};
+
+  if (name === "search_docs") {
+    const query = normalizeWhitespace(args.query || "");
+    if (!query) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: "Missing required argument: query" }]
+      };
+    }
+
+    const results = searchMcpDocs(query, args.top_k);
+    if (results.length === 0) {
+      return {
+        content: [{ type: "text", text: `No AtlasRAG docs matches found for: ${query}` }],
+        structuredContent: { query, matches: [] }
+      };
+    }
+
+    const lines = results.map((item, index) => {
+      const url = getMcpDocUrl(req, item.routePath);
+      return [
+        `${index + 1}. ${item.title}`,
+        `URL: ${url}`,
+        `Score: ${item.score}`,
+        `Excerpt: ${item.excerpt}`
+      ].join("\n");
+    }).join("\n\n");
+
+    return {
+      content: [{ type: "text", text: lines }],
+      structuredContent: {
+        query,
+        matches: results.map((item) => ({
+          id: item.id,
+          title: item.title,
+          url: getMcpDocUrl(req, item.routePath),
+          score: item.score,
+          excerpt: item.excerpt
+        }))
+      }
+    };
+  }
+
+  if (name === "read_docs_page") {
+    const uri = String(args.uri || "").trim();
+    const pageId = String(args.page_id || "").trim();
+    let resource = null;
+    if (uri) {
+      resource = findMcpResourceByUri(uri);
+    } else if (pageId) {
+      resource = MCP_DOCS_CORPUS.find((item) => item.id === pageId) || null;
+    }
+
+    if (!resource) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: "Unknown page. Use resources/list or pass page_id: guide or api-reference." }]
+      };
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `${resource.title}`,
+          `URL: ${getMcpDocUrl(req, resource.routePath)}`,
+          "",
+          resource.text
+        ].join("\n")
+      }],
+      structuredContent: {
+        id: resource.id,
+        title: resource.title,
+        url: getMcpDocUrl(req, resource.routePath)
+      }
+    };
+  }
+
+  throw { code: -32602, message: `Unknown tool: ${name}` };
+}
+
+async function handleMcpMethod(method, params, req) {
+  const cleanMethod = String(method || "").trim();
+  const cleanParams = (params && typeof params === "object" && !Array.isArray(params)) ? params : {};
+
+  if (cleanMethod === "initialize") {
+    return {
+      protocolVersion: String(cleanParams.protocolVersion || MCP_PROTOCOL_VERSION),
+      capabilities: {
+        tools: {},
+        resources: {}
+      },
+      serverInfo: {
+        name: MCP_SERVER_NAME,
+        version: MCP_SERVER_VERSION
+      },
+      instructions: [
+        "Use tools/search_docs to find AtlasRAG API and product guidance.",
+        "Use resources/list and resources/read to access full docs pages."
+      ].join(" ")
+    };
+  }
+
+  if (cleanMethod === "ping") {
+    return { ok: true, timestamp: new Date().toISOString() };
+  }
+
+  if (cleanMethod === "tools/list") {
+    return { tools: listMcpTools() };
+  }
+
+  if (cleanMethod === "tools/call") {
+    return handleMcpToolCall(cleanParams, req);
+  }
+
+  if (cleanMethod === "resources/list") {
+    return { resources: listMcpResources(req) };
+  }
+
+  if (cleanMethod === "resources/read") {
+    const uri = String(cleanParams.uri || "").trim();
+    const resource = findMcpResourceByUri(uri);
+    if (!resource) {
+      throw { code: -32602, message: `Unknown resource URI: ${uri || "(empty)"}` };
+    }
+    return {
+      contents: [{
+        uri: `${MCP_RESOURCE_URI_PREFIX}${resource.id}`,
+        mimeType: "text/plain",
+        text: [
+          `${resource.title}`,
+          `URL: ${getMcpDocUrl(req, resource.routePath)}`,
+          "",
+          resource.text
+        ].join("\n")
+      }]
+    };
+  }
+
+  if (cleanMethod === "notifications/initialized") {
+    return { ok: true };
+  }
+
+  throw { code: -32601, message: `Method not found: ${cleanMethod}` };
+}
+
+function createJsonRpcResult(id, result) {
+  return { jsonrpc: "2.0", id, result };
+}
+
+function createJsonRpcError(id, code, message, data) {
+  const payload = {
+    jsonrpc: "2.0",
+    id: id === undefined ? null : id,
+    error: {
+      code: Number.isInteger(code) ? code : -32603,
+      message: String(message || "Internal error")
+    }
+  };
+  if (data !== undefined) {
+    payload.error.data = data;
+  }
+  return payload;
 }
 
 function isPrivateHostname(hostname) {
@@ -1666,7 +2067,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   logIndex(`start tenant=${tenantId} collection=${collection} docId=${docId} chars=${cleanText.length} truncated=${truncated}`);
 
-  const chunks = chunkText(namespacedDocId, cleanText);
+  const chunks = chunkText(namespacedDocId, cleanText, CHUNKING_OPTIONS);
   if (chunks.length === 0) {
     throw new Error("text produced no chunks");
   }
@@ -1734,39 +2135,155 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     source: telemetry?.source || "search_query"
   }));
 
+  const cleanDocIds = Array.isArray(docIds) ? docIds : [];
+  const topK = Number.isFinite(k) && k > 0 ? k : 5;
   const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
   const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
-  const hasDocFilter = docIds.length > 0;
-  const internalK = Math.min(k * multiplier * (hasDocFilter ? 2 : 1), cap);
+  const hasDocFilter = cleanDocIds.length > 0;
+  const internalK = Math.min(topK * multiplier * (hasDocFilter ? 2 : 1), cap);
 
   const cmd = buildVsearch(internalK, qvec);
   const line = await sendCmd(cmd);
 
-  const matches = parseVsearchReply(line)
+  const denseMatches = parseVsearchReply(line)
     .filter(m => m.id.startsWith(`${tenantId}::`));
 
-  const ids = matches.map(m => m.id);
-  const chunkMap = await getChunksByIds(ids);
-  const docFilter = hasDocFilter ? new Set(docIds) : null;
+  const denseIds = denseMatches.map(m => m.id);
+  const denseChunkMap = await getChunksByIds(denseIds);
+  const docFilter = hasDocFilter ? new Set(cleanDocIds) : null;
+  const namespacedDocIds = (hasDocFilter && collection)
+    ? cleanDocIds.map((docId) => namespaceDocId(tenantId, collection, docId))
+    : null;
 
-  const results = [];
-  for (const m of matches) {
-    const row = chunkMap.get(m.id);
-    if (!row) continue;
-    const parsed = parseNamespacedDocId(row.doc_id);
-    if (!parsed || parsed.tenantId !== tenantId) continue;
-    if (collection && parsed.collection !== collection) continue;
-    if (docFilter && !docFilter.has(parsed.docId)) continue;
-    results.push({
-      chunkId: stripChunkNamespace(m.id),
-      score: m.score,
-      docId: parsed.docId,
-      collection: parsed.collection,
-      preview: row.text.slice(0, 180),
-      _row: row
-    });
-    if (results.length >= k) break;
+  const lexicalMultiplier = Number.isFinite(HYBRID_LEXICAL_MULTIPLIER) && HYBRID_LEXICAL_MULTIPLIER > 0
+    ? HYBRID_LEXICAL_MULTIPLIER
+    : 2;
+  const lexicalCap = Number.isFinite(HYBRID_LEXICAL_CAP) && HYBRID_LEXICAL_CAP > 0
+    ? HYBRID_LEXICAL_CAP
+    : 120;
+  const lexicalK = Math.min(topK * lexicalMultiplier, lexicalCap);
+
+  let lexicalRows = [];
+  if (HYBRID_RETRIEVAL_ENABLED && lexicalK > 0) {
+    try {
+      lexicalRows = await searchChunksLexical({
+        tenantId,
+        collection,
+        query,
+        limit: lexicalK,
+        namespacedDocIds
+      });
+    } catch (err) {
+      console.warn("[search] lexical retrieval failed:", err?.message || err);
+    }
   }
+
+  const candidates = new Map();
+  function addCandidate(row, vectorScore, lexicalScore) {
+    if (!row?.chunk_id || !row?.doc_id) return;
+    const parsed = parseNamespacedDocId(row.doc_id);
+    if (!parsed || parsed.tenantId !== tenantId) return;
+    if (collection && parsed.collection !== collection) return;
+    if (docFilter && !docFilter.has(parsed.docId)) return;
+
+    const key = row.chunk_id;
+    const existing = candidates.get(key) || {
+      row,
+      parsed,
+      vectorScore: null,
+      lexicalScore: null
+    };
+    existing.row = row;
+    existing.parsed = parsed;
+    if (Number.isFinite(vectorScore)) {
+      existing.vectorScore = Number.isFinite(existing.vectorScore)
+        ? Math.max(existing.vectorScore, vectorScore)
+        : vectorScore;
+    }
+    if (Number.isFinite(lexicalScore)) {
+      existing.lexicalScore = Number.isFinite(existing.lexicalScore)
+        ? Math.max(existing.lexicalScore, lexicalScore)
+        : lexicalScore;
+    }
+    candidates.set(key, existing);
+  }
+
+  for (const match of denseMatches) {
+    const row = denseChunkMap.get(match.id);
+    if (!row) continue;
+    addCandidate(row, match.score, null);
+  }
+  for (const row of lexicalRows) {
+    addCandidate(row, null, Number(row.lexical_score));
+  }
+
+  const denseScores = [];
+  const lexicalScores = [];
+  for (const candidate of candidates.values()) {
+    if (Number.isFinite(candidate.vectorScore)) denseScores.push(candidate.vectorScore);
+    if (Number.isFinite(candidate.lexicalScore)) lexicalScores.push(candidate.lexicalScore);
+  }
+  const denseMin = denseScores.length ? Math.min(...denseScores) : 0;
+  const denseMax = denseScores.length ? Math.max(...denseScores) : 0;
+  const lexicalMin = lexicalScores.length ? Math.min(...lexicalScores) : 0;
+  const lexicalMax = lexicalScores.length ? Math.max(...lexicalScores) : 0;
+
+  const useHybrid = HYBRID_RETRIEVAL_ENABLED;
+  let vectorWeight = useHybrid ? clampNumber(HYBRID_VECTOR_WEIGHT, 0, 1) : 1;
+  let lexicalWeight = useHybrid ? clampNumber(HYBRID_LEXICAL_WEIGHT, 0, 1) : 0;
+  if ((vectorWeight + lexicalWeight) === 0) {
+    vectorWeight = 1;
+    lexicalWeight = 0;
+  }
+  const totalWeight = vectorWeight + lexicalWeight;
+  vectorWeight /= totalWeight;
+  lexicalWeight /= totalWeight;
+
+  const overlapBoostScale = clampNumber(HYBRID_RERANK_OVERLAP_BOOST, 0, 1);
+  const exactBoostScale = clampNumber(HYBRID_RERANK_EXACT_BOOST, 0, 1);
+  const applyRerank = useHybrid;
+  const cleanQuery = String(query || "").trim().toLowerCase();
+  const queryTokens = tokenizeForRerank(cleanQuery);
+
+  const ranked = Array.from(candidates.values()).map((candidate) => {
+    const vectorNorm = Number.isFinite(candidate.vectorScore)
+      ? normalizeRangeScore(candidate.vectorScore, denseMin, denseMax)
+      : 0;
+    const lexicalNorm = Number.isFinite(candidate.lexicalScore)
+      ? normalizeRangeScore(candidate.lexicalScore, lexicalMin, lexicalMax)
+      : 0;
+    const overlapScore = applyRerank ? computeTokenOverlapScore(queryTokens, candidate.row.text) : 0;
+    const hasExactMatch = applyRerank && cleanQuery.length >= 8 && String(candidate.row.text || "").toLowerCase().includes(cleanQuery);
+    const fusedScore = (vectorNorm * vectorWeight)
+      + (lexicalNorm * lexicalWeight)
+      + (overlapScore * overlapBoostScale)
+      + (hasExactMatch ? exactBoostScale : 0);
+
+    return {
+      ...candidate,
+      fusedScore
+    };
+  });
+
+  ranked.sort((a, b) => {
+    if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore;
+    const av = Number.isFinite(a.vectorScore) ? a.vectorScore : -Infinity;
+    const bv = Number.isFinite(b.vectorScore) ? b.vectorScore : -Infinity;
+    if (bv !== av) return bv - av;
+    const al = Number.isFinite(a.lexicalScore) ? a.lexicalScore : -Infinity;
+    const bl = Number.isFinite(b.lexicalScore) ? b.lexicalScore : -Infinity;
+    if (bl !== al) return bl - al;
+    return (a.row.idx || 0) - (b.row.idx || 0);
+  });
+
+  const results = ranked.slice(0, topK).map((candidate) => ({
+    chunkId: stripChunkNamespace(candidate.row.chunk_id),
+    score: candidate.fusedScore,
+    docId: candidate.parsed.docId,
+    collection: candidate.parsed.collection,
+    preview: candidate.row.text.slice(0, 180),
+    _row: candidate.row
+  }));
 
   if (enforceArtifactVisibility && (principalId || (privileges && privileges.length))) {
     const namespaceIds = results.map(r => r._row.doc_id);
@@ -1944,7 +2461,7 @@ async function indexMemoryText(namespaceId, text, options = {}) {
 
   logIndex(`start memory namespace=${namespaceId} chars=${cleanText.length} truncated=${truncated}`);
 
-  const chunks = chunkText(namespaceId, cleanText);
+  const chunks = chunkText(namespaceId, cleanText, CHUNKING_OPTIONS);
   if (chunks.length === 0) {
     throw new Error("text produced no chunks");
   }
@@ -3506,6 +4023,105 @@ app.get("/openapi.json", (req, res) => {
 
 app.get("/openapi.public.json", (req, res) => {
   res.json(buildOpenApiDoc(req, { publicView: true }));
+});
+
+// --------------------------
+// LLMs + MCP docs access (public)
+// --------------------------
+app.get("/llms.txt", (req, res) => {
+  const baseUrl = resolvePublicBaseUrl(req);
+  const uiDocsUrl = `${baseUrl}/#pageDocsTop`;
+  const docsUrl = `${baseUrl}/docs`;
+  const llmsUrl = `${baseUrl}/llms.txt`;
+  const mcpUrl = `${baseUrl}/mcp`;
+  const lines = [
+    "# AtlasRAG documentation endpoints",
+    "",
+    "AtlasRAG provides durable memory APIs and multi-tenant retrieval infrastructure for production AI agents.",
+    "",
+    "## Primary links",
+    `- Product docs UI: ${uiDocsUrl}`,
+    `- API documentation: ${docsUrl}`,
+    `- OpenAPI (public): ${baseUrl}/openapi.public.json`,
+    `- LLM index: ${llmsUrl}`,
+    `- MCP server: ${mcpUrl}`,
+    "",
+    "## Suggested usage",
+    "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
+    "- Use llms.txt for quick discovery of docs and MCP entrypoints."
+  ];
+  res.type("text/plain; charset=utf-8").send(lines.join("\n"));
+});
+
+app.get("/mcp", (req, res) => {
+  const baseUrl = resolvePublicBaseUrl(req);
+  const uiDocsUrl = `${baseUrl}/#pageDocsTop`;
+  res.json({
+    ok: true,
+    name: MCP_SERVER_NAME,
+    version: MCP_SERVER_VERSION,
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    transport: "http-jsonrpc",
+    endpoint: `${baseUrl}/mcp`,
+    llms: `${baseUrl}/llms.txt`,
+    uiDocs: uiDocsUrl,
+    docs: `${baseUrl}/docs`,
+    note: "Send JSON-RPC 2.0 requests with POST /mcp"
+  });
+});
+
+app.post("/mcp", async (req, res) => {
+  const payload = req.body;
+  const isBatch = Array.isArray(payload);
+  const requests = isBatch ? payload : [payload];
+
+  if (!requests.length) {
+    return res.status(400).json(createJsonRpcError(null, -32600, "Invalid Request"));
+  }
+
+  const responses = [];
+
+  for (const message of requests) {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      responses.push(createJsonRpcError(null, -32600, "Invalid Request"));
+      continue;
+    }
+
+    const hasId = Object.prototype.hasOwnProperty.call(message, "id");
+    const id = hasId ? message.id : null;
+    const isJsonRpc = message.jsonrpc === "2.0";
+    const method = typeof message.method === "string" ? message.method : "";
+
+    if (!isJsonRpc || !method) {
+      if (hasId) {
+        responses.push(createJsonRpcError(id, -32600, "Invalid Request"));
+      } else {
+        responses.push(createJsonRpcError(null, -32600, "Invalid Request"));
+      }
+      continue;
+    }
+
+    try {
+      const result = await handleMcpMethod(method, message.params, req);
+      if (hasId) {
+        responses.push(createJsonRpcResult(id, result));
+      }
+    } catch (err) {
+      if (!hasId) continue;
+      const code = Number.isInteger(err?.code) ? err.code : -32603;
+      const errorMessage = err?.message ? String(err.message) : "Internal error";
+      responses.push(createJsonRpcError(id, code, errorMessage, err?.data));
+    }
+  }
+
+  if (responses.length === 0) {
+    return res.status(204).end();
+  }
+
+  if (isBatch) {
+    return res.json(responses);
+  }
+  return res.json(responses[0]);
 });
 
 // --------------------------
