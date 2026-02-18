@@ -284,6 +284,28 @@ function isValidDocId(value){
   return /^[a-zA-Z0-9._-]+$/.test(String(value || ""));
 }
 
+function isValidCollectionName(value){
+  return /^[a-zA-Z0-9._-]+$/.test(String(value || ""));
+}
+
+function normalizeCollectionName(value){
+  const clean = String(value || "").trim();
+  return clean || "default";
+}
+
+function getPlaygroundCollection(options = {}){
+  const input = $("playCollection");
+  const collection = normalizeCollectionName(input ? input.value : "default");
+  if (input) input.value = collection;
+
+  if (!isValidCollectionName(collection)){
+    const message = "Collection must use only letters, numbers, dot, dash, or underscore (no spaces).";
+    if (options.bannerEl) setBanner(options.bannerEl, "err", message);
+    return null;
+  }
+  return collection;
+}
+
 function getSelectedDocIds(selectEl){
   if (!selectEl) return [];
   return Array.from(selectEl.selectedOptions || [])
@@ -332,13 +354,20 @@ async function loadDocsList(){
     return;
   }
 
-  setDocsStatus("Loading docs...");
+  const collection = getPlaygroundCollection();
+  if (!collection){
+    setDocsStatus("Collection is invalid.");
+    setDocOptions([]);
+    return;
+  }
+
+  setDocsStatus(`Loading docs in "${collection}"...`);
   try{
-    const res = await fetch("/docs/list", { headers: apiHeaders() });
+    const res = await fetch(`/docs/list?collection=${encodeURIComponent(collection)}`, { headers: apiHeaders() });
     const data = await res.json();
     if (res.ok && Array.isArray(data.docs)){
       setDocOptions(data.docs);
-      setDocsStatus(`${data.docs.length} doc(s) available.`);
+      setDocsStatus(`${data.docs.length} doc(s) available in "${collection}".`);
     }else{
       setDocsStatus(data.error || "Failed to load docs.");
       setDocOptions([]);
@@ -346,6 +375,57 @@ async function loadDocsList(){
   }catch(e){
     setDocsStatus("Error loading docs.");
     setDocOptions([]);
+  }
+}
+
+function setCollectionScopeOptions(collections){
+  const names = Array.from(new Set(
+    (Array.isArray(collections) ? collections : [])
+      .map((name) => String(name || "").trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  const selects = [$("searchCollectionScope"), $("askCollectionScope")].filter(Boolean);
+  selects.forEach((selectEl) => {
+    const previous = String(selectEl.value || "all");
+    selectEl.innerHTML = "";
+
+    const allOpt = document.createElement("option");
+    allOpt.value = "all";
+    allOpt.textContent = "All collections";
+    selectEl.appendChild(allOpt);
+
+    names.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      selectEl.appendChild(opt);
+    });
+
+    const hasPrevious = Array.from(selectEl.options).some((opt) => opt.value === previous);
+    selectEl.value = hasPrevious ? previous : "all";
+  });
+}
+
+async function loadCollectionScopeOptions(){
+  if (!loadStoredAuth().token){
+    setCollectionScopeOptions([]);
+    return;
+  }
+
+  try{
+    const res = await fetch("/v1/collections", { headers: apiHeaders() });
+    const data = await res.json();
+    if (res.ok && data.ok && Array.isArray(data.data?.collections)){
+      const names = data.data.collections
+        .map((row) => row?.collection)
+        .filter(Boolean);
+      setCollectionScopeOptions(names);
+    } else {
+      setCollectionScopeOptions([]);
+    }
+  }catch{
+    setCollectionScopeOptions([]);
   }
 }
 
@@ -1393,6 +1473,7 @@ async function fetchCollections(){
       renderCollections(data.data.collections);
       $("collectionsUpdated").textContent = new Date().toLocaleString();
       setBanner($("collectionsBanner"), "ok", "Collections loaded.");
+      loadCollectionScopeOptions();
     }else{
       renderCollections([]);
       const msg = data?.error?.message || data?.error || "Failed to load collections.";
@@ -1524,7 +1605,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("playTabAsk").onclick = () => showPlayPane("playPaneAsk");
 
   if (!openPageFromHash({ smooth: false })) {
-    showPage("pagePlayground");
+    showPage("pageProduct");
   }
   window.addEventListener("hashchange", () => {
     openPageFromHash({ smooth: true });
@@ -1545,9 +1626,10 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
     saveStoredAuth(authType, key);
-    setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
-    loadDocsList();
-  };
+      setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
+      loadDocsList();
+      loadCollectionScopeOptions();
+    };
 
   $("loginBtn").onclick = async () => {
     clearBanner($("settingsBanner"));
@@ -1576,6 +1658,7 @@ window.addEventListener("DOMContentLoaded", () => {
         $("loginPass").value = "";
         setBanner($("settingsBanner"), "ok", "Token saved. You can now Index, Search, and Ask.");
         loadDocsList();
+        loadCollectionScopeOptions();
       }else{
         setBanner($("settingsBanner"), "err", data.error || "Login failed.");
       }
@@ -1594,6 +1677,7 @@ window.addEventListener("DOMContentLoaded", () => {
     setBanner($("settingsBanner"), "ok", "Removed saved token.");
     setDocsStatus("Save a token to load docs.");
     setDocOptions([]);
+    setCollectionScopeOptions([]);
   };
 
   $("createApiKeyBtn").onclick = async () => {
@@ -1674,6 +1758,7 @@ window.addEventListener("DOMContentLoaded", () => {
     saveStoredAuth("api_key", token);
     setBanner($("apiKeyBanner"), "ok", "API key saved. You can now Index, Search, and Ask.");
     loadDocsList();
+    loadCollectionScopeOptions();
   };
 
   $("copyCreatedApiKeyBtn").onclick = async () => {
@@ -1710,16 +1795,33 @@ window.addEventListener("DOMContentLoaded", () => {
     clearBanner($("indexBanner"));
   };
 
-  $("searchDocsRefreshBtn").onclick = () => loadDocsList();
-  $("searchDocsAllBtn").onclick = () => clearDocSelection($("searchDocs"));
-  $("askDocsRefreshBtn").onclick = () => loadDocsList();
-  $("askDocsAllBtn").onclick = () => clearDocSelection($("askDocs"));
+  if ($("searchCollectionScope")) {
+    $("searchCollectionScope").addEventListener("focus", () => {
+      loadCollectionScopeOptions();
+    });
+  }
+  if ($("askCollectionScope")) {
+    $("askCollectionScope").addEventListener("focus", () => {
+      loadCollectionScopeOptions();
+    });
+  }
 
   $("docUrl").addEventListener("blur", () => {
     if ($("docId").value.trim()) return;
     const suggested = suggestDocIdFromUrl($("docUrl").value.trim());
     if (suggested) $("docId").value = suggested;
   });
+
+  const collectionInput = $("playCollection");
+  if (collectionInput){
+    collectionInput.addEventListener("blur", () => {
+      collectionInput.value = normalizeCollectionName(collectionInput.value);
+    });
+    collectionInput.addEventListener("change", () => {
+      collectionInput.value = normalizeCollectionName(collectionInput.value);
+      loadDocsList();
+    });
+  }
 
   $("docFile").addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -1769,6 +1871,9 @@ window.addEventListener("DOMContentLoaded", () => {
     clearBanner($("indexBanner"));
     if (!requireKeyOrWarn($("indexBanner"))) return;
 
+    const collection = getPlaygroundCollection({ bannerEl: $("indexBanner") });
+    if (!collection) return;
+
     let docId = $("docId").value.trim();
     const text = $("docText").value.trim();
     const url = $("docUrl").value.trim();
@@ -1796,7 +1901,7 @@ window.addEventListener("DOMContentLoaded", () => {
         res = await fetch("/docs/url", {
           method:"POST",
           headers: apiHeaders(),
-          body: JSON.stringify({ docId, url })
+          body: JSON.stringify({ docId, url, collection })
         });
       }else{
         if (!text.trim()){
@@ -1806,7 +1911,7 @@ window.addEventListener("DOMContentLoaded", () => {
         res = await fetch("/docs", {
           method:"POST",
           headers: apiHeaders(),
-          body: JSON.stringify({ docId, text })
+          body: JSON.stringify({ docId, text, collection })
         });
       }
 
@@ -1816,10 +1921,11 @@ window.addEventListener("DOMContentLoaded", () => {
       if (res.ok && data.ok){
         const extra = data.truncated || data.docTruncated ? " (truncated)" : "";
         const sourceLabel = url ? " from URL" : "";
-        setBanner($("indexBanner"), "ok", `Indexed "${docId}"${sourceLabel}${extra} (${data.chunksIndexed} chunks).`);
+        setBanner($("indexBanner"), "ok", `Indexed "${docId}"${sourceLabel} in "${collection}"${extra} (${data.chunksIndexed} chunks).`);
         showPage("pagePlayground");
         showPlayPane("playPaneSearch");
         loadDocsList();
+        loadCollectionScopeOptions();
       }else{
         setBanner($("indexBanner"), "err", data.error || "Index failed.");
       }
@@ -1843,7 +1949,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const q = $("searchQ").value.trim();
     const k = parseInt($("searchK").value || "5", 10);
-    const docIds = getSelectedDocIds($("searchDocs"));
+    const scope = String($("searchCollectionScope")?.value || "all").trim();
 
     if (!q){
       setBanner($("searchBanner"), "err", "Please enter a search query.");
@@ -1854,8 +1960,11 @@ window.addEventListener("DOMContentLoaded", () => {
     $("searchBtn").textContent = "Searching...";
 
     try{
-      const docParam = docIds.length ? `&docIds=${encodeURIComponent(docIds.join(","))}` : "";
-      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}${docParam}`, {
+      const effectiveCollection = scope === "all" ? null : scope;
+      const collectionParam = effectiveCollection
+        ? `&collection=${encodeURIComponent(effectiveCollection)}`
+        : "&collectionScope=all";
+      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}${collectionParam}`, {
         headers: apiHeaders()
       });
 
@@ -1863,7 +1972,8 @@ window.addEventListener("DOMContentLoaded", () => {
       $("searchRaw").textContent = JSON.stringify(data, null, 2);
 
       if (res.ok && data.results){
-        setBanner($("searchBanner"), "ok", `Found ${data.results.length} result(s).`);
+        const label = effectiveCollection || "all collections";
+        setBanner($("searchBanner"), "ok", `Found ${data.results.length} result(s) in "${label}".`);
         renderSearch(data.results);
       }else{
         setBanner($("searchBanner"), "err", data.error || "Search failed.");
@@ -1888,7 +1998,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const question = $("askQ").value.trim();
     const k = parseInt($("askK").value || "5", 10);
-    const docIds = getSelectedDocIds($("askDocs"));
+    const scope = String($("askCollectionScope")?.value || "all").trim();
 
     if (!question){
       setBanner($("askBanner"), "err", "Please enter a question.");
@@ -1899,17 +2009,25 @@ window.addEventListener("DOMContentLoaded", () => {
     $("askBtn").textContent = "Thinking...";
 
     try{
+      const body = { question, k };
+      if (scope === "all"){
+        body.collectionScope = "all";
+      } else {
+        body.collection = scope;
+      }
+
       const res = await fetch("/ask", {
         method:"POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ question, k, docIds })
+        body: JSON.stringify(body)
       });
 
       const data = await res.json();
       $("askRaw").textContent = JSON.stringify(data, null, 2);
 
       if (res.ok && data.answer){
-        setBanner($("askBanner"), "ok", "Answer generated.");
+        const label = scope === "all" ? "all collections" : scope;
+        setBanner($("askBanner"), "ok", `Answer generated from "${label}".`);
         renderAnswer(data);
       }else{
         setBanner($("askBanner"), "err", data.error || "Ask failed.");
@@ -1966,4 +2084,5 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   loadDocsList();
+  loadCollectionScopeOptions();
 });

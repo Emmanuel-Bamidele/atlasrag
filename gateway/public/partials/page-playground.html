@@ -1,5 +1,5 @@
         <!-- PAGE: PLAYGROUND -->
-        <section class="page active" id="pagePlayground" role="tabpanel">
+        <section class="page" id="pagePlayground" role="tabpanel">
           <div class="playground">
             <div class="playground-head">
               <div>
@@ -28,11 +28,16 @@
 
                 <div class="row">
                   <div class="field">
+                    <label for="playCollection">Collection</label>
+                    <input id="playCollection" value="default" placeholder="default">
+                    <div class="hint">Collection is your content bucket/namespace. Use <span class="mono">default</span> if you do not need separation. Valid names use only letters, numbers, <span class="mono">.</span>, <span class="mono">-</span>, and <span class="mono">_</span> (example: <span class="mono">team_docs</span>, <span class="mono">v2.alpha</span>). Invalid: spaces or characters like <span class="mono">/</span>, <span class="mono">#</span>, <span class="mono">?</span>.</div>
+                  </div>
+                  <div class="field">
                     <label for="docId">Doc ID</label>
                     <input id="docId" placeholder="example: onboarding-notes">
                     <div class="hint">Use letters, numbers, dot, dash, or underscore (no spaces).</div>
                   </div>
-                  <div class="field">
+                  <div class="field field-full">
                     <label>Indexing pipeline</label>
                     <div class="hint">
                       We split the text into chunks, embed each chunk, store vectors in the C++ TCP service,
@@ -91,26 +96,14 @@
                     <input id="searchK" value="5" placeholder="example: 5">
                     <div class="hint">Higher K returns more chunks (slower + more context).</div>
                   </div>
-                </div>
-
-                <details class="details play-scope">
-                  <summary>Doc scope (optional)</summary>
-                  <div class="row" style="margin-top:12px;">
-                    <div class="field">
-                      <label for="searchDocs">Docs to search</label>
-                      <select id="searchDocs" multiple size="6"></select>
-                      <div class="hint">Leave empty to search all accessible docs. Use Cmd/Ctrl to multi-select.</div>
-                    </div>
-                    <div class="field">
-                      <label>Docs list</label>
-                      <div class="actions">
-                        <button class="btn secondary" id="searchDocsRefreshBtn">Refresh list</button>
-                        <button class="btn secondary" id="searchDocsAllBtn">All docs</button>
-                      </div>
-                      <div class="hint" id="searchDocsStatus">-</div>
-                    </div>
+                  <div class="field">
+                    <label for="searchCollectionScope">Collection scope</label>
+                    <select id="searchCollectionScope">
+                      <option value="all" selected>All collections</option>
+                    </select>
+                    <div class="hint">Scope retrieval to one collection, or keep <span class="mono">All collections</span>.</div>
                   </div>
-                </details>
+                </div>
 
                 <div class="actions">
                   <button class="btn" id="searchBtn">Search</button>
@@ -144,26 +137,14 @@
                     <input id="askK" value="5" placeholder="example: 5">
                     <div class="hint">We retrieve top-K chunks, then ask the model to answer using them.</div>
                   </div>
-                </div>
-
-                <details class="details play-scope">
-                  <summary>Doc scope (optional)</summary>
-                  <div class="row" style="margin-top:12px;">
-                    <div class="field">
-                      <label for="askDocs">Docs to query</label>
-                      <select id="askDocs" multiple size="6"></select>
-                      <div class="hint">Leave empty to query all accessible docs. Use Cmd/Ctrl to multi-select.</div>
-                    </div>
-                    <div class="field">
-                      <label>Docs list</label>
-                      <div class="actions">
-                        <button class="btn secondary" id="askDocsRefreshBtn">Refresh list</button>
-                        <button class="btn secondary" id="askDocsAllBtn">All docs</button>
-                      </div>
-                      <div class="hint" id="askDocsStatus">-</div>
-                    </div>
+                  <div class="field">
+                    <label for="askCollectionScope">Collection scope</label>
+                    <select id="askCollectionScope">
+                      <option value="all" selected>All collections</option>
+                    </select>
+                    <div class="hint">Scope answer retrieval to one collection, or keep <span class="mono">All collections</span>.</div>
                   </div>
-                </details>
+                </div>
 
                 <div class="actions">
                   <button class="btn" id="askBtn">Generate answer</button>

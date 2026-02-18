@@ -823,6 +823,38 @@ function resolveCollection(req, options = {}) {
   return collection;
 }
 
+function resolveCollectionScope(req, options = {}) {
+  const rawScope = req.body?.collectionScope ?? req.query?.collectionScope;
+  const scope = String(rawScope || "").trim().toLowerCase();
+  const rawCollection = req.body?.collection ?? req.query?.collection;
+  const cleanRaw = rawCollection === undefined || rawCollection === null
+    ? ""
+    : String(rawCollection).trim();
+  const defaultAll = options.defaultAll === true;
+  const track = options.track !== false;
+
+  if (scope === "all" || cleanRaw === "*" || cleanRaw.toLowerCase() === "all") {
+    if (req && track) req.collection = null;
+    return null;
+  }
+
+  if (!cleanRaw && defaultAll) {
+    if (req && track) req.collection = null;
+    return null;
+  }
+
+  if (!cleanRaw) {
+    return resolveCollection(req, options);
+  }
+
+  if (!COLLECTION_RE.test(cleanRaw)) {
+    throw new Error("collection must use only letters, numbers, dot, dash, or underscore (no spaces)");
+  }
+
+  if (req && track) req.collection = cleanRaw;
+  return cleanRaw;
+}
+
 function namespaceDocId(tenantId, collection, docId) {
   return `${tenantId}::${collection}::${docId}`;
 }
@@ -5020,7 +5052,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
-    const collection = resolveCollection(req);
+    const collection = resolveCollectionScope(req, { defaultAll: true });
 
     const result = await answerQuestion({
       tenantId,
@@ -5066,7 +5098,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
-    collection = resolveCollection(req);
+    collection = resolveCollectionScope(req, { defaultAll: true });
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -5185,7 +5217,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     const tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
-    const collection = resolveCollection(req);
+    const collection = resolveCollectionScope(req, { defaultAll: true });
 
     const results = await searchChunks({
       tenantId,
@@ -5233,7 +5265,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
   try {
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
-    collection = resolveCollection(req);
+    collection = resolveCollectionScope(req, { defaultAll: true });
     const results = await searchChunks({
       tenantId,
       collection,

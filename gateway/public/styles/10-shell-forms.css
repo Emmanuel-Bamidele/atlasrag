@@ -30,6 +30,10 @@
   gap: 16px;
 }
 
+.field.field-full{
+  grid-column: 1 / -1;
+}
+
 .playground{
   display:flex;
   flex-direction: column;
