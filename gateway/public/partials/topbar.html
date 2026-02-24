@@ -22,10 +22,13 @@
           <span class="dot" id="healthDot"></span>
           <span id="healthText">Checking /health...</span>
         </div>
-        <div class="pill">
-          <span>Protected endpoints use</span>
-          <span class="mono">Authorization: Bearer</span>
-          <span class="mono">/ X-API-Key</span>
+        <div class="pill pill-auth">
+          <span class="pill-auth-label">Protected endpoints use</span>
+          <span class="pill-auth-values">
+            <span class="pill-auth-token mono">Authorization: Bearer</span>
+            <span class="pill-auth-sep">or</span>
+            <span class="pill-auth-token mono">X-API-Key</span>
+          </span>
         </div>
       </div>
     </header>

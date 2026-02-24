@@ -164,6 +164,21 @@
   .status{ justify-content:flex-start; }
 }
 
+@media (max-width: 760px){
+  .nav{
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 7px 9px;
+  }
+
+  .tab{
+    padding: 6px 9px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+}
+
 .field label{
   display:block;
   font-size: 12px;

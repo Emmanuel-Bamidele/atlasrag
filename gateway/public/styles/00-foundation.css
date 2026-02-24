@@ -221,6 +221,43 @@ body.light-theme .theme-toggle:hover{
   backdrop-filter: blur(6px);
 }
 
+.pill-auth{
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.pill-auth-label{
+  color: var(--muted);
+}
+
+.pill-auth-values{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill-auth-token{
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(7,16,18,0.42);
+  color: rgba(232,242,242,0.92);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.pill-auth-sep{
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .dot{
   width: 8px;
   height: 8px;
@@ -253,6 +290,12 @@ body.light-theme .pill{
   background: #ffffff;
   border-color: rgba(26,54,70,0.18);
   color: var(--text);
+}
+
+body.light-theme .pill-auth-token{
+  background: #f4f8fb;
+  border-color: rgba(26,54,70,0.18);
+  color: #1f3a48;
 }
 
 body.light-theme .btn{
@@ -436,4 +479,27 @@ body.light-theme .amv-equation{
 
 body.light-theme .table tr:hover{
   background: rgba(14,158,148,0.08);
+}
+
+@media (max-width: 760px){
+  .status{
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .pill-auth{
+    width: 100%;
+    align-items: flex-start;
+    border-radius: 14px;
+    padding: 8px 10px;
+  }
+
+  .pill-auth-values{
+    width: 100%;
+    gap: 6px;
+  }
+
+  .pill-auth-sep{
+    display: none;
+  }
 }
