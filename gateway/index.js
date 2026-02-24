@@ -96,11 +96,22 @@ const {
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, "public");
-const UI_TEMPLATE_PATH = path.join(PUBLIC_DIR, "index.html");
+const UI_TEMPLATE_CANDIDATES = ["index.html", "index.swift"];
 const UI_PARTIALS_DIR = path.join(PUBLIC_DIR, "partials");
 
+function resolveUiTemplatePath() {
+  for (const fileName of UI_TEMPLATE_CANDIDATES) {
+    const candidate = path.join(PUBLIC_DIR, fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error(`Missing UI template. Expected one of: ${UI_TEMPLATE_CANDIDATES.join(", ")}`);
+}
+
 function renderPublicUiTemplate() {
-  const template = fs.readFileSync(UI_TEMPLATE_PATH, "utf8");
+  const templatePath = resolveUiTemplatePath();
+  const template = fs.readFileSync(templatePath, "utf8");
   return template.replace(/<!--\s*@@include:([a-z0-9._-]+)\s*-->/gi, (match, partialName) => {
     const clean = String(partialName || "").trim().toLowerCase();
     if (!/^[a-z0-9._-]+$/.test(clean)) {
