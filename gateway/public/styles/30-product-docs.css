@@ -438,6 +438,7 @@ body.light-theme .product-arch{
   }
 
   .product-positioning .product-lane{
+    flex: 0 0 auto;
     padding: 8px 9px;
     border-radius: 10px;
   }
