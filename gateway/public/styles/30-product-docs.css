@@ -146,6 +146,73 @@
   margin: 0 auto;
 }
 
+.product-arch-mobile{
+  display: none;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.product-arch-layer{
+  border: 1px solid rgba(226,232,240,0.16);
+  border-radius: 12px;
+  background: rgba(10,22,24,0.58);
+  padding: 10px;
+}
+
+.product-arch-layer h4{
+  margin: 0 0 5px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgba(232,242,242,0.95);
+}
+
+.product-arch-layer p{
+  margin: 0;
+  color: rgba(232,242,242,0.84);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.product-arch-layer p + p{
+  margin-top: 6px;
+}
+
+.product-arch-layer-platform{
+  border-color: rgba(61,213,200,0.3);
+  background: rgba(8,19,21,0.68);
+}
+
+.product-arch-mobile-api{
+  color: rgba(205,230,227,0.92);
+}
+
+.product-arch-mobile-grid{
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.product-arch-mobile-card{
+  border: 1px solid rgba(61,213,200,0.26);
+  border-radius: 10px;
+  background: rgba(6,14,16,0.66);
+  padding: 8px 9px;
+}
+
+.product-arch-mobile-card h5{
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(61,213,200,0.96);
+}
+
+.product-arch-mobile-card p{
+  margin: 0;
+  font-size: 11px;
+}
+
 .product-chip-row{
   margin-top: 14px;
   display: flex;
@@ -280,10 +347,12 @@
     font-size: 11px;
   }
 
-  .product-arch-svg{
-    width: 560px;
-    min-width: 100%;
-    max-width: none;
+  .product-arch-scroll{
+    display: none;
+  }
+
+  .product-arch-mobile{
+    display: grid;
   }
 
   .product-hero-layout{

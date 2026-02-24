@@ -93,6 +93,44 @@
                         <path class="soft" d="M730 160 L730 138"/>
                       </svg>
                     </div>
+                    <div class="product-arch-mobile" aria-label="AtlasRAG architecture summary for mobile">
+                      <article class="product-arch-layer">
+                        <h4>End Users (outside AtlasRAG)</h4>
+                        <p>Web app users, mobile users, and Slack/Teams users.</p>
+                      </article>
+                      <article class="product-arch-layer">
+                        <h4>Builder-owned App / Agent Layer (outside AtlasRAG)</h4>
+                        <p>Chatbot UI, customer copilots, support assistants, knowledge portals, and workflow systems.</p>
+                        <p>Agent runtime/orchestrator (LangChain or custom code), retrieval QA surfaces, and multi-agent workflows.</p>
+                        <p>Approval chains, tool routing, domain actions, compliance workflows, and business automation pipelines.</p>
+                      </article>
+                      <article class="product-arch-layer product-arch-layer-platform">
+                        <h4>AtlasRAG Platform Layer</h4>
+                        <p class="product-arch-mobile-api">Gateway APIs: /v1/ask | /v1/search | /v1/memory/* | /v1/feedback</p>
+                        <div class="product-arch-mobile-grid">
+                          <div class="product-arch-mobile-card">
+                            <h5>INGEST</h5>
+                            <p>Docs / URLs, SDK/API writes, tenant + ACL policy.</p>
+                          </div>
+                          <div class="product-arch-mobile-card">
+                            <h5>RUN</h5>
+                            <p>AtlasRAG Gateway, C++ vector core, Postgres memory store.</p>
+                          </div>
+                          <div class="product-arch-mobile-card">
+                            <h5>SERVE</h5>
+                            <p>Search, ask, memory recall, and job status.</p>
+                          </div>
+                          <div class="product-arch-mobile-card">
+                            <h5>OBSERVE</h5>
+                            <p>Telemetry, metrics, traces, and logs.</p>
+                          </div>
+                          <div class="product-arch-mobile-card">
+                            <h5>IMPROVE</h5>
+                            <p>AMV-L, TTL sweep, reflection, and feedback jobs.</p>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
                   </section>
                   <div class="product-chip-row">
                     <span class="product-chip">C++ vector core</span>
