@@ -38,6 +38,10 @@ if (Number.isFinite(DB_STATEMENT_TIMEOUT_MS) && DB_STATEMENT_TIMEOUT_MS > 0) {
 
 const pool = new Pool(poolConfig);
 
+const MEMORY_ITEM_SELECT_COLUMNS = `id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
+            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, tier, value_last_update_ts, tier_last_update_ts, reuse_count, last_used_at, utility_ema,
+            redundancy_score, trust_score, importance_hint, pinned`;
+
 // Save a chunk row
 async function saveChunk({ chunkId, docId, idx, text }) {
   await pool.query(
@@ -149,6 +153,18 @@ async function getChunksByDocId(docId) {
   return res.rows;
 }
 
+async function getChunksByDocIds(docIds) {
+  if (!Array.isArray(docIds) || docIds.length === 0) return [];
+  const res = await pool.query(
+    `SELECT chunk_id, doc_id, idx, text
+     FROM chunks
+     WHERE doc_id = ANY($1)
+     ORDER BY doc_id ASC, idx ASC`,
+    [docIds]
+  );
+  return res.rows;
+}
+
 // Delete all chunks for a docId
 async function deleteDoc(docId) {
   await pool.query(`DELETE FROM chunks WHERE doc_id = $1`, [docId]);
@@ -223,7 +239,11 @@ async function upsertMemoryItem({
   agentId,
   tags,
   importanceHint,
-  pinned
+  pinned,
+  initialValueScore,
+  initialTier,
+  valueLastUpdateTs,
+  tierLastUpdateTs
 }) {
   await ensureTenant(tenantId);
   if (!itemType) {
@@ -235,6 +255,13 @@ async function upsertMemoryItem({
   const aclList = Array.isArray(acl) && acl.length ? acl : null;
   const tagList = Array.isArray(tags) && tags.length ? tags : null;
   const cleanAgentId = agentId || null;
+  const tierRaw = String(initialTier || "WARM").trim().toUpperCase();
+  const cleanTier = tierRaw === "HOT" || tierRaw === "COLD" ? tierRaw : "WARM";
+  const nowMs = Date.now();
+  const cleanValueScore = Number(initialValueScore);
+  const valueScore = Number.isFinite(cleanValueScore) ? cleanValueScore : 0.5;
+  const valueTs = Number.isFinite(valueLastUpdateTs) ? Math.floor(valueLastUpdateTs) : nowMs;
+  const tierTs = Number.isFinite(tierLastUpdateTs) ? Math.floor(tierLastUpdateTs) : valueTs;
   const payload = [
     id,
     tenantId,
@@ -253,14 +280,18 @@ async function upsertMemoryItem({
     namespaceId || id,
     expiresAt ? new Date(expiresAt) : null,
     importanceHint === undefined ? null : Number(importanceHint),
-    pinned === undefined ? null : Boolean(pinned)
+    pinned === undefined ? null : Boolean(pinned),
+    valueScore,
+    cleanTier,
+    valueTs,
+    tierTs
   ];
 
   let sql = `INSERT INTO memory_items(
       id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-      title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned
+      title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned, value_score, tier, value_last_update_ts, tier_last_update_ts
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
     ON CONFLICT (tenant_id, collection, item_type, external_id)
     DO UPDATE SET
       principal_id = EXCLUDED.principal_id,
@@ -275,17 +306,15 @@ async function upsertMemoryItem({
       expires_at = EXCLUDED.expires_at,
       importance_hint = EXCLUDED.importance_hint,
       pinned = EXCLUDED.pinned
-    RETURNING id, namespace_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score, trust_score,
-              importance_hint, pinned, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title, source_type,
-              source_url, metadata, tenant_id, collection`;
+    RETURNING ${MEMORY_ITEM_SELECT_COLUMNS}`;
 
   if (createdAt) {
     payload.push(new Date(createdAt));
     sql = `INSERT INTO memory_items(
         id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals,
-        title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned, created_at
+        title, source_type, source_url, metadata, namespace_id, expires_at, importance_hint, pinned, value_score, tier, value_last_update_ts, tier_last_update_ts, created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT (tenant_id, collection, item_type, external_id)
       DO UPDATE SET
         principal_id = EXCLUDED.principal_id,
@@ -300,9 +329,7 @@ async function upsertMemoryItem({
         expires_at = EXCLUDED.expires_at,
         importance_hint = EXCLUDED.importance_hint,
         pinned = EXCLUDED.pinned
-      RETURNING id, namespace_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score, trust_score,
-                importance_hint, pinned, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title, source_type,
-                source_url, metadata, tenant_id, collection`;
+      RETURNING ${MEMORY_ITEM_SELECT_COLUMNS}`;
   }
 
   const res = await pool.query(sql, payload);
@@ -367,9 +394,7 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
-            redundancy_score, trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
     params
@@ -380,6 +405,167 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
     map.set(row.namespace_id, row);
   }
   return map;
+}
+
+function buildTierScopedMemoryFilter({
+  tenantId,
+  collection,
+  tier,
+  types,
+  since,
+  until,
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId
+}) {
+  const clauses = ["tenant_id = $1"];
+  const params = [tenantId];
+  const aclPrincipals = new Set();
+  if (Array.isArray(privileges)) {
+    for (const item of privileges) {
+      const clean = String(item || "").trim();
+      if (clean) aclPrincipals.add(clean);
+    }
+  }
+  if (principalId) {
+    aclPrincipals.add(principalId);
+  }
+
+  if (collection) {
+    params.push(collection);
+    clauses.push(`collection = $${params.length}`);
+  }
+  if (tier) {
+    params.push(String(tier).trim().toUpperCase());
+    clauses.push(`tier = $${params.length}`);
+  }
+  if (types && types.length) {
+    params.push(types);
+    clauses.push(`item_type = ANY($${params.length})`);
+  }
+  if (agentId) {
+    params.push(agentId);
+    clauses.push(`agent_id = $${params.length}`);
+  }
+  if (tags && tags.length) {
+    params.push(tags);
+    clauses.push(`tags && $${params.length}`);
+  }
+  if (since) {
+    params.push(since);
+    clauses.push(`created_at >= $${params.length}`);
+  }
+  if (until) {
+    params.push(until);
+    clauses.push(`created_at <= $${params.length}`);
+  }
+  if (excludeExpired) {
+    clauses.push(`(expires_at IS NULL OR expires_at > NOW())`);
+  }
+  if (principalId || aclPrincipals.size > 0) {
+    const visibilityClauses = [
+      "visibility IS NULL",
+      "visibility = 'tenant'"
+    ];
+    if (principalId) {
+      params.push(principalId);
+      const idx = params.length;
+      visibilityClauses.push(`(visibility = 'private' AND principal_id = $${idx})`);
+    }
+    if (aclPrincipals.size > 0) {
+      params.push(Array.from(aclPrincipals));
+      const idx = params.length;
+      visibilityClauses.push(`(visibility = 'acl' AND (principal_id = ANY($${idx}) OR COALESCE(acl_principals, ARRAY[]::TEXT[]) && $${idx}))`);
+    }
+    clauses.push(`(${visibilityClauses.join(" OR ")})`);
+  }
+  return { clauses, params };
+}
+
+async function listMemoryItemsByTier({
+  tenantId,
+  collection,
+  tier,
+  types,
+  since,
+  until,
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId,
+  limit,
+  sample
+}) {
+  const { clauses, params } = buildTierScopedMemoryFilter({
+    tenantId,
+    collection,
+    tier,
+    types,
+    since,
+    until,
+    excludeExpired,
+    principalId,
+    privileges,
+    tags,
+    agentId
+  });
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
+  if (cleanLimit > 0) {
+    params.push(cleanLimit);
+  }
+  const sampleMode = String(sample || "").trim().toLowerCase();
+  // Keep default ordering index-friendly; optionally switch to recency ordering for LRU-style retrieval experiments.
+  const orderBy = sampleMode === "lru"
+    ? "ORDER BY COALESCE(last_used_at, created_at) DESC NULLS LAST, id ASC"
+    : "ORDER BY value_score DESC NULLS LAST, id ASC";
+  const limitClause = cleanLimit > 0 ? `LIMIT $${params.length}` : "";
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ${orderBy}
+     ${limitClause}`,
+    params
+  );
+  return res.rows;
+}
+
+async function countMemoryItemsByTier({
+  tenantId,
+  collection,
+  tier,
+  types,
+  since,
+  until,
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId
+}) {
+  const { clauses, params } = buildTierScopedMemoryFilter({
+    tenantId,
+    collection,
+    tier,
+    types,
+    since,
+    until,
+    excludeExpired,
+    principalId,
+    privileges,
+    tags,
+    agentId
+  });
+  const res = await pool.query(
+    `SELECT COUNT(*)::bigint AS count
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}`,
+    params
+  );
+  return Number(res.rows[0]?.count || 0);
 }
 
 async function getMemoryItemById(id, tenantId, principalId) {
@@ -401,9 +587,7 @@ async function getMemoryItemById(id, tenantId, principalId) {
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
-            redundancy_score, trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}`,
     params
@@ -430,9 +614,7 @@ async function getArtifactByExternalId(tenantId, collection, externalId, princip
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
-            redundancy_score, trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
      LIMIT 1`,
@@ -517,8 +699,7 @@ async function listMemoryItemsForCompaction({ tenantId, collection, types, since
 
   params.push(limit);
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, visibility, acl_principals, title,
-            source_type, source_url, metadata, parent_id, created_at, expires_at
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
      ORDER BY created_at DESC
@@ -568,7 +749,10 @@ async function updateMemoryItemMetrics({
   trustScore,
   importanceHint,
   pinned,
-  valueScore
+  valueScore,
+  tier,
+  valueLastUpdateTs,
+  tierLastUpdateTs
 }) {
   const updates = [];
   const params = [id, tenantId];
@@ -604,6 +788,18 @@ async function updateMemoryItemMetrics({
     params.push(valueScore === null ? null : Number(valueScore));
     updates.push(`value_score = $${params.length}`);
   }
+  if (tier !== undefined) {
+    params.push(tier === null ? null : String(tier).trim().toUpperCase());
+    updates.push(`tier = $${params.length}`);
+  }
+  if (valueLastUpdateTs !== undefined) {
+    params.push(valueLastUpdateTs === null ? null : Math.floor(Number(valueLastUpdateTs)));
+    updates.push(`value_last_update_ts = $${params.length}`);
+  }
+  if (tierLastUpdateTs !== undefined) {
+    params.push(tierLastUpdateTs === null ? null : Math.floor(Number(tierLastUpdateTs)));
+    updates.push(`tier_last_update_ts = $${params.length}`);
+  }
 
   if (updates.length === 0) return null;
 
@@ -611,9 +807,7 @@ async function updateMemoryItemMetrics({
     `UPDATE memory_items
      SET ${updates.join(", ")}
      WHERE id = $1 AND tenant_id = $2
-     RETURNING id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-               source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema,
-               redundancy_score, trust_score, importance_hint, pinned`,
+     RETURNING ${MEMORY_ITEM_SELECT_COLUMNS}`,
     params
   );
   return res.rows[0] || null;
@@ -623,9 +817,7 @@ async function listMemoryItemsForValueDecay({ limit, afterId }) {
   const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200;
   if (afterId) {
     const res = await pool.query(
-      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-              trust_score, importance_hint, pinned
+      `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
        FROM memory_items
        WHERE id > $1
        ORDER BY id
@@ -636,9 +828,7 @@ async function listMemoryItemsForValueDecay({ limit, afterId }) {
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-            trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      ORDER BY id
      LIMIT $1`,
@@ -653,9 +843,7 @@ async function listMemoryItemsForRedundancy({ limit, afterId }) {
   if (afterId) {
     clauses.push(`id > $1`);
     const res = await pool.query(
-      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-              trust_score, importance_hint, pinned
+      `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
        FROM memory_items
        WHERE ${clauses.join(" AND ")}
        ORDER BY id
@@ -666,9 +854,7 @@ async function listMemoryItemsForRedundancy({ limit, afterId }) {
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-            trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
      ORDER BY id
@@ -684,9 +870,7 @@ async function listMemoryItemsForLifecycle({ limit, afterId }) {
   if (afterId) {
     clauses.push(`id > $1`);
     const res = await pool.query(
-      `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-              source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-              trust_score, importance_hint, pinned
+      `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
        FROM memory_items
        WHERE ${clauses.join(" AND ")}
        ORDER BY id
@@ -697,9 +881,7 @@ async function listMemoryItemsForLifecycle({ limit, afterId }) {
   }
 
   const res = await pool.query(
-    `SELECT id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
-            source_type, source_url, metadata, created_at, expires_at, value_score, reuse_count, last_used_at, utility_ema, redundancy_score,
-            trust_score, importance_hint, pinned
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
      WHERE ${clauses.join(" AND ")}
      ORDER BY id
@@ -1378,9 +1560,22 @@ async function getMemoryStateSnapshot(tenantId) {
     params
   );
 
+  const tiersRes = await pool.query(
+    `SELECT tier, COUNT(*)::bigint AS count
+     FROM memory_items
+     WHERE ${whereClause}
+     GROUP BY tier
+     ORDER BY tier ASC`,
+    params
+  );
+
   const typeDistribution = {};
   for (const row of typesRes.rows) {
     typeDistribution[row.item_type] = Number(row.count || 0);
+  }
+  const tierDistribution = {};
+  for (const row of tiersRes.rows) {
+    tierDistribution[String(row.tier || "WARM").toUpperCase()] = Number(row.count || 0);
   }
 
   const row = totalsRes.rows[0] || {};
@@ -1389,6 +1584,7 @@ async function getMemoryStateSnapshot(tenantId) {
     total_items: Number(row.total_items || 0),
     approx_tokens: Number(row.approx_tokens || 0),
     type_distribution: typeDistribution,
+    tier_distribution: tierDistribution,
     value_distribution: {
       null: Number(row.value_null || 0),
       lt_0: Number(row.value_lt_0 || 0),
@@ -1431,6 +1627,7 @@ module.exports = {
   getChunksByIds,
   searchChunksLexical,
   getChunksByDocId,
+  getChunksByDocIds,
   deleteDoc,
   countChunks,
   listChunksAfter,
@@ -1438,6 +1635,8 @@ module.exports = {
   upsertMemoryArtifact,
   upsertMemoryItem,
   getMemoryItemsByNamespaceIds,
+  listMemoryItemsByTier,
+  countMemoryItemsByTier,
   getMemoryItemById,
   deleteMemoryItemById,
   getArtifactByExternalId,

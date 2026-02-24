@@ -20,3 +20,12 @@ deploy/certs/
 telemetry/
 telemetry_analysis/
 gateway/telemetry/
+
+# Python local/dev artifacts
+.venv/
+__pycache__/
+*.pyc
+
+# Node local/dev artifacts
+node_modules/
+gateway/node_modules/

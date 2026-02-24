@@ -1,0 +1,42 @@
+{
+  "id": "baseline-amvl-default",
+  "policy": "AMV-L",
+  "description": "AMV-L production defaults for lifecycle/value/redundancy loops.",
+  "env": {
+    "TTL_SWEEP_INTERVAL_MS": "300000",
+    "MEMORY_VALUE_DECAY_INTERVAL_MS": "5000",
+    "MEMORY_REDUNDANCY_INTERVAL_MS": "5000",
+    "MEMORY_LIFECYCLE_INTERVAL_MS": "5000",
+    "MEMORY_LIFECYCLE_MIN_AGE_HOURS": "0",
+    "MEMORY_LIFECYCLE_MAX_DELETES": "200",
+    "MEMORY_LIFECYCLE_DRY_RUN": "0",
+    "MEMORY_LIFECYCLE_DELETE_THRESHOLD": "0.25",
+    "MEMORY_LIFECYCLE_SUMMARY_THRESHOLD": "0.45",
+    "MEMORY_LIFECYCLE_PROMOTE_THRESHOLD": "0.70",
+    "MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE": "5",
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_K": "8",
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER": "4",
+    "MEMORY_RETRIEVAL_WARM_SELECTION": "random",
+    "MEMORY_TIER_HOT_UP": "0.72",
+    "MEMORY_TIER_HOT_DOWN": "0.62",
+    "MEMORY_TIER_WARM_UP": "0.45",
+    "MEMORY_TIER_WARM_DOWN": "0.25",
+    "MEMORY_TIER_EVICT": "0.20",
+    "MEMORY_INIT_VALUE": "0.50",
+    "MEMORY_ACCESS_ALPHA": "0.08",
+    "MEMORY_CONTRIBUTION_BETA": "0.20",
+    "MEMORY_NEGATIVE_STEP": "0.08"
+  },
+  "workload": {
+    "writes": 50000,
+    "min_asks": 10000,
+    "recall_k": 24,
+    "ask_k": 48,
+    "ttl_seconds": 2592000,
+    "snapshot_every": 1000,
+    "concurrency": 24,
+    "log_every": 1000,
+    "request_timeout_ms": 120000,
+    "max_retries": 5
+  }
+}

@@ -53,6 +53,12 @@ function normalizeVector(values) {
   return values;
 }
 
+function estimateTokensFromText(text) {
+  const chars = String(text || "").length;
+  if (!Number.isFinite(chars) || chars <= 0) return 0;
+  return Math.max(1, Math.ceil(chars / 4));
+}
+
 function fallbackEmbedding(text) {
   const dim = Number.isFinite(FALLBACK_DIM) && FALLBACK_DIM > 8 ? Math.floor(FALLBACK_DIM) : 1536;
   const vector = new Array(dim).fill(0);
@@ -78,6 +84,13 @@ function fallbackEmbedding(text) {
 
 function fallbackEmbeddings(texts, reason, usage) {
   warnFallback(reason);
+  let estimatedPromptTokens = 0;
+  for (const text of texts) {
+    estimatedPromptTokens += estimateTokensFromText(text);
+  }
+  usage.prompt_tokens += estimatedPromptTokens;
+  usage.total_tokens += estimatedPromptTokens;
+  usage.estimated = true;
   const vectors = texts.map((text) => fallbackEmbedding(text));
   usage.fallback = true;
   return vectors;

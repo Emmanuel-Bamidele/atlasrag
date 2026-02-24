@@ -1,104 +1,164 @@
 const assert = require("assert");
-const { computeValueScore } = require("../memory_value");
+const { __testHooks } = require("../index");
 
-function approxEqual(actual, expected, eps = 1e-6) {
-  assert.ok(Math.abs(actual - expected) <= eps, `expected ${actual} to be within ${eps} of ${expected}`);
+assert(__testHooks, "expected __testHooks export from gateway/index.js");
+
+const {
+  normalizeTier,
+  resolveTierForValue,
+  resolveInitialValueScore,
+  decayMemoryValue,
+  buildValueUpdateForMemory,
+  MEMORY_TIER_THRESHOLDS,
+  MEMORY_VALUE_MAX,
+  MEMORY_VALUE_DECAY_LAMBDA,
+  MEMORY_ACCESS_ALPHA,
+  MEMORY_CONTRIBUTION_BETA
+} = __testHooks;
+
+function approxEqual(actual, expected, eps = 1e-8) {
+  assert.ok(
+    Math.abs(actual - expected) <= eps,
+    `expected ${actual} to be within ${eps} of ${expected}`
+  );
 }
 
-const NOW = new Date("2026-02-14T00:00:00Z");
+const NOW = Date.parse("2026-02-18T00:00:00Z");
+const DAY_MS = 86400000;
 
 (() => {
-  const score = computeValueScore({
-    reuse_count: 2,
-    utility_ema: 0.3,
-    redundancy_score: 0.2,
-    trust_score: 0.6,
-    importance_hint: 0.1,
-    last_used_at: NOW,
-    created_at: new Date("2026-02-01T00:00:00Z"),
-    tokens_est: 500
-  }, {
-    now: NOW,
-    recencyHalfLifeDays: 30,
-    costScaleTokens: 2000
-  });
-
-  const R = Math.log1p(2);
-  const U = 0.3;
-  const N = 1 - 0.2;
-  const T = 0.6;
-  const A = 1;
-  const H = 0.1;
-  const C = 500 / 2000;
-  const x = 1.2 * R + 2.0 * U + 1.0 * N + 1.0 * T + 0.5 * A + 1.0 * H - 1.0 * C;
-  const expected = 1 / (1 + Math.exp(-x));
-  approxEqual(score, expected);
+  const init = resolveInitialValueScore();
+  assert.ok(init >= MEMORY_TIER_THRESHOLDS.warmUp, "initial value should be >= warmUp");
+  assert.ok(init < MEMORY_TIER_THRESHOLDS.hotUp, "initial value should be < hotUp");
 })();
 
 (() => {
-  const lowReuse = computeValueScore({
-    reuse_count: 0,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: NOW,
-    tokens_est: 0
-  }, { now: NOW });
-
-  const highReuse = computeValueScore({
-    reuse_count: 5,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: NOW,
-    tokens_est: 0
-  }, { now: NOW });
-
-  assert.ok(highReuse > lowReuse, "higher reuse should increase value score");
+  assert.strictEqual(normalizeTier("hot"), "HOT");
+  assert.strictEqual(normalizeTier("warm"), "WARM");
+  assert.strictEqual(normalizeTier("cold"), "COLD");
+  assert.strictEqual(normalizeTier("invalid", "WARM"), "WARM");
 })();
 
 (() => {
-  const recent = computeValueScore({
-    reuse_count: 1,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: NOW,
-    tokens_est: 0
-  }, { now: NOW });
-
-  const old = computeValueScore({
-    reuse_count: 1,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: new Date("2025-01-01T00:00:00Z"),
-    tokens_est: 0
-  }, { now: NOW });
-
-  assert.ok(recent > old, "recent usage should increase value score");
+  const baseline = {
+    value_score: 0.4,
+    tier: "WARM",
+    pinned: false,
+    value_last_update_ts: NOW,
+    tier_last_update_ts: NOW - 1000
+  };
+  const updated = buildValueUpdateForMemory(baseline, "retrieved", 0, NOW);
+  const expected = Math.min(MEMORY_VALUE_MAX, 0.4 + MEMORY_ACCESS_ALPHA);
+  approxEqual(updated.valueScore, expected);
+  assert.strictEqual(updated.tier, "WARM");
+  assert.strictEqual(updated.tierLastUpdateTs, baseline.tier_last_update_ts);
 })();
 
 (() => {
-  const lowCost = computeValueScore({
-    reuse_count: 1,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: NOW,
-    tokens_est: 0
-  }, { now: NOW });
-
-  const highCost = computeValueScore({
-    reuse_count: 1,
-    utility_ema: 0.2,
-    redundancy_score: 0.1,
-    trust_score: 0.5,
-    last_used_at: NOW,
-    tokens_est: 4000
-  }, { now: NOW, costScaleTokens: 2000 });
-
-  assert.ok(lowCost > highCost, "higher token cost should reduce value score");
+  const baseline = {
+    value_score: 0.2,
+    tier: "WARM",
+    pinned: false,
+    value_last_update_ts: NOW,
+    tier_last_update_ts: NOW - 1000
+  };
+  const updated = buildValueUpdateForMemory(baseline, "used_in_answer", 1, NOW);
+  const expected = Math.min(MEMORY_VALUE_MAX, 0.2 + MEMORY_ACCESS_ALPHA + MEMORY_CONTRIBUTION_BETA);
+  approxEqual(updated.valueScore, expected);
 })();
 
-console.log("compute_value_score tests passed");
+(() => {
+  const days = 2;
+  const baseline = {
+    value_score: 0.8,
+    tier: "HOT",
+    pinned: false,
+    value_last_update_ts: NOW - days * DAY_MS,
+    tier_last_update_ts: NOW - 5000
+  };
+
+  const decayed = buildValueUpdateForMemory(baseline, "retrieved", 0, NOW, { decayOnly: true });
+  const expectedDecay = 0.8 * Math.exp(-MEMORY_VALUE_DECAY_LAMBDA * days);
+  approxEqual(decayed.valueScore, expectedDecay);
+
+  const withAccess = buildValueUpdateForMemory(baseline, "retrieved", 0, NOW);
+  approxEqual(withAccess.valueScore, Math.min(MEMORY_VALUE_MAX, expectedDecay + MEMORY_ACCESS_ALPHA));
+})();
+
+(() => {
+  const capped = buildValueUpdateForMemory({
+    value_score: MEMORY_VALUE_MAX,
+    tier: "HOT",
+    pinned: false,
+    value_last_update_ts: NOW,
+    tier_last_update_ts: NOW
+  }, "used_in_answer", 1, NOW);
+  assert.strictEqual(capped.valueScore, MEMORY_VALUE_MAX);
+})();
+
+(() => {
+  const hotPromote = resolveTierForValue(
+    "WARM",
+    MEMORY_TIER_THRESHOLDS.hotUp + 0.001,
+    false
+  );
+  assert.strictEqual(hotPromote, "HOT", "warm should promote to hot above hotUp");
+
+  const hotDemote = resolveTierForValue(
+    "HOT",
+    MEMORY_TIER_THRESHOLDS.hotDown - 0.001,
+    false
+  );
+  assert.strictEqual(hotDemote, "WARM", "hot should demote to warm below hotDown");
+
+  const warmDemote = resolveTierForValue(
+    "WARM",
+    MEMORY_TIER_THRESHOLDS.warmDown - 0.001,
+    false
+  );
+  assert.strictEqual(warmDemote, "COLD", "warm should demote to cold below warmDown");
+
+  const coldPromote = resolveTierForValue(
+    "COLD",
+    MEMORY_TIER_THRESHOLDS.warmUp + 0.001,
+    false
+  );
+  assert.strictEqual(coldPromote, "WARM", "cold should promote to warm at/above warmUp");
+})();
+
+(() => {
+  const pinnedHot = resolveTierForValue(
+    "HOT",
+    MEMORY_TIER_THRESHOLDS.hotDown - 0.2,
+    true
+  );
+  assert.strictEqual(pinnedHot, "HOT", "pinned hot should not demote");
+
+  const pinnedWarm = resolveTierForValue(
+    "WARM",
+    MEMORY_TIER_THRESHOLDS.warmDown - 0.2,
+    true
+  );
+  assert.strictEqual(pinnedWarm, "WARM", "pinned warm should not demote");
+})();
+
+(() => {
+  const baseline = {
+    value_score: MEMORY_TIER_THRESHOLDS.hotUp + 0.01,
+    tier: "WARM",
+    pinned: false,
+    value_last_update_ts: NOW,
+    tier_last_update_ts: NOW - 1234
+  };
+  const updated = buildValueUpdateForMemory(baseline, "retrieved", 0, NOW);
+  assert.strictEqual(updated.tier, "HOT");
+  assert.strictEqual(updated.tierLastUpdateTs, NOW, "tier transition should stamp current timestamp");
+})();
+
+(() => {
+  const decayed = decayMemoryValue(0.6, NOW - DAY_MS, NOW);
+  const expected = 0.6 * Math.exp(-MEMORY_VALUE_DECAY_LAMBDA);
+  approxEqual(decayed, expected);
+})();
+
+console.log("AMV-L value lifecycle unit tests passed");

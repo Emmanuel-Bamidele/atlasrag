@@ -165,6 +165,57 @@ public:
     return scores;
   }
 
+  // -------------------------
+  // search_subset(query, k, ids)
+  // -------------------------
+  // Similar to search(), but only evaluates vectors whose ids are in "ids".
+  std::vector<std::pair<std::string, float>>
+  search_subset(const std::vector<float>& query, int k, const std::vector<std::string>& ids) const
+  {
+    std::shared_lock lock(mu_);
+
+    if (vectors_.empty()) return {};
+    if (ids.empty()) return {};
+    if ((int)query.size() != dims_) return {};
+
+    float qnorm = norm(query);
+    if (qnorm == 0.0f) return {};
+
+    std::vector<std::pair<std::string, float>> scores;
+    scores.reserve(ids.size());
+
+    for (const auto& id : ids) {
+      auto it = vectors_.find(id);
+      if (it == vectors_.end()) continue;
+
+      const std::vector<float>& vec = it->second;
+      float vnorm = norm(vec);
+      if (vnorm == 0.0f) {
+        scores.push_back({id, 0.0f});
+        continue;
+      }
+      float sim = dot(query, vec) / (qnorm * vnorm);
+      scores.push_back({id, sim});
+    }
+
+    if (scores.empty()) return {};
+
+    if (k < 0) k = 0;
+    if ((std::size_t)k > scores.size()) k = (int)scores.size();
+
+    std::partial_sort(
+      scores.begin(),
+      scores.begin() + k,
+      scores.end(),
+      [](const auto& a, const auto& b) {
+        return a.second > b.second;
+      }
+    );
+
+    scores.resize(k);
+    return scores;
+  }
+
 private:
   // -------------------------
   // dot(a, b)

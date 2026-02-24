@@ -1,0 +1,9 @@
+{
+  "id": "ablation-lambda-0.0173",
+  "group": "lambda",
+  "policy": "AMV-L",
+  "description": "Slightly lower decay lambda.",
+  "env": {
+    "MEMORY_VALUE_DECAY_LAMBDA": "0.0173"
+  }
+}

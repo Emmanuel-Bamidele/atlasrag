@@ -2,14 +2,16 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const dns = require("dns").promises;
+const net = require("net");
 
 const { embedTexts } = require("./ai");
 const { chunkText } = require("./chunk");
-const { sendCmd, buildVset, buildVsearch, buildVdel, parseVsearchReply } = require("./tcp");
+const { sendCmd, buildVset, buildVsearchIn, buildVdel, parseVsearchReply } = require("./tcp");
 
 const {
   saveChunk,
-  getChunksByIds,
+  getChunksByDocIds,
   searchChunksLexical,
   getChunksByDocId,
   deleteDoc,
@@ -19,6 +21,7 @@ const {
   upsertMemoryArtifact,
   upsertMemoryItem,
   getMemoryItemsByNamespaceIds,
+  listMemoryItemsByTier,
   getMemoryItemById,
   deleteMemoryItemById,
   getArtifactByExternalId,
@@ -63,7 +66,7 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
-const { computeValueScore, estimateTokensFromText } = require("./memory_value");
+const { estimateTokensFromText } = require("./memory_value");
 const {
   isBelowMinAgeForLifecycle,
   createDeleteBudget,
@@ -111,8 +114,22 @@ function renderPublicUiTemplate() {
   });
 }
 
+function parseEnvFlag(value, defaultValue = false) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  const clean = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(clean)) return true;
+  if (["0", "false", "no", "off"].includes(clean)) return false;
+  return defaultValue;
+}
+
+const COOKIE_SIGNING_SECRET = String(process.env.COOKIE_SECRET || process.env.JWT_SECRET || "").trim();
+if (!COOKIE_SIGNING_SECRET) {
+  throw new Error("COOKIE_SECRET or JWT_SECRET must be set");
+}
+const COOKIE_SECURE = parseEnvFlag(process.env.COOKIE_SECURE, false);
+
 app.use(express.json({ limit: "8mb" }));
-app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET || "atlasrag-cookie-secret"));
+app.use(cookieParser(COOKIE_SIGNING_SECRET));
 
 app.use((req, res, next) => {
   const incoming = req.header("x-request-id");
@@ -132,24 +149,40 @@ app.use((req, res, next) => {
     return next();
   }
 
+  const requestPath = req.originalUrl || req.path || "";
+  const endpoint = classifyTelemetryEndpoint(requestPath);
+  const startTsMs = Date.now();
+  req.telemetryEndpoint = endpoint;
+  req.telemetryStartTsMs = startTsMs;
   const start = process.hrtime.bigint();
   logTelemetry("request_start", {
     requestId: req.requestId,
     tenantId: resolveTenantForMetrics(req)
   }, {
     method: req.method,
-    path: req.originalUrl || req.path
+    path: requestPath,
+    endpoint,
+    start_ts_ms: startTsMs,
+    start_ts: new Date(startTsMs).toISOString()
   });
 
   res.on("finish", () => {
     const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const endTsMs = Date.now();
+    const status = Number(res.statusCode || 0);
     logTelemetry("request_finish", {
       requestId: req.requestId,
       tenantId: resolveTenantForMetrics(req)
     }, {
       method: req.method,
-      path: req.originalUrl || req.path,
-      status: res.statusCode,
+      path: requestPath,
+      endpoint: req.telemetryEndpoint || classifyTelemetryEndpoint(requestPath),
+      status,
+      success: status >= 200 && status < 300,
+      failure: status >= 400,
+      start_ts_ms: Number.isFinite(req.telemetryStartTsMs) ? req.telemetryStartTsMs : null,
+      end_ts_ms: endTsMs,
+      end_ts: new Date(endTsMs).toISOString(),
       latency_ms: Number(elapsedMs.toFixed(2)),
       collection: req.collection ?? null
     });
@@ -229,6 +262,8 @@ app.use((req, res, next) => {
 
 const MAX_DOC_CHARS = 200000;
 const MAX_FETCH_CHARS = 1000000;
+const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || "15000", 10);
+const MAX_FETCH_REDIRECTS = parseInt(process.env.MAX_FETCH_REDIRECTS || "5", 10);
 const MAX_REFLECT_CHARS = parseInt(process.env.REFLECT_MAX_CHARS || "12000", 10);
 const MAX_COMPACT_CHARS = parseInt(process.env.COMPACT_MAX_CHARS || "12000", 10);
 const DEBUG_INDEX = process.env.DEBUG_INDEX === "1";
@@ -248,13 +283,33 @@ const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
 const JOB_SWEEP_INTERVAL_MS = parseInt(process.env.JOB_SWEEP_INTERVAL_MS || "5000", 10);
 const JOB_SWEEP_BATCH_SIZE = parseInt(process.env.JOB_SWEEP_BATCH_SIZE || "20", 10);
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
-const MEMORY_COST_SCALE_TOKENS = parseFloat(process.env.MEMORY_COST_SCALE_TOKENS || "2000");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
 const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
+const MEMORY_VALUE_MAX = parseFloat(process.env.MEMORY_VALUE_MAX || "1");
+const MEMORY_ACCESS_ALPHA = parseFloat(process.env.MEMORY_ACCESS_ALPHA || "0.08");
+const MEMORY_CONTRIBUTION_BETA = parseFloat(process.env.MEMORY_CONTRIBUTION_BETA || "0.2");
+const MEMORY_NEGATIVE_STEP = parseFloat(process.env.MEMORY_NEGATIVE_STEP || "0.08");
+const MEMORY_VALUE_DECAY_LAMBDA = parseFloat(
+  process.env.MEMORY_VALUE_DECAY_LAMBDA
+  || String(Math.log(2) / (Number.isFinite(MEMORY_RECENCY_HALFLIFE_DAYS) && MEMORY_RECENCY_HALFLIFE_DAYS > 0 ? MEMORY_RECENCY_HALFLIFE_DAYS : 30))
+);
+const MEMORY_TIER_HOT_UP = parseFloat(process.env.MEMORY_TIER_HOT_UP || process.env.MEMORY_LIFECYCLE_PROMOTE_THRESHOLD || "0.7");
+const MEMORY_TIER_HOT_DOWN = parseFloat(process.env.MEMORY_TIER_HOT_DOWN || "0.62");
+const MEMORY_TIER_WARM_UP = parseFloat(process.env.MEMORY_TIER_WARM_UP || "0.45");
+const MEMORY_TIER_WARM_DOWN = parseFloat(process.env.MEMORY_TIER_WARM_DOWN || process.env.MEMORY_LIFECYCLE_DELETE_THRESHOLD || "0.25");
+const MEMORY_TIER_EVICT = parseFloat(process.env.MEMORY_TIER_EVICT || process.env.MEMORY_LIFECYCLE_DELETE_THRESHOLD || "0.25");
+const MEMORY_INIT_VALUE = parseFloat(process.env.MEMORY_INIT_VALUE || "0.5");
+const MEMORY_RETRIEVAL_WARM_SAMPLE_K = parseInt(process.env.MEMORY_RETRIEVAL_WARM_SAMPLE_K || "8", 10);
+const MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER = parseInt(process.env.MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER || "4", 10);
+const MEMORY_RETRIEVAL_WARM_SELECTION = String(process.env.MEMORY_RETRIEVAL_WARM_SELECTION || "random").trim().toLowerCase() === "lru"
+  ? "lru"
+  : "random";
+const MEMORY_RETRIEVAL_COLD_PROBE_EPSILON = parseInt(process.env.MEMORY_RETRIEVAL_COLD_PROBE_EPSILON || "0", 10);
+const MEMORY_EVENT_FLUSH_INTERVAL_MS = parseInt(process.env.MEMORY_EVENT_FLUSH_INTERVAL_MS || "250", 10);
+const MEMORY_EVENT_FLUSH_MAX_EVENTS = parseInt(process.env.MEMORY_EVENT_FLUSH_MAX_EVENTS || "200", 10);
 const MEMORY_VALUE_DECAY_INTERVAL_MS = parseInt(process.env.MEMORY_VALUE_DECAY_INTERVAL_MS || "3600000", 10);
 const MEMORY_VALUE_BATCH_SIZE = parseInt(process.env.MEMORY_VALUE_BATCH_SIZE || "200", 10);
 const MEMORY_VALUE_MAX_ITEMS = parseInt(process.env.MEMORY_VALUE_MAX_ITEMS || "0", 10);
-const MEMORY_VALUE_TEXT_FALLBACK = process.env.MEMORY_VALUE_TEXT_FALLBACK !== "0";
 const MEMORY_REDUNDANCY_INTERVAL_MS = parseInt(process.env.MEMORY_REDUNDANCY_INTERVAL_MS || "86400000", 10);
 const MEMORY_REDUNDANCY_BATCH_SIZE = parseInt(process.env.MEMORY_REDUNDANCY_BATCH_SIZE || "100", 10);
 const MEMORY_REDUNDANCY_TOP_K = parseInt(process.env.MEMORY_REDUNDANCY_TOP_K || "8", 10);
@@ -280,7 +335,9 @@ let valueDecayRunning = false;
 let redundancyRunning = false;
 let lifecycleRunning = false;
 let memorySnapshotRunning = false;
+let memoryEventFlushRunning = false;
 const redundancyPending = new Set();
+const memoryEventQueue = [];
 const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
   || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const DOC_ID_RE = /^[a-zA-Z0-9._-]+$/;
@@ -386,6 +443,25 @@ function resolveTenantForMetrics(req) {
   const clean = String(candidate || "").trim();
   if (!clean || !TENANT_RE.test(clean)) return null;
   return clean;
+}
+
+function classifyTelemetryEndpoint(rawPath) {
+  const cleanPath = String(rawPath || "").split("?")[0];
+  if (
+    cleanPath === "/memory/write"
+    || cleanPath === "/v1/memory"
+    || cleanPath === "/v1/memory/write"
+    || cleanPath === "/memory"
+  ) {
+    return "write";
+  }
+  if (cleanPath === "/memory/recall" || cleanPath === "/v1/memory/recall") {
+    return "recall";
+  }
+  if (cleanPath === "/ask" || cleanPath === "/v1/ask") {
+    return "ask";
+  }
+  return "other";
 }
 
 function buildTelemetryContext({ requestId, tenantId, collection, source } = {}) {
@@ -706,8 +782,7 @@ function getEffectiveRoles(req) {
     out.add("admin");
   }
   if (out.size === 0) {
-    const fallback = req.user?.auth === "api_key" ? "indexer" : ROLE_DEFAULT;
-    out.add(fallback);
+    out.add(ROLE_DEFAULT);
   }
   return out;
 }
@@ -922,24 +997,6 @@ function withTokenEstimate(metadata, text) {
   return base;
 }
 
-function getTokensEstimate(memory) {
-  const tokens = memory?.metadata?._tokens_est ?? memory?.metadata?.tokens_est ?? memory?.tokens_est ?? memory?.tokensEst;
-  const clean = Number(tokens);
-  return Number.isFinite(clean) ? clean : null;
-}
-
-function computeValueScoreForMemory(memory, tokensEst, now = new Date()) {
-  const merged = { ...memory };
-  if (tokensEst !== undefined && tokensEst !== null) {
-    merged.tokens_est = tokensEst;
-  }
-  return computeValueScore(merged, {
-    now,
-    recencyHalfLifeDays: MEMORY_RECENCY_HALFLIFE_DAYS,
-    costScaleTokens: MEMORY_COST_SCALE_TOKENS
-  });
-}
-
 function formatMemoryItem(memory) {
   if (!memory) return null;
   return {
@@ -959,6 +1016,9 @@ function formatMemoryItem(memory) {
     createdAt: memory.created_at,
     expiresAt: memory.expires_at || null,
     valueScore: memory.value_score ?? null,
+    tier: normalizeTier(memory.tier, "WARM"),
+    valueLastUpdateTs: Number.isFinite(Number(memory.value_last_update_ts)) ? Number(memory.value_last_update_ts) : null,
+    tierLastUpdateTs: Number.isFinite(Number(memory.tier_last_update_ts)) ? Number(memory.tier_last_update_ts) : null,
     reuseCount: memory.reuse_count ?? 0,
     lastUsedAt: memory.last_used_at || null,
     utilityEma: memory.utility_ema ?? 0,
@@ -1033,6 +1093,13 @@ function shouldIncrementReuse(eventType) {
   return eventType === "retrieved" || eventType === "used_in_answer";
 }
 
+function isContributionEvent(eventType, normalizedValue) {
+  if (eventType === "used_in_answer") return true;
+  if (eventType === "task_success") return normalizedValue > 0;
+  if (eventType === "user_positive") return normalizedValue > 0;
+  return false;
+}
+
 function shouldUpdateUtility(eventType) {
   return eventType in MEMORY_EVENT_DEFAULTS;
 }
@@ -1052,17 +1119,62 @@ function updateTrustScore(previous, eventType, eventValue) {
   return clampNumber(prev + step * eventValue, 0, 1);
 }
 
-async function recordMemoryEventForItem(memory, eventType, eventValue) {
+function buildValueUpdateForMemory(memory, eventType, normalizedValue, nowMs, options = {}) {
+  const now = Number.isFinite(nowMs) ? Math.floor(nowMs) : Date.now();
+  const maxValue = Number.isFinite(MEMORY_VALUE_MAX) && MEMORY_VALUE_MAX > 0 ? MEMORY_VALUE_MAX : 1;
+  const existingValue = clampNumber(
+    Number(memory?.value_score ?? resolveInitialValueScore()),
+    0,
+    maxValue
+  );
+  const existingTs = Number(memory?.value_last_update_ts);
+  const lastUpdateTs = Number.isFinite(existingTs) && existingTs > 0 ? existingTs : now;
+  const decayed = decayMemoryValue(existingValue, lastUpdateTs, now);
+
+  let delta = 0;
+  if (!options.decayOnly) {
+    const accessAlpha = Number.isFinite(MEMORY_ACCESS_ALPHA) ? MEMORY_ACCESS_ALPHA : 0;
+    const contributionBeta = Number.isFinite(MEMORY_CONTRIBUTION_BETA) ? MEMORY_CONTRIBUTION_BETA : 0;
+    const negativeStep = Number.isFinite(MEMORY_NEGATIVE_STEP) ? MEMORY_NEGATIVE_STEP : 0;
+    const access = shouldIncrementReuse(eventType) ? 1 : 0;
+    const contribution = isContributionEvent(eventType, normalizedValue) ? 1 : 0;
+    delta += accessAlpha * access;
+    delta += contributionBeta * contribution;
+    if (eventType === "task_fail" || eventType === "user_negative") {
+      delta -= negativeStep * Math.max(0, Math.abs(normalizedValue) || 1);
+    }
+  }
+
+  const nextValue = clampNumber(decayed + delta, 0, maxValue);
+  const currentTier = normalizeTier(memory?.tier, "WARM");
+  const nextTier = resolveTierForValue(currentTier, nextValue, Boolean(memory?.pinned));
+  const priorTierTs = Number(memory?.tier_last_update_ts);
+  const tierLastUpdateTs = nextTier === currentTier
+    ? (Number.isFinite(priorTierTs) && priorTierTs > 0 ? priorTierTs : now)
+    : now;
+
+  return {
+    valueScore: nextValue,
+    tier: nextTier,
+    valueLastUpdateTs: now,
+    tierLastUpdateTs
+  };
+}
+
+async function recordMemoryEventForItem(memory, eventType, eventValue, options = {}) {
   if (!memory || !memory.id || !memory.tenant_id) return null;
   const normalizedValue = normalizeEventValue(eventType, eventValue);
-  const now = new Date();
-  await recordMemoryEvent({
-    memoryId: memory.id,
-    tenantId: memory.tenant_id,
-    eventType,
-    eventValue: normalizedValue,
-    createdAt: now
-  });
+  const nowMs = Number.isFinite(options.nowMs) ? Math.floor(options.nowMs) : Date.now();
+  const previousTier = normalizeTier(memory.tier, "WARM");
+  if (options.persistEvent !== false) {
+    await recordMemoryEvent({
+      memoryId: memory.id,
+      tenantId: memory.tenant_id,
+      eventType,
+      eventValue: normalizedValue,
+      createdAt: new Date(nowMs)
+    });
+  }
 
   const reuseCount = shouldIncrementReuse(eventType)
     ? Number(memory.reuse_count || 0) + 1
@@ -1071,37 +1183,120 @@ async function recordMemoryEventForItem(memory, eventType, eventValue) {
     ? updateUtilityEma(memory.utility_ema, normalizedValue)
     : Number(memory.utility_ema || 0);
   const trustScore = updateTrustScore(memory.trust_score, eventType, normalizedValue);
-  const lastUsedAt = now;
+  const lastUsedAt = new Date(nowMs);
+  const valueUpdate = buildValueUpdateForMemory(memory, eventType, normalizedValue, nowMs, {
+    decayOnly: options.decayOnly === true
+  });
 
-  const tokensEst = getTokensEstimate(memory);
-  const valueScore = computeValueScoreForMemory({
-    ...memory,
-    reuse_count: reuseCount,
-    utility_ema: utilityEma,
-    trust_score: trustScore,
-    last_used_at: lastUsedAt
-  }, tokensEst, now);
-
-  return updateMemoryItemMetrics({
+  const updated = await updateMemoryItemMetrics({
     id: memory.id,
     tenantId: memory.tenant_id,
     reuseCount,
     lastUsedAt,
     utilityEma,
     trustScore,
-    valueScore
+    valueScore: valueUpdate.valueScore,
+    tier: valueUpdate.tier,
+    valueLastUpdateTs: valueUpdate.valueLastUpdateTs,
+    tierLastUpdateTs: valueUpdate.tierLastUpdateTs
   });
+  const next = updated || {
+    ...memory,
+    reuse_count: reuseCount,
+    last_used_at: lastUsedAt,
+    utility_ema: utilityEma,
+    trust_score: trustScore,
+    value_score: valueUpdate.valueScore,
+    tier: valueUpdate.tier,
+    value_last_update_ts: valueUpdate.valueLastUpdateTs,
+    tier_last_update_ts: valueUpdate.tierLastUpdateTs
+  };
+  emitTierTransitionTelemetry(
+    next,
+    previousTier,
+    valueUpdate.tier,
+    {
+      reason: options.decayOnly ? "value_decay" : eventType,
+      event_type: eventType,
+      value_score: valueUpdate.valueScore
+    },
+    {
+      source: options.decayOnly ? "value_decay" : "memory_event"
+    }
+  );
+  return next;
+}
+
+function enqueueMemoryEvent(memory, eventType, eventValue, nowMs = Date.now()) {
+  if (!memory?.id || !memory?.tenant_id) return;
+  memoryEventQueue.push({
+    memoryId: memory.id,
+    tenantId: memory.tenant_id,
+    eventType,
+    eventValue,
+    nowMs: Number.isFinite(nowMs) ? Math.floor(nowMs) : Date.now()
+  });
+}
+
+async function flushMemoryEventQueue() {
+  if (memoryEventFlushRunning) return;
+  if (!memoryEventQueue.length) return;
+  memoryEventFlushRunning = true;
+  const batchSize = Number.isFinite(MEMORY_EVENT_FLUSH_MAX_EVENTS) && MEMORY_EVENT_FLUSH_MAX_EVENTS > 0
+    ? MEMORY_EVENT_FLUSH_MAX_EVENTS
+    : 200;
+  const batch = memoryEventQueue.splice(0, batchSize);
+  try {
+    const grouped = new Map();
+    for (const event of batch) {
+      const key = `${event.tenantId}:${event.memoryId}`;
+      const list = grouped.get(key) || [];
+      list.push(event);
+      grouped.set(key, list);
+    }
+
+    for (const events of grouped.values()) {
+      const first = events[0];
+      let memory = await getMemoryItemById(first.memoryId, first.tenantId, null);
+      if (!memory) continue;
+      for (const event of events) {
+        try {
+          memory = await recordMemoryEventForItem(memory, event.eventType, event.eventValue, {
+            nowMs: event.nowMs,
+            persistEvent: true
+          });
+        } catch (err) {
+          console.warn(`[memory_events] Failed to flush ${event.eventType} for ${event.memoryId}:`, err?.message || err);
+        }
+      }
+    }
+  } finally {
+    memoryEventFlushRunning = false;
+  }
 }
 
 async function recordMemoryEventsForItems(memories, eventType, eventValue) {
   if (!Array.isArray(memories) || memories.length === 0) return;
+  const nowMs = Date.now();
   for (const memory of memories) {
-    try {
-      await recordMemoryEventForItem(memory, eventType, eventValue);
-    } catch (err) {
-      console.warn(`[memory_events] Failed to record ${eventType} for ${memory?.id}:`, err?.message || err);
-    }
+    enqueueMemoryEvent(memory, eventType, eventValue, nowMs);
   }
+  if (memoryEventQueue.length >= (Number.isFinite(MEMORY_EVENT_FLUSH_MAX_EVENTS) && MEMORY_EVENT_FLUSH_MAX_EVENTS > 0 ? MEMORY_EVENT_FLUSH_MAX_EVENTS : 200)) {
+    setImmediate(() => {
+      flushMemoryEventQueue().catch((err) => {
+        console.warn("[memory_events] flush failed:", err?.message || err);
+      });
+    });
+  }
+}
+
+function scheduleMemoryEventFlush() {
+  if (!Number.isFinite(MEMORY_EVENT_FLUSH_INTERVAL_MS) || MEMORY_EVENT_FLUSH_INTERVAL_MS <= 0) return;
+  setInterval(() => {
+    flushMemoryEventQueue().catch((err) => {
+      console.warn("[memory_events] flush failed:", err?.message || err);
+    });
+  }, MEMORY_EVENT_FLUSH_INTERVAL_MS);
 }
 
 function toPositiveInt(value) {
@@ -1134,6 +1329,7 @@ function recordEmbeddingUsage(tenantId, usage, telemetryContext) {
   if (!tenantId) return;
   const tokens = parseEmbeddingUsage(usage);
   if (!tokens.total) return;
+  const estimated = usage?.estimated === true || usage?.fallback === true;
   safeUsageRecord(recordTenantUsage({
     tenantId,
     embeddingTokens: tokens.total,
@@ -1147,7 +1343,8 @@ function recordEmbeddingUsage(tenantId, usage, telemetryContext) {
   }), {
     token_kind: "embedding",
     token_total: tokens.total,
-    token_prompt: tokens.prompt
+    token_prompt: tokens.prompt,
+    token_estimated: estimated
   });
 }
 
@@ -1155,6 +1352,7 @@ function recordGenerationUsage(tenantId, usage, telemetryContext) {
   if (!tenantId) return;
   const tokens = parseGenerationUsage(usage);
   if (!tokens.total) return;
+  const estimated = usage?.estimated === true || usage?.fallback === true;
   safeUsageRecord(recordTenantUsage({
     tenantId,
     generationInputTokens: tokens.input,
@@ -1171,7 +1369,8 @@ function recordGenerationUsage(tenantId, usage, telemetryContext) {
     token_kind: "generation",
     token_input: tokens.input,
     token_output: tokens.output,
-    token_total: tokens.total
+    token_total: tokens.total,
+    token_estimated: estimated
   });
 }
 
@@ -1559,6 +1758,15 @@ function parseDocFilter(raw) {
   return out;
 }
 
+function parseAnswerLength(raw) {
+  if (raw === undefined || raw === null || raw === "") return "auto";
+  const clean = String(raw).trim().toLowerCase();
+  if (clean === "auto" || clean === "short" || clean === "medium" || clean === "long") {
+    return clean;
+  }
+  return null;
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -1572,6 +1780,93 @@ function normalizeRangeScore(value, min, max) {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return 0;
   if (max <= min) return 1;
   return (value - min) / (max - min);
+}
+
+function normalizeTier(tier, fallback = "WARM") {
+  const clean = String(tier || "").trim().toUpperCase();
+  if (clean === "HOT" || clean === "WARM" || clean === "COLD") return clean;
+  return fallback;
+}
+
+function resolveTierThresholds() {
+  const hotUp = clampNumber(MEMORY_TIER_HOT_UP, 0, 1);
+  let hotDown = clampNumber(MEMORY_TIER_HOT_DOWN, 0, 1);
+  if (hotDown >= hotUp) {
+    hotDown = Math.max(0, hotUp - 0.01);
+  }
+
+  let warmUp = clampNumber(MEMORY_TIER_WARM_UP, 0, 1);
+  if (warmUp >= hotDown) {
+    warmUp = Math.max(0, hotDown - 0.01);
+  }
+
+  let warmDown = clampNumber(MEMORY_TIER_WARM_DOWN, 0, 1);
+  if (warmDown >= warmUp) {
+    warmDown = Math.max(0, warmUp - 0.01);
+  }
+
+  let evict = clampNumber(MEMORY_TIER_EVICT, 0, 1);
+  if (evict > warmDown) {
+    evict = warmDown;
+  }
+
+  return { hotUp, hotDown, warmUp, warmDown, evict };
+}
+
+const MEMORY_TIER_THRESHOLDS = resolveTierThresholds();
+
+function resolveInitialValueScore() {
+  const warmFloor = MEMORY_TIER_THRESHOLDS.warmUp;
+  const hotCeil = Math.max(warmFloor, MEMORY_TIER_THRESHOLDS.hotUp - 1e-6);
+  return clampNumber(MEMORY_INIT_VALUE, warmFloor, hotCeil);
+}
+
+function decayMemoryValue(currentValue, lastUpdateTs, nowTs) {
+  const now = Number.isFinite(nowTs) ? nowTs : Date.now();
+  const last = Number.isFinite(lastUpdateTs) ? lastUpdateTs : now;
+  const dtDays = Math.max(0, now - last) / 86400000;
+  const lambda = Number.isFinite(MEMORY_VALUE_DECAY_LAMBDA) && MEMORY_VALUE_DECAY_LAMBDA >= 0
+    ? MEMORY_VALUE_DECAY_LAMBDA
+    : 0;
+  return currentValue * Math.exp(-lambda * dtDays);
+}
+
+function resolveTierForValue(currentTier, valueScore, pinned) {
+  const tier = normalizeTier(currentTier, "WARM");
+  const value = clampNumber(valueScore, 0, Math.max(0, MEMORY_VALUE_MAX));
+  if (tier === "HOT") {
+    if (!pinned && value < MEMORY_TIER_THRESHOLDS.hotDown) return "WARM";
+    return "HOT";
+  }
+  if (tier === "WARM") {
+    if (value >= MEMORY_TIER_THRESHOLDS.hotUp) return "HOT";
+    if (!pinned && value < MEMORY_TIER_THRESHOLDS.warmDown) return "COLD";
+    return "WARM";
+  }
+  if (value >= MEMORY_TIER_THRESHOLDS.warmUp) return "WARM";
+  return "COLD";
+}
+
+function tierRank(tier) {
+  const clean = normalizeTier(tier, "WARM");
+  if (clean === "HOT") return 2;
+  if (clean === "WARM") return 1;
+  return 0;
+}
+
+function emitTierTransitionTelemetry(item, fromTier, toTier, details = {}, context = {}) {
+  const from = normalizeTier(fromTier, "WARM");
+  const to = normalizeTier(toTier, from);
+  if (from === to) return;
+  const action = tierRank(to) > tierRank(from) ? "promote" : "demote";
+  emitLifecycleActionTelemetry(action, item, {
+    from_tier: from,
+    to_tier: to,
+    ...details
+  }, {
+    source: context.source || "tier_transition",
+    requestId: context.requestId || null
+  });
 }
 
 function tokenizeForRerank(text) {
@@ -1918,7 +2213,8 @@ async function handleMcpMethod(method, params, req) {
       },
       instructions: [
         "Use tools/search_docs to find AtlasRAG API and product guidance.",
-        "Use resources/list and resources/read to access full docs pages."
+        "Use resources/list and resources/read to access full docs pages.",
+        "For /v1/ask, answer length can be controlled with answerLength: auto, short, medium, or long."
       ].join(" ")
     };
   }
@@ -1990,20 +2286,104 @@ function isPrivateHostname(hostname) {
 
   if (!host) return true;
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
-  if (host === "::1") return true;
-  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
+  if (net.isIP(host)) {
+    return isPrivateIpAddress(host);
+  }
+  return false;
+}
 
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    const [a, b] = host.split(".").map(n => parseInt(n, 10));
+function isPrivateIpAddress(address) {
+  const clean = String(address || "").toLowerCase();
+  const ipType = net.isIP(clean);
+  if (!ipType) return true;
+
+  if (ipType === 4) {
+    const parts = clean.split(".").map((n) => parseInt(n, 10));
+    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return true;
+    const [a, b] = parts;
     if (a === 10) return true;
     if (a === 127) return true;
     if (a === 0) return true;
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    return false;
   }
 
+  if (clean === "::1" || clean === "::") return true;
+  if (clean.startsWith("fe80:")) return true;
+  if (clean.startsWith("fc") || clean.startsWith("fd")) return true;
   return false;
+}
+
+async function assertPublicDnsHost(hostname) {
+  let records;
+  try {
+    records = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("URL host resolution failed.");
+  }
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error("URL host resolution failed.");
+  }
+  for (const record of records) {
+    const ip = String(record?.address || "").trim();
+    if (!ip) {
+      throw new Error("URL host resolution failed.");
+    }
+    if (isPrivateIpAddress(ip)) {
+      throw new Error("URL host resolves to a blocked address.");
+    }
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(`Fetch timed out after ${timeoutMs}ms.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readResponseTextWithCap(response, capChars) {
+  const cap = Number.isFinite(capChars) && capChars > 0 ? capChars : MAX_FETCH_CHARS;
+  if (!response.body || typeof response.body.getReader !== "function") {
+    let raw = await response.text();
+    let truncated = false;
+    if (raw.length > cap) {
+      raw = raw.slice(0, cap);
+      truncated = true;
+    }
+    return { raw, truncated };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let raw = "";
+  let truncated = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    raw += decoder.decode(value, { stream: true });
+    if (raw.length > cap) {
+      raw = raw.slice(0, cap);
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+  }
+  raw += decoder.decode();
+  return { raw, truncated };
 }
 
 async function fetchUrlText(rawUrl) {
@@ -2021,41 +2401,68 @@ async function fetchUrlText(rawUrl) {
     throw new Error("URL host is blocked for safety.");
   }
 
-  const res = await fetch(url.toString(), {
-    redirect: "follow",
-    headers: {
-      "User-Agent": FETCH_USER_AGENT,
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.8"
+  const headers = {
+    "User-Agent": FETCH_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.8"
+  };
+  const safeTimeout = Number.isFinite(FETCH_TIMEOUT_MS) && FETCH_TIMEOUT_MS > 0 ? FETCH_TIMEOUT_MS : 15000;
+  const safeMaxRedirects = Number.isFinite(MAX_FETCH_REDIRECTS) && MAX_FETCH_REDIRECTS >= 0
+    ? MAX_FETCH_REDIRECTS
+    : 5;
+  let current = url;
+
+  for (let redirectCount = 0; redirectCount <= safeMaxRedirects; redirectCount += 1) {
+    if (!["http:", "https:"].includes(current.protocol)) {
+      throw new Error("Only http/https URLs are supported.");
     }
-  });
-  if (!res.ok) {
-    throw new Error(`Fetch failed with ${res.status} ${res.statusText}`);
+    if (isPrivateHostname(current.hostname)) {
+      throw new Error("URL host is blocked for safety.");
+    }
+    await assertPublicDnsHost(current.hostname);
+
+    const res = await fetchWithTimeout(current.toString(), {
+      redirect: "manual",
+      headers
+    }, safeTimeout);
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get("location");
+      if (!location) {
+        throw new Error("Redirect missing location header.");
+      }
+      if (redirectCount >= safeMaxRedirects) {
+        throw new Error("Too many redirects.");
+      }
+      current = new URL(location, current);
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(`Fetch failed with ${res.status} ${res.statusText}`);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    const { raw, truncated } = await readResponseTextWithCap(res, MAX_FETCH_CHARS);
+
+    let text;
+    if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
+      text = extractTextFromHtml(raw);
+    } else if (contentType.startsWith("text/") || contentType.includes("application/json") || contentType.includes("application/xml")) {
+      text = raw;
+    } else {
+      throw new Error(`Unsupported content-type: ${contentType || "unknown"}`);
+    }
+
+    text = normalizeWhitespace(text);
+    if (!text.trim()) {
+      throw new Error("No extractable text found at URL.");
+    }
+
+    return { text, contentType, truncated };
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  let raw = await res.text();
-  let truncated = false;
-  if (raw.length > MAX_FETCH_CHARS) {
-    raw = raw.slice(0, MAX_FETCH_CHARS);
-    truncated = true;
-  }
-
-  let text;
-  if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) {
-    text = extractTextFromHtml(raw);
-  } else if (contentType.startsWith("text/") || contentType.includes("application/json") || contentType.includes("application/xml")) {
-    text = raw;
-  } else {
-    throw new Error(`Unsupported content-type: ${contentType || "unknown"}`);
-  }
-
-  text = normalizeWhitespace(text);
-  if (!text.trim()) {
-    throw new Error("No extractable text found at URL.");
-  }
-
-  return { text, contentType, truncated };
+  throw new Error("Too many redirects.");
 }
 
 async function indexDocument(tenantId, collection, docId, text, source, options = {}) {
@@ -2158,34 +2565,257 @@ async function listDocsForTenant(tenantId, collection, principalId, privileges) 
   return docs;
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry }) {
-  const { vectors: [qvec], usage } = await embedTexts([query]);
-  recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
+function sampleItems(items, size) {
+  const list = Array.isArray(items) ? items.slice() : [];
+  const k = Number.isFinite(size) && size > 0 ? Math.floor(size) : 0;
+  if (!k || list.length <= k) return list;
+  for (let i = list.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = list[i];
+    list[i] = list[j];
+    list[j] = tmp;
+  }
+  return list.slice(0, k);
+}
+
+function recencyTimestampMs(memory) {
+  const lastUsed = memory?.last_used_at ? new Date(memory.last_used_at).getTime() : NaN;
+  if (Number.isFinite(lastUsed)) return lastUsed;
+  const created = memory?.created_at ? new Date(memory.created_at).getTime() : NaN;
+  if (Number.isFinite(created)) return created;
+  return 0;
+}
+
+function selectWarmCandidates(items, size) {
+  const list = Array.isArray(items) ? items.slice() : [];
+  const k = Number.isFinite(size) && size > 0 ? Math.floor(size) : 0;
+  if (!k || list.length <= k) {
+    if (MEMORY_RETRIEVAL_WARM_SELECTION !== "lru") return list;
+    return list.sort((a, b) => {
+      const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
+      if (diff !== 0) return diff;
+      return String(a?.id || "").localeCompare(String(b?.id || ""));
+    });
+  }
+  if (MEMORY_RETRIEVAL_WARM_SELECTION === "lru") {
+    list.sort((a, b) => {
+      const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
+      if (diff !== 0) return diff;
+      return String(a?.id || "").localeCompare(String(b?.id || ""));
+    });
+    return list.slice(0, k);
+  }
+  return sampleItems(list, k);
+}
+
+async function getTierBoundedRetrievalSet({
+  tenantId,
+  collection,
+  principalId,
+  privileges,
+  tags,
+  agentId,
+  types,
+  since,
+  until,
+  warmSampleSize,
+  docIds
+}) {
+  const warmK = Number.isFinite(warmSampleSize) && warmSampleSize > 0
+    ? Math.floor(warmSampleSize)
+    : (Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) && MEMORY_RETRIEVAL_WARM_SAMPLE_K > 0 ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 8);
+  const typeFilter = Array.isArray(types) && types.length ? types : null;
+
+  if (Array.isArray(docIds) && docIds.length && collection) {
+    const namespaceIds = docIds.map((docId) => namespaceDocId(tenantId, collection, docId));
+    const map = await getMemoryItemsByNamespaceIds({
+      namespaceIds,
+      types: typeFilter,
+      since,
+      until,
+      excludeExpired: true,
+      principalId,
+      privileges,
+      agentId,
+      tags
+    });
+    const hot = [];
+    const warm = [];
+    for (const memory of map.values()) {
+      const tier = normalizeTier(memory.tier, "WARM");
+      if (tier === "HOT") hot.push(memory);
+      else if (tier === "WARM") warm.push(memory);
+    }
+    const sampledWarm = selectWarmCandidates(warm, warmK);
+    return {
+      hot,
+      warm: sampledWarm,
+      cold: [],
+      hotCount: hot.length,
+      warmCount: sampledWarm.length,
+      coldCandidates: 0
+    };
+  }
+
+  const baseFilters = {
+    tenantId,
+    collection,
+    types: typeFilter,
+    since,
+    until,
+    excludeExpired: true,
+    principalId,
+    privileges,
+    agentId,
+    tags
+  };
+  const hot = await listMemoryItemsByTier({
+    ...baseFilters,
+    tier: "HOT"
+  });
+  const warmPoolMultiplier = Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER)
+    ? Math.max(1, Math.floor(MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER))
+    : 4;
+  const warmPoolLimit = MEMORY_RETRIEVAL_WARM_SELECTION === "lru"
+    ? warmK
+    : warmK * warmPoolMultiplier;
+  const warmPool = await listMemoryItemsByTier({
+    ...baseFilters,
+    tier: "WARM",
+    limit: warmPoolLimit,
+    sample: MEMORY_RETRIEVAL_WARM_SELECTION
+  });
+  const warm = selectWarmCandidates(warmPool, warmK);
+  const coldProbe = Number.isFinite(MEMORY_RETRIEVAL_COLD_PROBE_EPSILON) && MEMORY_RETRIEVAL_COLD_PROBE_EPSILON > 0
+    ? await listMemoryItemsByTier({
+      ...baseFilters,
+      tier: "COLD",
+      limit: MEMORY_RETRIEVAL_COLD_PROBE_EPSILON * warmPoolMultiplier
+    })
+    : [];
+  const sampledColdProbe = sampleItems(coldProbe, MEMORY_RETRIEVAL_COLD_PROBE_EPSILON);
+
+  return {
+    hot,
+    warm,
+    cold: sampledColdProbe,
+    hotCount: hot.length,
+    warmCount: warm.length,
+    coldCandidates: sampledColdProbe.length
+  };
+}
+
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until }) {
+  const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
     collection,
     source: telemetry?.source || "search_query"
-  }));
+  });
+  const { vectors: [qvec], usage } = await embedTexts([query]);
+  recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
   const cleanDocIds = Array.isArray(docIds) ? docIds : [];
   const topK = Number.isFinite(k) && k > 0 ? k : 5;
+  const retrievalSet = await getTierBoundedRetrievalSet({
+    tenantId,
+    collection,
+    principalId,
+    privileges,
+    tags,
+    agentId,
+    types: Array.isArray(candidateTypes) ? candidateTypes : null,
+    since,
+    until,
+    warmSampleSize: Math.max(topK, Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 0),
+    docIds: cleanDocIds
+  });
+  if (MEMORY_RETRIEVAL_COLD_PROBE_EPSILON <= 0 && (retrievalSet.coldCandidates || 0) !== 0) {
+    throw new Error("retrieval invariant violated: cold candidates present with cold probe disabled");
+  }
+  const retrievalMemories = [
+    ...(retrievalSet.hot || []),
+    ...(retrievalSet.warm || []),
+    ...(retrievalSet.cold || [])
+  ];
+  const warmSampleBudget = Math.max(topK, Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 0);
+  const seenNamespaceIds = new Set();
+  const candidateNamespaceIds = [];
+  for (const memory of retrievalMemories) {
+    const namespaceId = memory?.namespace_id;
+    if (!namespaceId || seenNamespaceIds.has(namespaceId)) continue;
+    seenNamespaceIds.add(namespaceId);
+    candidateNamespaceIds.push(namespaceId);
+  }
+
+  if (!candidateNamespaceIds.length) {
+    emitTelemetry("memory_candidates", telemetryContext, {
+      hot_count: retrievalSet.hotCount || 0,
+      warm_count: retrievalSet.warmCount || 0,
+      warm_sampled: retrievalSet.warmCount || 0,
+      cold_count: retrievalSet.coldCandidates || 0,
+      cold_candidates: retrievalSet.coldCandidates || 0,
+      candidate_set_size_R: 0,
+      retrieval_set_size: 0,
+      retrieval_bound: (retrievalSet.hotCount || 0) + warmSampleBudget,
+      vectors_scanned: 0,
+      vector_search_scanned_count: 0
+    });
+    return [];
+  }
+
+  const candidateChunks = await getChunksByDocIds(candidateNamespaceIds);
+  const candidateChunkIds = candidateChunks.map((row) => row.chunk_id).filter(Boolean);
+  const denseChunkMap = new Map();
+  for (const row of candidateChunks) {
+    denseChunkMap.set(row.chunk_id, row);
+  }
+  const vectorSearchScannedCount = candidateChunkIds.length;
+  if (!vectorSearchScannedCount) {
+    emitTelemetry("memory_candidates", telemetryContext, {
+      hot_count: retrievalSet.hotCount || 0,
+      warm_count: retrievalSet.warmCount || 0,
+      warm_sampled: retrievalSet.warmCount || 0,
+      cold_count: retrievalSet.coldCandidates || 0,
+      cold_candidates: retrievalSet.coldCandidates || 0,
+      candidate_set_size_R: candidateNamespaceIds.length,
+      retrieval_set_size: candidateNamespaceIds.length,
+      vectors_scanned: 0,
+      vector_search_scanned_count: 0
+    });
+    return [];
+  }
+
+  emitTelemetry("memory_candidates", telemetryContext, {
+    hot_count: retrievalSet.hotCount || 0,
+    warm_count: retrievalSet.warmCount || 0,
+    warm_sampled: retrievalSet.warmCount || 0,
+    cold_count: retrievalSet.coldCandidates || 0,
+    cold_candidates: retrievalSet.coldCandidates || 0,
+    candidate_set_size_R: candidateNamespaceIds.length,
+    retrieval_set_size: candidateNamespaceIds.length,
+    retrieval_bound: (retrievalSet.hotCount || 0) + warmSampleBudget,
+    vectors_scanned: vectorSearchScannedCount,
+    vector_search_scanned_count: vectorSearchScannedCount
+  });
+  if (candidateNamespaceIds.length > ((retrievalSet.hotCount || 0) + warmSampleBudget + (retrievalSet.coldCandidates || 0))) {
+    console.warn(`[memory_candidates] retrieval bound exceeded set=${candidateNamespaceIds.length} hot=${retrievalSet.hotCount || 0} warm_budget=${warmSampleBudget}`);
+  }
+  if ((retrievalSet.coldCandidates || 0) > 0 && MEMORY_RETRIEVAL_COLD_PROBE_EPSILON <= 0) {
+    console.warn(`[memory_candidates] cold candidates should be zero; got=${retrievalSet.coldCandidates}`);
+  }
+
   const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
   const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
   const hasDocFilter = cleanDocIds.length > 0;
   const internalK = Math.min(topK * multiplier * (hasDocFilter ? 2 : 1), cap);
-
-  const cmd = buildVsearch(internalK, qvec);
+  const scopedK = Math.max(1, Math.min(internalK, vectorSearchScannedCount));
+  const cmd = buildVsearchIn(scopedK, qvec, candidateChunkIds);
   const line = await sendCmd(cmd);
 
-  const denseMatches = parseVsearchReply(line)
-    .filter(m => m.id.startsWith(`${tenantId}::`));
-
-  const denseIds = denseMatches.map(m => m.id);
-  const denseChunkMap = await getChunksByIds(denseIds);
+  const denseMatches = parseVsearchReply(line);
   const docFilter = hasDocFilter ? new Set(cleanDocIds) : null;
-  const namespacedDocIds = (hasDocFilter && collection)
-    ? cleanDocIds.map((docId) => namespaceDocId(tenantId, collection, docId))
-    : null;
+  const namespacedDocIds = candidateNamespaceIds;
 
   const lexicalMultiplier = Number.isFinite(HYBRID_LEXICAL_MULTIPLIER) && HYBRID_LEXICAL_MULTIPLIER > 0
     ? HYBRID_LEXICAL_MULTIPLIER
@@ -2332,7 +2962,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -2349,6 +2979,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     principalId,
     privileges,
     enforceArtifactVisibility: true,
+    candidateTypes: ["artifact"],
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -2358,6 +2989,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   });
 
   let memoryMap = new Map();
+  const usedItems = [];
   const namespaceIds = results.map(r => r._row.doc_id);
   if (namespaceIds.length) {
     try {
@@ -2370,7 +3002,6 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       });
 
       const retrieved = [];
-      const usedItems = [];
       const seen = new Set();
       for (const result of results) {
         const mem = memoryMap.get(result._row.doc_id);
@@ -2391,21 +3022,16 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       emitTelemetry("memory_retrieval", telemetryContext, {
         operation: "answer_question",
         query_chars: String(question || "").length,
+        retrieved_top_n: retrieved.length,
         retrieved_count: retrieved.length,
         retrieved
       });
-
-      await recordMemoryEventsForItems(usedItems, "used_in_answer");
-      emitTelemetry("memory_used", telemetryContext, {
-        operation: "answer_question",
-        memory_count: usedItems.length,
-        memory_ids: usedItems.map((mem) => mem.id)
-      });
     } catch (err) {
-      console.warn("[memory_events] Failed to record used_in_answer:", err?.message || err);
+      console.warn("[memory_events] Failed to resolve retrieved memory rows:", err?.message || err);
       emitTelemetry("memory_retrieval", telemetryContext, {
         operation: "answer_question",
         query_chars: String(question || "").length,
+        retrieved_top_n: results.length,
         retrieved_count: results.length,
         retrieved: results.map((result) => ({
           memory_id: null,
@@ -2428,7 +3054,9 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     };
   }).filter(Boolean);
 
-  const { answer, citations, usage } = await generateAnswer(question, chunks, {
+  const injectedMemoryIds = new Set();
+  const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
+    answerLength,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
       const seen = new Set();
@@ -2441,12 +3069,19 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
         if (!memoryId || seen.has(memoryId)) continue;
         seen.add(memoryId);
         memoryIds.push(memoryId);
+        injectedMemoryIds.add(memoryId);
       }
       emitTelemetry("prompt_constructed", telemetryContext, {
         operation: "answer_question",
+        answer_length: promptStats?.answerLength || answerLength || "auto",
+        requested_answer_length: promptStats?.requestedAnswerLength || answerLength || "auto",
         question_chars: String(question || "").length,
         prompt_chars: Number(promptStats?.promptChars || 0),
+        prompt_tokens: Number(promptStats?.promptTokensEst || 0),
         prompt_tokens_est: Number(promptStats?.promptTokensEst || 0),
+        memory_tokens_est: Number(promptStats?.memoryTokensEst || 0),
+        total_tokens_est: Number(promptStats?.totalTokensEst || promptStats?.promptTokensEst || 0),
+        injected_chunks_count: chunkIds.length,
         chunk_count: chunkIds.length,
         memory_count: memoryIds.length || Number(promptStats?.memoriesIncluded || 0),
         chunk_ids: chunkIds,
@@ -2454,6 +3089,27 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       });
     }
   });
+
+  const injectedItems = [];
+  if (injectedMemoryIds.size > 0) {
+    const seen = new Set();
+    for (const item of usedItems) {
+      if (!item?.id) continue;
+      if (!injectedMemoryIds.has(item.id)) continue;
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      injectedItems.push(item);
+    }
+  }
+  if (injectedItems.length) {
+    await recordMemoryEventsForItems(injectedItems, "used_in_answer");
+    emitTelemetry("memory_used", telemetryContext, {
+      operation: "answer_question",
+      answer_length: resolvedAnswerLength || answerLength || "auto",
+      memory_count: injectedItems.length,
+      memory_ids: injectedItems.map((mem) => mem.id)
+    });
+  }
 
   recordGenerationUsage(tenantId, usage, buildTelemetryContext({
     requestId: telemetryContext.requestId,
@@ -2474,7 +3130,12 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     };
   });
 
-  return { answer, citations: mapped, chunksUsed: chunks.length };
+  return {
+    answer,
+    citations: mapped,
+    chunksUsed: chunks.length,
+    answerLength: resolvedAnswerLength || answerLength || "auto"
+  };
 }
 
 async function indexMemoryText(namespaceId, text, options = {}) {
@@ -2598,6 +3259,8 @@ async function memoryWriteCore(req) {
   }
   const memoryId = crypto.randomUUID();
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
+  const nowMs = Date.now();
+  const initialValueScore = resolveInitialValueScore();
 
   const metadataWithTokens = withTokenEstimate(metadata, text);
   const memory = await upsertMemoryItem({
@@ -2619,7 +3282,11 @@ async function memoryWriteCore(req) {
     visibility: resolvedVisibility,
     acl: aclList,
     importanceHint,
-    pinned
+    pinned,
+    initialValueScore,
+    initialTier: "WARM",
+    valueLastUpdateTs: nowMs,
+    tierLastUpdateTs: nowMs
   });
 
   const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text, {
@@ -2631,25 +3298,6 @@ async function memoryWriteCore(req) {
     })
   });
   scheduleRedundancyUpdate(memory);
-
-  try {
-    const tokensEst = getTokensEstimate(memory);
-    const valueScore = computeValueScoreForMemory(memory, tokensEst);
-    const updated = await updateMemoryItemMetrics({
-      id: memory.id,
-      tenantId,
-      valueScore,
-      lastUsedAt: memory.created_at
-    });
-    if (updated) {
-      memory.value_score = updated.value_score;
-      memory.last_used_at = updated.last_used_at;
-    } else {
-      memory.value_score = valueScore;
-    }
-  } catch (err) {
-    console.warn("[memory] Failed to set initial value score:", err?.message || err);
-  }
 
   return {
     tenantId,
@@ -3342,19 +3990,43 @@ async function deleteMemoryItemFully(item, options = {}) {
 
 async function ensureValueScore(item) {
   if (!item) return null;
-  if (Number.isFinite(item.value_score)) return item.value_score;
-  const tokensEst = getTokensEstimate(item);
-  const score = computeValueScoreForMemory(item, tokensEst);
+  const nowMs = Date.now();
+  const previousTier = normalizeTier(item.tier, "WARM");
+  const existingValue = Number(item.value_score);
+  if (!Number.isFinite(existingValue)) {
+    item.value_score = resolveInitialValueScore();
+    item.tier = normalizeTier(item.tier, "WARM");
+    item.value_last_update_ts = nowMs;
+    item.tier_last_update_ts = nowMs;
+  }
+  const valueUpdate = buildValueUpdateForMemory(item, "retrieved", 0, nowMs, {
+    decayOnly: true
+  });
   const updated = await updateMemoryItemMetrics({
     id: item.id,
     tenantId: item.tenant_id,
-    valueScore: score
+    valueScore: valueUpdate.valueScore,
+    tier: valueUpdate.tier,
+    valueLastUpdateTs: valueUpdate.valueLastUpdateTs,
+    tierLastUpdateTs: valueUpdate.tierLastUpdateTs
   });
   if (updated) {
     item.value_score = updated.value_score;
+    item.tier = updated.tier;
+    item.value_last_update_ts = updated.value_last_update_ts;
+    item.tier_last_update_ts = updated.tier_last_update_ts;
   } else {
-    item.value_score = score;
+    item.value_score = valueUpdate.valueScore;
+    item.tier = valueUpdate.tier;
+    item.value_last_update_ts = valueUpdate.valueLastUpdateTs;
+    item.tier_last_update_ts = valueUpdate.tierLastUpdateTs;
   }
+  emitTierTransitionTelemetry(item, previousTier, item.tier, {
+    reason: "value_decay",
+    value_score: item.value_score
+  }, {
+    source: "lifecycle_value_decay"
+  });
   return item.value_score;
 }
 
@@ -3512,6 +4184,9 @@ async function compactLowValueGroup(seed, options = {}) {
     docIds: [],
     principalId: null,
     privileges: null,
+    candidateTypes: MEMORY_TYPES.filter(t => t !== "artifact"),
+    tags: seed.tags || null,
+    agentId: seed.agent_id || null,
     telemetry: buildTelemetryContext({
       requestId: options.requestId || null,
       tenantId: seed.tenant_id,
@@ -3690,16 +4365,24 @@ async function runValueDecayOnce() {
       const items = await listMemoryItemsForValueDecay({ limit: batchSize, afterId });
       if (!items.length) break;
       for (const item of items) {
-        let tokensEst = getTokensEstimate(item);
-        if (tokensEst === null && MEMORY_VALUE_TEXT_FALLBACK) {
-          const text = await loadArtifactText(item.namespace_id);
-          tokensEst = estimateTokensFromText(text);
-        }
-        const valueScore = computeValueScoreForMemory(item, tokensEst);
+        const previousTier = normalizeTier(item.tier, "WARM");
+        const nowMs = Date.now();
+        const valueUpdate = buildValueUpdateForMemory(item, "retrieved", 0, nowMs, {
+          decayOnly: true
+        });
         await updateMemoryItemMetrics({
           id: item.id,
           tenantId: item.tenant_id,
-          valueScore
+          valueScore: valueUpdate.valueScore,
+          tier: valueUpdate.tier,
+          valueLastUpdateTs: valueUpdate.valueLastUpdateTs,
+          tierLastUpdateTs: valueUpdate.tierLastUpdateTs
+        });
+        emitTierTransitionTelemetry(item, previousTier, valueUpdate.tier, {
+          reason: "value_decay",
+          value_score: valueUpdate.valueScore
+        }, {
+          source: "value_decay"
         });
         updated += 1;
         processed += 1;
@@ -3744,7 +4427,10 @@ async function computeRedundancyForItem(item) {
     k: MEMORY_REDUNDANCY_TOP_K + 1,
     docIds: [],
     principalId: null,
-    privileges: null
+    privileges: null,
+    candidateTypes: MEMORY_TYPES.filter(t => t !== "artifact"),
+    tags: item.tags || null,
+    agentId: item.agent_id || null
   });
 
   const namespaceIds = results.map(r => r._row.doc_id);
@@ -3871,12 +4557,25 @@ async function runLifecycleOnce() {
         }
 
         const valueScore = await ensureValueScore(item);
-        if (valueScore > MEMORY_LIFECYCLE_PROMOTE_THRESHOLD) {
+        const tier = normalizeTier(item.tier, "WARM");
+        if (isBelowMinAgeForLifecycle(item, now, MEMORY_LIFECYCLE_MIN_AGE_HOURS)) {
+          emitLifecycleActionTelemetry("retain", item, {
+            reason: "below_min_age",
+            tier,
+            value_score: Number.isFinite(valueScore) ? valueScore : null
+          }, {
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
+          continue;
+        }
+        if (tier === "HOT" && valueScore >= MEMORY_TIER_THRESHOLDS.hotUp) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=promote id=${item.id} value=${valueScore.toFixed(4)}`);
             emitLifecycleActionTelemetry("retain", item, {
               reason: "dry_run",
               attempted_action: "promote",
+              tier,
               value_score: valueScore
             }, {
               requestId: lifecycleRequestId,
@@ -3892,22 +4591,13 @@ async function runLifecycleOnce() {
           }
           continue;
         }
-        if (isBelowMinAgeForLifecycle(item, now, MEMORY_LIFECYCLE_MIN_AGE_HOURS)) {
-          emitLifecycleActionTelemetry("retain", item, {
-            reason: "below_min_age",
-            value_score: Number.isFinite(valueScore) ? valueScore : null
-          }, {
-            requestId: lifecycleRequestId,
-            source: "lifecycle_sweep"
-          });
-          continue;
-        }
-        if (valueScore < MEMORY_LIFECYCLE_DELETE_THRESHOLD) {
+        if (tier === "COLD" && valueScore < MEMORY_TIER_THRESHOLDS.evict) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=value value=${valueScore.toFixed(4)}`);
             emitLifecycleActionTelemetry("retain", item, {
               reason: "dry_run",
-              attempted_action: "delete_low_value",
+              attempted_action: "evict_cold",
+              tier,
               value_score: valueScore
             }, {
               requestId: lifecycleRequestId,
@@ -3919,7 +4609,8 @@ async function runLifecycleOnce() {
             console.warn(`[lifecycle] delete cap reached; skipping low-value delete id=${item.id}`);
             emitLifecycleActionTelemetry("retain", item, {
               reason: "delete_budget_exhausted",
-              attempted_action: "delete_low_value",
+              attempted_action: "evict_cold",
+              tier,
               value_score: valueScore
             }, {
               requestId: lifecycleRequestId,
@@ -3928,7 +4619,7 @@ async function runLifecycleOnce() {
             continue;
           }
           const result = await deleteMemoryItemFully(item, {
-            reason: "low_value",
+            reason: "cold_eviction",
             requestId: lifecycleRequestId,
             source: "lifecycle_sweep"
           });
@@ -3936,12 +4627,13 @@ async function runLifecycleOnce() {
           if (result?.queued) queuedDeletes += 1;
           continue;
         }
-        if (valueScore < MEMORY_LIFECYCLE_SUMMARY_THRESHOLD) {
+        if (tier === "COLD" && valueScore < MEMORY_LIFECYCLE_SUMMARY_THRESHOLD) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=compact id=${item.id} value=${valueScore.toFixed(4)}`);
             emitLifecycleActionTelemetry("retain", item, {
               reason: "dry_run",
               attempted_action: "compact",
+              tier,
               value_score: valueScore
             }, {
               requestId: lifecycleRequestId,
@@ -3959,7 +4651,8 @@ async function runLifecycleOnce() {
           continue;
         }
         emitLifecycleActionTelemetry("retain", item, {
-          reason: "value_band",
+          reason: "tier_band",
+          tier,
           value_score: valueScore
         }, {
           requestId: lifecycleRequestId,
@@ -3969,6 +4662,18 @@ async function runLifecycleOnce() {
       afterId = items[items.length - 1].id;
       if (items.length < batchSize) break;
     }
+    emitTelemetry("lifecycle_actions", buildTelemetryContext({
+      requestId: lifecycleRequestId,
+      tenantId: "all",
+      collection: null,
+      source: "lifecycle_sweep"
+    }), {
+      promote_count: promoted,
+      demote_count: 0,
+      evict_count: deleted,
+      compact_count: summarized,
+      queued_delete_count: queuedDeletes
+    });
     if (deleted || summarized || promoted || queuedDeletes) {
       console.log(`[lifecycle] deleted=${deleted} summarized=${summarized} promoted=${promoted} queuedDeletes=${queuedDeletes}`);
     }
@@ -4005,6 +4710,7 @@ async function runMemorySnapshotOnce() {
       total_items: snapshot.total_items,
       approx_tokens: snapshot.approx_tokens,
       type_distribution: snapshot.type_distribution || {},
+      tier_distribution: snapshot.tier_distribution || {},
       value_distribution: snapshot.value_distribution || {}
     });
   } catch (err) {
@@ -4080,6 +4786,7 @@ app.get("/llms.txt", (req, res) => {
     "",
     "## Suggested usage",
     "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
+    "- For /v1/ask, use answerLength (auto|short|medium|long) to control response depth.",
     "- Use llms.txt for quick discovery of docs and MCP entrypoints."
   ];
   res.type("text/plain; charset=utf-8").send(lines.join("\n"));
@@ -4264,7 +4971,7 @@ app.get(["/auth/:provider/login", "/v1/auth/:provider/login"], async (req, res) 
     res.cookie(cookieName, payload, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.COOKIE_SECURE === "1",
+      secure: COOKIE_SECURE,
       maxAge: 5 * 60 * 1000,
       signed: true
     });
@@ -5044,9 +5751,13 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
   const { question } = req.body || {};
   const k = parseInt(req.body?.k || "5", 10);
   const docIds = parseDocFilter(req.body?.docIds);
+  const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
 
   if (!question || !question.trim()) {
     return res.status(400).json({ error: "question is required" });
+  }
+  if (!answerLength) {
+    return res.status(400).json({ error: "answerLength must be one of: auto, short, medium, long" });
   }
 
   try {
@@ -5062,6 +5773,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       docIds,
       principalId: access.principalId,
       privileges: access.privileges,
+      answerLength,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -5076,6 +5788,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answer: result.answer,
       citations: citationIds,
       sources: result.citations,
+      answerLength: result.answerLength,
       tenantId,
       collection
     });
@@ -5088,9 +5801,13 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
   const { question } = req.body || {};
   const k = parseInt(req.body?.k || "5", 10);
   const docIds = parseDocFilter(req.body?.docIds);
+  const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
 
   if (!question || !question.trim()) {
     return sendError(res, 400, "question is required", "INVALID_INPUT", null, null);
+  }
+  if (!answerLength) {
+    return sendError(res, 400, "answerLength must be one of: auto, short, medium, long", "INVALID_INPUT", null, null);
   }
 
   let tenantId = null;
@@ -5107,6 +5824,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       docIds,
       principalId: access.principalId,
       privileges: access.privileges,
+      answerLength,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -5119,6 +5837,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answer: result.answer,
       citations: result.citations,
       chunksUsed: result.chunksUsed,
+      answerLength: result.answerLength,
       k
     }, tenantId, collection);
   } catch (e) {
@@ -5228,6 +5947,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
+      candidateTypes: ["artifact"],
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -5275,6 +5995,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
+      candidateTypes: ["artifact"],
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -5410,6 +6131,11 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       docIds: [],
       principalId: access.principalId,
       privileges: access.privileges,
+      candidateTypes: typeFilter.length ? typeFilter : MEMORY_TYPES,
+      tags,
+      agentId,
+      since: sinceTime,
+      until: untilTime,
       telemetry: telemetryContext
     });
 
@@ -5449,6 +6175,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     emitTelemetry("memory_retrieval", telemetryContext, {
       operation: "memory_recall",
       query_chars: String(query || "").length,
+      retrieved_top_n: recalled.length,
       retrieved_count: recalled.length,
       retrieved: recalled.map((entry) => ({
         memory_id: entry?.memory?.id || null,
@@ -5506,6 +6233,11 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       docIds: [],
       principalId: access.principalId,
       privileges: access.privileges,
+      candidateTypes: typeFilter.length ? typeFilter : MEMORY_TYPES,
+      tags,
+      agentId,
+      since: sinceTime,
+      until: untilTime,
       telemetry: telemetryContext
     });
 
@@ -5545,6 +6277,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     emitTelemetry("memory_retrieval", telemetryContext, {
       operation: "memory_recall",
       query_chars: String(query || "").length,
+      retrieved_top_n: recalled.length,
       retrieved_count: recalled.length,
       retrieved: recalled.map((entry) => ({
         memory_id: entry?.memory?.id || null,
@@ -6127,6 +6860,7 @@ async function start() {
       scheduleAutoReindex();
       scheduleTtlSweep();
       scheduleJobSweep();
+      scheduleMemoryEventFlush();
       scheduleValueDecay();
       scheduleRedundancySweep();
       scheduleLifecycleSweep();
@@ -6138,4 +6872,21 @@ async function start() {
   }
 }
 
-start();
+if (require.main === module) {
+  start();
+}
+
+module.exports = {
+  __testHooks: {
+    normalizeTier,
+    resolveTierForValue,
+    resolveInitialValueScore,
+    decayMemoryValue,
+    buildValueUpdateForMemory,
+    MEMORY_TIER_THRESHOLDS,
+    MEMORY_VALUE_MAX,
+    MEMORY_VALUE_DECAY_LAMBDA,
+    MEMORY_ACCESS_ALPHA,
+    MEMORY_CONTRIBUTION_BETA
+  }
+};

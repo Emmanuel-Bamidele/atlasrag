@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.redis
     image: atlasrag/vector-store
     environment:
-      VECTOR_WAL: "1"
+      VECTOR_WAL: ${VECTOR_WAL:-1}
       WAL_PATH: "/data/wal.log"
     volumes:
       - vector_data:/data
@@ -23,7 +23,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./gateway/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
 
   gateway:
     build:
@@ -42,6 +42,10 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       AUTH_MAX_ATTEMPTS: ${AUTH_MAX_ATTEMPTS}
       AUTH_LOCK_MINUTES: ${AUTH_LOCK_MINUTES}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-60}
+      TENANT_RATE_LIMIT_WINDOW_MS: ${TENANT_RATE_LIMIT_WINDOW_MS:-60000}
+      TENANT_RATE_LIMIT_MAX: ${TENANT_RATE_LIMIT_MAX:-120}
       LOGIN_RATE_LIMIT_WINDOW_MS: ${LOGIN_RATE_LIMIT_WINDOW_MS}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX}
       MIGRATIONS_AUTO: ${MIGRATIONS_AUTO}
@@ -63,6 +67,18 @@ services:
       MEMORY_LIFECYCLE_SUMMARY_THRESHOLD: ${MEMORY_LIFECYCLE_SUMMARY_THRESHOLD}
       MEMORY_LIFECYCLE_PROMOTE_THRESHOLD: ${MEMORY_LIFECYCLE_PROMOTE_THRESHOLD}
       MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE: ${MEMORY_LIFECYCLE_COMPACT_GROUP_SIZE}
+      # Keep empty-default on these three so app-level fallback chains remain authoritative.
+      MEMORY_TIER_HOT_UP: ${MEMORY_TIER_HOT_UP:-}
+      MEMORY_TIER_HOT_DOWN: ${MEMORY_TIER_HOT_DOWN:-0.62}
+      MEMORY_TIER_WARM_UP: ${MEMORY_TIER_WARM_UP:-0.45}
+      MEMORY_TIER_WARM_DOWN: ${MEMORY_TIER_WARM_DOWN:-}
+      MEMORY_TIER_EVICT: ${MEMORY_TIER_EVICT:-}
+      MEMORY_INIT_VALUE: ${MEMORY_INIT_VALUE:-0.5}
+      MEMORY_RETRIEVAL_WARM_SAMPLE_K: ${MEMORY_RETRIEVAL_WARM_SAMPLE_K:-8}
+      MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER: ${MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER:-4}
+      MEMORY_RETRIEVAL_COLD_PROBE_EPSILON: ${MEMORY_RETRIEVAL_COLD_PROBE_EPSILON:-0}
+      EMBED_FALLBACK_ON_ERROR: ${EMBED_FALLBACK_ON_ERROR:-1}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-600000}
       ALLOW_PRINCIPAL_OVERRIDE: ${ALLOW_PRINCIPAL_OVERRIDE:-0}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       OPENAPI_BASE_URL: ${OPENAPI_BASE_URL}
@@ -90,7 +106,7 @@ services:
     volumes:
       - ./telemetry:/app/telemetry
     ports:
-      - "3000:3000"
+      - "${GATEWAY_HOST_PORT:-3000}:3000"
     depends_on:
       - redis
       - postgres

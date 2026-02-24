@@ -1,0 +1,37 @@
+{
+  "id": "stress-phase-shift",
+  "type": "phase_shift",
+  "description": "Traffic shifts from Topic A to Topic B, then returns to Topic A.",
+  "workload": {
+    "ttl_seconds": 2592000,
+    "recall_k": 24,
+    "ask_k": 48,
+    "concurrency": 24,
+    "log_every": 1000,
+    "request_timeout_ms": 120000,
+    "max_retries": 5
+  },
+  "phases": [
+    {
+      "name": "topic_a",
+      "topic": "pricing",
+      "writes": 18000,
+      "recalls": 3600,
+      "asks": 3600
+    },
+    {
+      "name": "topic_b",
+      "topic": "security",
+      "writes": 18000,
+      "recalls": 3600,
+      "asks": 3600
+    },
+    {
+      "name": "topic_a_return",
+      "topic": "pricing",
+      "writes": 14000,
+      "recalls": 2800,
+      "asks": 2800
+    }
+  ]
+}

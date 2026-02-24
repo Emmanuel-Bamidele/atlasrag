@@ -1,0 +1,37 @@
+{
+  "id": "stress-bursty-write",
+  "type": "bursty_write",
+  "description": "Normal traffic, then 10x write burst, then normal traffic again.",
+  "workload": {
+    "ttl_seconds": 2592000,
+    "recall_k": 24,
+    "ask_k": 48,
+    "concurrency": 24,
+    "log_every": 1000,
+    "request_timeout_ms": 120000,
+    "max_retries": 5
+  },
+  "phases": [
+    {
+      "name": "normal_before",
+      "topic": "operations",
+      "writes": 5000,
+      "recalls": 1000,
+      "asks": 1000
+    },
+    {
+      "name": "write_burst",
+      "topic": "incidents",
+      "writes": 50000,
+      "recalls": 500,
+      "asks": 500
+    },
+    {
+      "name": "normal_after",
+      "topic": "operations",
+      "writes": 5000,
+      "recalls": 1000,
+      "asks": 1000
+    }
+  ]
+}

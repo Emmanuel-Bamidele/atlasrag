@@ -1,0 +1,35 @@
+{
+  "id": "baseline-ttl",
+  "policy": "TTL",
+  "description": "TTL-only baseline. AMV-L periodic value/redundancy/lifecycle jobs are disabled.",
+  "env": {
+    "TTL_SWEEP_INTERVAL_MS": "86400000",
+    "MEMORY_VALUE_DECAY_INTERVAL_MS": "0",
+    "MEMORY_REDUNDANCY_INTERVAL_MS": "0",
+    "MEMORY_LIFECYCLE_INTERVAL_MS": "0",
+    "MEMORY_LIFECYCLE_MIN_AGE_HOURS": "24",
+    "MEMORY_LIFECYCLE_MAX_DELETES": "0",
+    "MEMORY_LIFECYCLE_DRY_RUN": "0",
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_K": "2000",
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER": "8",
+    "MEMORY_RETRIEVAL_WARM_SELECTION": "random",
+    "MEMORY_TIER_HOT_UP": "0.51",
+    "MEMORY_TIER_HOT_DOWN": "0.01",
+    "MEMORY_TIER_WARM_UP": "0.50",
+    "MEMORY_TIER_WARM_DOWN": "0.00",
+    "MEMORY_TIER_EVICT": "0.00",
+    "MEMORY_INIT_VALUE": "0.50"
+  },
+  "workload": {
+    "writes": 50000,
+    "min_asks": 10000,
+    "recall_k": 24,
+    "ask_k": 48,
+    "ttl_seconds": 2592000,
+    "snapshot_every": 1000,
+    "concurrency": 24,
+    "log_every": 1000,
+    "request_timeout_ms": 120000,
+    "max_retries": 5
+  }
+}

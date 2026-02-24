@@ -1,0 +1,10 @@
+{
+  "id": "ablation-alpha-beta-default-default",
+  "group": "alpha_beta",
+  "policy": "AMV-L",
+  "description": "Default access alpha and contribution beta.",
+  "env": {
+    "MEMORY_ACCESS_ALPHA": "0.08",
+    "MEMORY_CONTRIBUTION_BETA": "0.20"
+  }
+}

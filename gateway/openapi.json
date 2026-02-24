@@ -33,7 +33,7 @@
     },
     {
       "name": "Memory",
-      "description": "Memory write/recall and memory lifecycle operations."
+      "description": "Memory write/recall and AMV-L lifecycle operations (tiered HOT/WARM/COLD retrieval gating)."
     },
     {
       "name": "Jobs",
@@ -559,6 +559,16 @@
               "type": "string"
             }
           },
+          "answerLength": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "short",
+              "medium",
+              "long"
+            ],
+            "description": "Controls answer depth. auto adapts based on retrieved source detail."
+          },
           "collection": {
             "type": "string"
           },
@@ -605,6 +615,15 @@
           "chunksUsed": {
             "type": "integer"
           },
+          "answerLength": {
+            "type": "string",
+            "enum": [
+              "short",
+              "medium",
+              "long"
+            ],
+            "description": "Effective answer length used by generation."
+          },
           "k": {
             "type": "integer"
           }
@@ -627,6 +646,14 @@
           "semantic",
           "procedural",
           "summary"
+        ]
+      },
+      "MemoryTier": {
+        "type": "string",
+        "enum": [
+          "HOT",
+          "WARM",
+          "COLD"
         ]
       },
       "MemoryItem": {
@@ -718,7 +745,25 @@
             "type": [
               "number",
               "null"
-            ]
+            ],
+            "description": "AMV-L memory value score after incremental decay/reinforcement update."
+          },
+          "tier": {
+            "$ref": "#/components/schemas/MemoryTier"
+          },
+          "valueLastUpdateTs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix epoch milliseconds for the last value update."
+          },
+          "tierLastUpdateTs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix epoch milliseconds for the last tier transition."
           },
           "reuseCount": {
             "type": "integer"
@@ -1895,6 +1940,7 @@
               "example": {
                 "question": "What does AtlasRAG store?",
                 "k": 4,
+                "answerLength": "auto",
                 "collection": "default"
               }
             }

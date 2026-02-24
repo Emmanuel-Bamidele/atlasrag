@@ -32,3 +32,18 @@ Outputs:
 
 Repeat runs with different `TELEMETRY_CONFIG_ID` values (and optionally different `TELEMETRY_RUN_ID` values) while appending to the same NDJSON file.  
 The analyzer auto-separates by `config_id` and `run_id`.
+
+## 4) AMV-L acceptance checks
+
+For AMV-L runs, validate these event fields from `memory_candidates` and `prompt_constructed` telemetry:
+
+- `hot_count`, `warm_sampled`, `cold_candidates`
+- `retrieval_set_size`, `retrieval_bound`
+- `vector_search_scanned_count`
+- `prompt_tokens_est`, `memory_tokens_est`, `total_tokens_est`
+
+Quick checks:
+
+- `cold_candidates == 0` when `MEMORY_RETRIEVAL_COLD_PROBE_EPSILON=0`
+- `retrieval_set_size <= retrieval_bound`
+- p95/p99 request latency tracks bounded retrieval/prompt sizes

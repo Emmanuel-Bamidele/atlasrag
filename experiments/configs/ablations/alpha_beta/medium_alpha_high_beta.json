@@ -1,0 +1,10 @@
+{
+  "id": "ablation-alpha-beta-medium-high",
+  "group": "alpha_beta",
+  "policy": "AMV-L",
+  "description": "Medium access alpha, high contribution beta.",
+  "env": {
+    "MEMORY_ACCESS_ALPHA": "0.14",
+    "MEMORY_CONTRIBUTION_BETA": "0.35"
+  }
+}

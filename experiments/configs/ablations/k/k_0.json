@@ -1,0 +1,9 @@
+{
+  "id": "ablation-k-0",
+  "group": "k",
+  "policy": "AMV-L",
+  "description": "Warm-tier sample budget disabled.",
+  "env": {
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_K": "0"
+  }
+}

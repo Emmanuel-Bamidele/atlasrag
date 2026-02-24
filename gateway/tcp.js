@@ -89,6 +89,18 @@ function buildVsearch(k, vec) {
   return `VSEARCH ${k} ${dim} ${floats}`;
 }
 
+function buildVsearchIn(k, vec, ids) {
+  const dim = vec.length;
+  const floats = vec.map(x => x.toString()).join(" ");
+  const cleanIds = Array.isArray(ids)
+    ? ids.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  if (!cleanIds.length) {
+    return `VSEARCHIN ${k} ${dim} ${floats} 0`;
+  }
+  return `VSEARCHIN ${k} ${dim} ${floats} ${cleanIds.length} ${cleanIds.join(" ")}`;
+}
+
 // Build a VDEL command string
 function buildVdel(id) {
   return `VDEL ${id}`;
@@ -124,6 +136,7 @@ module.exports = {
   sendCmd,
   buildVset,
   buildVsearch,
+  buildVsearchIn,
   buildVdel,
   parseVsearchReply
 };

@@ -340,6 +340,54 @@ static std::string handle_command(
     return out;
   }
 
+  // --------------------------------
+  // VSEARCHIN k dim q1 ... q_dim count id1 id2 ... id_count
+  //
+  // Searches only the provided vector ids.
+  // --------------------------------
+  if (cmd == "VSEARCHIN" && parts.size() >= 5) {
+
+    g_vsearch_count.fetch_add(1);
+
+    int k = std::stoi(parts[1]);
+    int dim = std::stoi(parts[2]);
+
+    std::vector<float> q = parse_floats(parts, 3, dim);
+    if (q.empty()) return "ERR bad query vector\n";
+
+    std::size_t count_idx = 3 + (std::size_t)dim;
+    if (parts.size() <= count_idx) return "ERR missing id count\n";
+
+    int id_count = std::stoi(parts[count_idx]);
+    if (id_count < 0) return "ERR bad id count\n";
+
+    std::size_t ids_start = count_idx + 1;
+    if (parts.size() < ids_start + (std::size_t)id_count) {
+      return "ERR insufficient ids\n";
+    }
+
+    std::vector<std::string> ids;
+    ids.reserve((std::size_t)id_count);
+    for (int i = 0; i < id_count; ++i) {
+      ids.push_back(parts[ids_start + (std::size_t)i]);
+    }
+
+    auto results = vdb.search_subset(q, k, ids);
+
+    std::string out;
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      out += results[i].first;
+      out += " ";
+      out += std::to_string(results[i].second);
+
+      if (i + 1 < results.size())
+        out += "|";
+    }
+
+    out += "\n";
+    return out;
+  }
+
   return "ERR unknown command\n";
 }
 

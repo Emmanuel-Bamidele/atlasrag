@@ -10,6 +10,7 @@ const FILE_PATH = String(
   process.env.TELEMETRY_FILE || path.join(process.cwd(), "telemetry", "events.ndjson")
 ).trim();
 const CONFIG_ID = String(process.env.TELEMETRY_CONFIG_ID || process.env.SYSTEM_CONFIG_ID || "default").trim() || "default";
+const POLICY = String(process.env.TELEMETRY_POLICY || process.env.SYSTEM_POLICY || "unknown").trim() || "unknown";
 const RUN_ID = String(
   process.env.TELEMETRY_RUN_ID || `${new Date().toISOString().replace(/[:.]/g, "-")}-pid${process.pid}`
 ).trim();
@@ -36,6 +37,7 @@ function getTelemetryMeta() {
     enabled: ENABLED,
     filePath: FILE_PATH,
     configId: CONFIG_ID,
+    policy: POLICY,
     runId: RUN_ID
   };
 }
@@ -117,11 +119,14 @@ function logTelemetry(eventType, context = {}, fields = {}) {
     return;
   }
 
+  const nowMs = Date.now();
   const event = {
-    timestamp: new Date().toISOString(),
+    timestamp: new Date(nowMs).toISOString(),
+    timestamp_ms: nowMs,
     request_id: normalizeRequestId(context.requestId),
     tenant_id: normalizeTenantId(context.tenantId),
     config_id: CONFIG_ID,
+    policy: POLICY,
     run_id: RUN_ID,
     event_type: String(eventType || "unknown"),
     ...fields

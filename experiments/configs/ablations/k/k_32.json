@@ -1,0 +1,9 @@
+{
+  "id": "ablation-k-32",
+  "group": "k",
+  "policy": "AMV-L",
+  "description": "Very large warm-tier sample budget.",
+  "env": {
+    "MEMORY_RETRIEVAL_WARM_SAMPLE_K": "32"
+  }
+}

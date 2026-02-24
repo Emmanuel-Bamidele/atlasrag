@@ -58,7 +58,10 @@ CREATE TABLE IF NOT EXISTS memory_items (
   metadata JSONB,
   parent_id TEXT REFERENCES memory_items(id) ON DELETE CASCADE,
   namespace_id TEXT UNIQUE NOT NULL,
-  value_score DOUBLE PRECISION,
+  value_score DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+  tier TEXT NOT NULL DEFAULT 'WARM' CHECK (tier IN ('HOT', 'WARM', 'COLD')),
+  value_last_update_ts BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  tier_last_update_ts BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   reuse_count BIGINT DEFAULT 0,
   last_used_at TIMESTAMPTZ,
   utility_ema DOUBLE PRECISION DEFAULT 0,
@@ -222,6 +225,9 @@ ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS tags TEXT[];
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'tenant';
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS acl_principals TEXT[];
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS value_score DOUBLE PRECISION;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS tier TEXT;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS value_last_update_ts BIGINT;
+ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS tier_last_update_ts BIGINT;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS reuse_count BIGINT DEFAULT 0;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS utility_ema DOUBLE PRECISION DEFAULT 0;
@@ -230,11 +236,25 @@ ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS trust_score DOUBLE P
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS importance_hint DOUBLE PRECISION;
 ALTER TABLE IF EXISTS memory_items ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT FALSE;
 UPDATE memory_items SET visibility = 'tenant' WHERE visibility IS NULL;
+UPDATE memory_items SET value_score = 0.5 WHERE value_score IS NULL;
+UPDATE memory_items SET tier = 'WARM' WHERE tier IS NULL;
+UPDATE memory_items
+SET value_last_update_ts = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE value_last_update_ts IS NULL;
+UPDATE memory_items
+SET tier_last_update_ts = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE tier_last_update_ts IS NULL;
 UPDATE memory_items SET reuse_count = 0 WHERE reuse_count IS NULL;
 UPDATE memory_items SET utility_ema = 0 WHERE utility_ema IS NULL;
 UPDATE memory_items SET redundancy_score = 0 WHERE redundancy_score IS NULL;
 UPDATE memory_items SET trust_score = 0.5 WHERE trust_score IS NULL;
 UPDATE memory_items SET pinned = FALSE WHERE pinned IS NULL;
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN value_score SET DEFAULT 0.5;
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN value_score SET NOT NULL;
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN tier SET DEFAULT 'WARM';
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN tier SET NOT NULL;
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN value_last_update_ts SET NOT NULL;
+ALTER TABLE IF EXISTS memory_items ALTER COLUMN tier_last_update_ts SET NOT NULL;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 3;
 ALTER TABLE IF EXISTS memory_jobs ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMPTZ;
@@ -270,9 +290,22 @@ CREATE INDEX IF NOT EXISTS audit_logs_target_idx ON audit_logs(target_type, targ
 CREATE INDEX IF NOT EXISTS memory_items_principal_idx ON memory_items(tenant_id, principal_id);
 CREATE INDEX IF NOT EXISTS memory_items_agent_idx ON memory_items(tenant_id, agent_id);
 CREATE INDEX IF NOT EXISTS memory_items_visibility_idx ON memory_items(tenant_id, visibility);
+CREATE INDEX IF NOT EXISTS memory_items_tier_idx ON memory_items(tenant_id, tier);
+CREATE INDEX IF NOT EXISTS memory_items_tier_value_idx ON memory_items(tenant_id, tier, value_score DESC, id);
 CREATE INDEX IF NOT EXISTS memory_items_acl_idx ON memory_items USING GIN (acl_principals);
 CREATE INDEX IF NOT EXISTS memory_items_tags_idx ON memory_items USING GIN (tags);
 CREATE INDEX IF NOT EXISTS memory_jobs_status_next_run_idx ON memory_jobs(status, next_run_at);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'memory_items_tier_check'
+      AND conrelid = 'memory_items'::regclass
+  ) THEN
+    EXECUTE 'ALTER TABLE memory_items ADD CONSTRAINT memory_items_tier_check CHECK (tier IN (''HOT'', ''WARM'', ''COLD''))';
+  END IF;
+END $$;
 DO $$
 BEGIN
   IF EXISTS (

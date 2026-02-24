@@ -27,6 +27,8 @@ let usageLoaded = false;
 let metricsLoading = false;
 let usageLoading = false;
 let lastUsageStats = null;
+let authRejected = false;
+let authRejectedMessage = "";
 const usageWindowByCard = {};
 const USAGE_WINDOWS = ["24h", "7d", "all"];
 const USAGE_WINDOW_LABELS = { "24h": "24h", "7d": "7d", "all": "All" };
@@ -64,12 +66,16 @@ function saveStoredAuth(type, token){
   if (type === "bearer"){
     localStorage.setItem(LEGACY_JWT_KEY, token);
   }
+  authRejected = false;
+  authRejectedMessage = "";
 }
 
 function clearStoredAuth(){
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_TYPE_KEY);
   localStorage.removeItem(LEGACY_JWT_KEY);
+  authRejected = false;
+  authRejectedMessage = "";
 }
 
 function setThemeButtonState(theme){
@@ -167,7 +173,42 @@ function requireKeyOrWarn(bannerEl){
     setBanner(bannerEl, "err", "No token saved. Go to Settings and paste your token.");
     return false;
   }
+  if (authRejected){
+    setBanner(
+      bannerEl,
+      "err",
+      authRejectedMessage || "Saved token is no longer authorized. Re-login or paste a valid token in Settings."
+    );
+    return false;
+  }
   return true;
+}
+
+async function parseResponsePayload(res){
+  const text = await res.text();
+  if (!text) return null;
+  try{
+    return JSON.parse(text);
+  }catch{
+    return { raw: text };
+  }
+}
+
+function resolveErrorMessage(data, fallback){
+  if (!data) return fallback;
+  if (typeof data === "string" && data.trim()) return data;
+  if (typeof data.error === "string" && data.error.trim()) return data.error;
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+  if (typeof data.error?.message === "string" && data.error.message.trim()) return data.error.message;
+  return fallback;
+}
+
+function noteUnauthorized(data){
+  authRejected = true;
+  authRejectedMessage = resolveErrorMessage(
+    data,
+    "Saved token is unauthorized (401). Re-login or paste a valid token in Settings."
+  );
 }
 
 async function copyTextToClipboard(text){
@@ -364,12 +405,18 @@ async function loadDocsList(){
   setDocsStatus(`Loading docs in "${collection}"...`);
   try{
     const res = await fetch(`/docs/list?collection=${encodeURIComponent(collection)}`, { headers: apiHeaders() });
-    const data = await res.json();
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setDocsStatus(authRejectedMessage || "Unauthorized. Re-login in Settings.");
+      setDocOptions([]);
+      return;
+    }
     if (res.ok && Array.isArray(data.docs)){
       setDocOptions(data.docs);
       setDocsStatus(`${data.docs.length} doc(s) available in "${collection}".`);
     }else{
-      setDocsStatus(data.error || "Failed to load docs.");
+      setDocsStatus(resolveErrorMessage(data, "Failed to load docs."));
       setDocOptions([]);
     }
   }catch(e){
@@ -412,10 +459,19 @@ async function loadCollectionScopeOptions(){
     setCollectionScopeOptions([]);
     return;
   }
+  if (authRejected){
+    setCollectionScopeOptions([]);
+    return;
+  }
 
   try{
     const res = await fetch("/v1/collections", { headers: apiHeaders() });
-    const data = await res.json();
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setCollectionScopeOptions([]);
+      return;
+    }
     if (res.ok && data.ok && Array.isArray(data.data?.collections)){
       const names = data.data.collections
         .map((row) => row?.collection)
@@ -611,6 +667,7 @@ function buildDocConnectContent(baseUrl){
       `API docs: ${apiDocsUrl}`,
       `llms.txt: ${llmsUrl}`,
       `MCP server: ${mcpUrl}`,
+      "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
       "When answering, cite the endpoint path and required headers for each AtlasRAG API call."
     ].join("\n")
   };
@@ -1212,8 +1269,15 @@ async function loadStats(){
 
   try{
     const res = await fetch("/stats", { headers: apiHeaders() });
-    const data = await res.json();
+    const data = await parseResponsePayload(res);
     $("statsRaw").textContent = JSON.stringify(data, null, 2);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner($("statsBanner"), "err", authRejectedMessage);
+      renderStats({});
+      metricsLoaded = false;
+      return;
+    }
 
     if (res.ok){
       setBanner($("statsBanner"), "ok", "Stats loaded.");
@@ -1243,8 +1307,17 @@ async function loadUsage(){
 
   try{
     const res = await fetch("/v1/admin/usage", { headers: apiHeaders() });
-    const data = await res.json();
+    const data = await parseResponsePayload(res);
     $("usageRaw").textContent = JSON.stringify(data, null, 2);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner($("usageBanner"), "err", authRejectedMessage);
+      lastUsageStats = null;
+      renderUsage(null);
+      renderUsageRoutes({});
+      usageLoaded = false;
+      return;
+    }
 
     if (res.ok && data.ok){
       lastUsageStats = data.data;
@@ -1468,7 +1541,13 @@ async function fetchCollections(){
   if (!requireKeyOrWarn($("collectionsBanner"))) return;
   try{
     const res = await fetch("/v1/collections", { headers: apiHeaders() });
-    const data = await res.json();
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      renderCollections([]);
+      setBanner($("collectionsBanner"), "err", authRejectedMessage);
+      return;
+    }
     if (res.ok && data.ok && Array.isArray(data.data?.collections)){
       renderCollections(data.data.collections);
       $("collectionsUpdated").textContent = new Date().toLocaleString();
@@ -1476,7 +1555,7 @@ async function fetchCollections(){
       loadCollectionScopeOptions();
     }else{
       renderCollections([]);
-      const msg = data?.error?.message || data?.error || "Failed to load collections.";
+      const msg = resolveErrorMessage(data, "Failed to load collections.");
       setBanner($("collectionsBanner"), "err", msg);
     }
   }catch(e){
@@ -1591,6 +1670,11 @@ async function saveTenantSettings(){
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  const footerYearEl = $("footerYear");
+  if (footerYearEl) {
+    footerYearEl.textContent = String(new Date().getFullYear());
+  }
+
   initTheme();
   initDocTabs();
   initDocsAgentConnect();
@@ -1999,6 +2083,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const question = $("askQ").value.trim();
     const k = parseInt($("askK").value || "5", 10);
     const scope = String($("askCollectionScope")?.value || "all").trim();
+    const answerLength = String($("askAnswerLength")?.value || "auto").trim().toLowerCase();
 
     if (!question){
       setBanner($("askBanner"), "err", "Please enter a question.");
@@ -2015,6 +2100,9 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         body.collection = scope;
       }
+      if (answerLength){
+        body.answerLength = answerLength;
+      }
 
       const res = await fetch("/ask", {
         method:"POST",
@@ -2027,7 +2115,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (res.ok && data.answer){
         const label = scope === "all" ? "all collections" : scope;
-        setBanner($("askBanner"), "ok", `Answer generated from "${label}".`);
+        const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
+        setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}).`);
         renderAnswer(data);
       }else{
         setBanner($("askBanner"), "err", data.error || "Ask failed.");

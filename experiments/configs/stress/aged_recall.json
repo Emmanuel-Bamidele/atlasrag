@@ -1,0 +1,29 @@
+{
+  "id": "stress-aged-recall",
+  "type": "aged_recall",
+  "description": "Insert key facts early, run long unrelated traffic, then ask for early facts.",
+  "workload": {
+    "ttl_seconds": 2592000,
+    "recall_k": 24,
+    "ask_k": 48,
+    "concurrency": 24,
+    "log_every": 1000,
+    "request_timeout_ms": 120000,
+    "max_retries": 5
+  },
+  "early_facts": {
+    "topic": "founding_facts",
+    "writes": 1200
+  },
+  "background": {
+    "topic": "unrelated_background",
+    "writes": 46000,
+    "recalls": 9200,
+    "asks": 9200
+  },
+  "probes": {
+    "topic": "founding_facts",
+    "recalls": 1200,
+    "asks": 1200
+  }
+}

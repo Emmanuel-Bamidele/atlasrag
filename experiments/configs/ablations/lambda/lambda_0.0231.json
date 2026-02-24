@@ -1,0 +1,9 @@
+{
+  "id": "ablation-lambda-0.0231",
+  "group": "lambda",
+  "policy": "AMV-L",
+  "description": "Default-adjacent decay lambda (ln2/30d).",
+  "env": {
+    "MEMORY_VALUE_DECAY_LAMBDA": "0.0231"
+  }
+}

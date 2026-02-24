@@ -116,6 +116,8 @@
               <li><code>Idempotency-Key</code> is required for <code>/v1/docs</code>, <code>/v1/docs/url</code>, <code>/v1/memory/write</code>, <code>/v1/memory/reflect</code>.</li>
               <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
               <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
+              <li>AMV-L retrieval is tier-gated: default retrieval uses HOT + sampled WARM; COLD is excluded unless explicitly enabled.</li>
+              <li><code>/v1/ask</code> supports <code>answerLength</code>: <code>auto</code>, <code>short</code>, <code>medium</code>, <code>long</code>.</li>
             </ul>
           </article>
         </div>
