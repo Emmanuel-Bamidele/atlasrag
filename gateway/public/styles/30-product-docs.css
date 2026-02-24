@@ -130,6 +130,9 @@
 .product-arch-scroll{
   width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   border-radius: 10px;
   border: 0;
 }
@@ -137,7 +140,7 @@
 .product-arch-svg{
   display: block;
   width: 100%;
-  max-width: 840px;
+  max-width: 1120px;
   min-width: 640px;
   height: auto;
   margin: 0 auto;
@@ -275,6 +278,12 @@
 
   .product-arch-title{
     font-size: 11px;
+  }
+
+  .product-arch-svg{
+    width: 560px;
+    min-width: 100%;
+    max-width: none;
   }
 
   .product-hero-layout{

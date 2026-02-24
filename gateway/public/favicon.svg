@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AtlasRAG">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#132a2f"/>
+      <stop offset="1" stop-color="#0b1a1f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="16" y1="12" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3dd5c8"/>
+      <stop offset="1" stop-color="#f6c356"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <path d="M16 48L28.4 16H35.6L48 48H41.8L39.2 40.8H24.8L22.2 48H16ZM26.9 35.2H37.1L32 21.1L26.9 35.2Z" fill="url(#accent)"/>
+</svg>
