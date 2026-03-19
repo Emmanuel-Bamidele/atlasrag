@@ -976,6 +976,7 @@ while (true) {
                         <a href="#doc-cli-overview">What the CLI covers</a>
                         <a href="#doc-cli-install">Install the CLI</a>
                         <a href="#doc-cli-onboard">Onboard a local deployment</a>
+                        <a href="#doc-cli-build">Build on top after setup</a>
                         <a href="#doc-cli-remote">Use the CLI against an online deployment</a>
                         <a href="#doc-cli-commands">Runtime commands</a>
                         <a href="#doc-cli-write-search-ask">Write, search, ask</a>
@@ -1119,6 +1120,88 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <p>If Docker services are already up but the CLI has not saved the base URL and service token yet, finish setup on the running stack with:</p>
                   <pre class="doc-code">atlasrag bootstrap --username bami --tenant default</pre>
                   <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> commands.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-cli-build" open>
+              <summary>Build on top after setup</summary>
+              <div class="section-body">
+                <p>
+                  Once CLI setup is complete, AtlasRAG becomes a running local service your own app, backend,
+                  worker, or agent can call. The normal runtime inputs are the saved base URL and service token.
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">1. Confirm setup is complete</div>
+                  <pre class="doc-code">atlasrag status
+atlasrag config show --show-secrets</pre>
+                  <p class="hint">If the Docker stack is already up but the saved base URL and token are still missing, finish setup on that running stack with <span class="mono">atlasrag bootstrap --username YOUR_ADMIN --tenant default</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">2. Put the saved runtime values into your app env</div>
+                  <pre class="doc-code">export ATLASRAG_BASE_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export ATLASRAG_COLLECTION="default"
+
+# optional if you want request-scoped provider usage
+export OPENAI_API_KEY="YOUR_OPENAI_KEY"</pre>
+                  <p class="hint">For a deployed AtlasRAG instead of a local stack, keep the same pattern but set <span class="mono">ATLASRAG_BASE_URL</span> to your public domain such as <span class="mono">https://atlasrag.example.com</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">3. Make the first request from your app or script</div>
+                  <pre class="doc-code">curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId": "welcome",
+    "collection": "default",
+    "text": "AtlasRAG stores memory for agents."
+  }'
+
+curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What does AtlasRAG store?",
+    "collection": "default",
+    "k": 3
+  }'</pre>
+                  <p class="hint">Keep write and read operations on the same <span class="mono">collection</span>. If you write to <span class="mono">default</span>, search and ask on <span class="mono">default</span> too unless you intentionally want a different scope.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">4. Use the Node SDK in a real backend or worker</div>
+                  <pre class="doc-code">const { AtlasRAGClient } = require("@atlasrag/sdk");
+
+const client = new AtlasRAGClient({
+  baseUrl: process.env.ATLASRAG_BASE_URL,
+  apiKey: process.env.ATLASRAG_API_KEY,
+  openAiApiKey: process.env.OPENAI_API_KEY
+});
+
+async function main() {
+  await client.indexText("welcome", "AtlasRAG stores memory for agents.", {
+    collection: process.env.ATLASRAG_COLLECTION || "default"
+  });
+
+  const answer = await client.ask("What does AtlasRAG store?", {
+    collection: process.env.ATLASRAG_COLLECTION || "default",
+    k: 3
+  });
+
+  console.log(answer.data.answer);
+}
+
+main().catch(console.error);</pre>
+                  <p class="hint">For a fuller SDK walkthrough, open <span class="mono">sdk/node/README.md</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">5. Choose the integration shape</div>
+                  <ul>
+                    <li><strong>Direct server-to-server:</strong> your backend, worker, or agent runtime calls AtlasRAG with <span class="mono">ATLASRAG_BASE_URL</span> and <span class="mono">ATLASRAG_API_KEY</span>.</li>
+                    <li><strong>Backend-as-caller:</strong> your frontend talks to your backend, and your backend holds the AtlasRAG token privately.</li>
+                    <li><strong>Remote deployment:</strong> the same code works against a public AtlasRAG deployment by swapping the base URL.</li>
+                  </ul>
+                  <p class="hint">For production apps, keep the AtlasRAG service token on the server side. Do not ship admin credentials or long-lived service tokens into browser code.</p>
                 </div>
               </div>
             </details>
