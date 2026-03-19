@@ -268,6 +268,12 @@
                         <td>Limit retrieval to one collection. Use <span class="mono">collectionScope=all</span> to search all collections.</td>
                       </tr>
                       <tr>
+                        <td><span class="mono">policy</span></td>
+                        <td>enum</td>
+                        <td>No</td>
+                        <td>Memory/retrieval policy: <span class="mono">amvl</span> (default), <span class="mono">ttl</span>, or <span class="mono">lru</span>.</td>
+                      </tr>
+                      <tr>
                         <td><span class="mono">answerLength</span></td>
                         <td>enum</td>
                         <td>No</td>
@@ -360,7 +366,7 @@
                   </p>
                   <p>
                     Once connected, your assistant can search AtlasRAG documentation in real time for API usage, authentication setup,
-                    AMV-L and TTL lifecycle behavior, and implementation patterns.
+                    memory policy modes (<span class="mono">amvl</span>, <span class="mono">ttl</span>, <span class="mono">lru</span>), lifecycle behavior, and implementation patterns.
                   </p>
                 </div>
 
@@ -475,7 +481,7 @@
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium" }'</pre>
+  -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium", "policy": "amvl" }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
@@ -488,12 +494,12 @@
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Idempotency-Key: mem-001" \
   -H "Content-Type: application/json" \
-  -d '{ "text": "Release shipped on Friday", "type": "semantic", "collection": "default", "agentId": "agent:release-bot", "tags": ["release", "ops"], "importanceHint": 0.6, "pinned": false }'
+  -d '{ "text": "Release shipped on Friday", "type": "semantic", "policy": "amvl", "collection": "default", "agentId": "agent:release-bot", "tags": ["release", "ops"], "importanceHint": 0.6, "pinned": false }'
 
 curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Authorization: Bearer YOUR_JWT" \
   -H "Content-Type: application/json" \
-  -d '{ "query": "release day", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "k": 5 }'</pre>
+  -d '{ "query": "release day", "policy": "amvl", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "k": 5 }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Memory feedback</div>
@@ -513,6 +519,7 @@ curl -X POST http://localhost:3000/v1/memory/recall \
             </details>
             <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
             <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
+            <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, AtlasRAG uses <span class="mono">amvl</span>.</p>
             <div class="doc-block">
               <div class="doc-label">Memory types</div>
               <table class="table">
@@ -585,7 +592,8 @@ print(res.json())
 res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
   "question": "How do we persist vectors?",
   "k": 5,
-  "answerLength": "short"
+  "answerLength": "short",
+  "policy": "amvl"
 })
 res.raise_for_status()
 print(res.json())
@@ -593,6 +601,7 @@ print(res.json())
 # 4) Memory write
 res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-Key": "mem-001"}, json={
   "type": "semantic",
+  "policy": "amvl",
   "collection": "default",
   "text": "Vector WAL is enabled in production.",
   "agentId": "agent:ops-bot",
@@ -605,6 +614,7 @@ res.raise_for_status()
 # 5) Recall
 res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
   "query": "WAL enabled",
+  "policy": "amvl",
   "types": ["semantic"],
   "tags": ["infra"],
   "k": 5
@@ -623,6 +633,7 @@ res.raise_for_status()
 # 6) Reflect (async job)
 res = requests.post(f"{BASE}/v1/memory/reflect", headers={**headers, "Idempotency-Key": "reflect-001"}, json={
   "docId": "swe_notes",
+  "policy": "amvl",
   "types": ["semantic", "summary"],
   "collection": "default"
 })
@@ -656,6 +667,7 @@ res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "i
                   <pre class="doc-code"># Requires ALLOW_PRINCIPAL_OVERRIDE=1 and an admin service token
 res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
   "query": "policy details",
+  "policy": "amvl",
   "collection": "internal",
   "principalId": "user:alice",
   "privileges": ["role:employee", "dept:hr"],
@@ -712,11 +724,12 @@ await post("/v1/docs", {
 console.log(await get("/v1/search", { q: "durability", k: "5", collection: "default" }));
 
 // 3) Ask
-console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5, answerLength: "long" }));
+console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5, answerLength: "long", policy: "amvl" }));
 
 // 4) Memory write
 await post("/v1/memory/write", {
   type: "semantic",
+  policy: "amvl",
   collection: "default",
   text: "Vector WAL is enabled in production.",
   agentId: "agent:ops-bot",
@@ -726,7 +739,7 @@ await post("/v1/memory/write", {
 }, { "Idempotency-Key": "mem-001" });
 
 // 5) Recall
-console.log(await post("/v1/memory/recall", { query: "WAL enabled", types: ["semantic"], tags: ["infra"], k: 5 }));
+console.log(await post("/v1/memory/recall", { query: "WAL enabled", policy: "amvl", types: ["semantic"], tags: ["infra"], k: 5 }));
 
 // 5b) Feedback
 await post("/v1/feedback", { memoryId: "mem_123", feedback: "positive", eventValue: 0.8 });
@@ -734,6 +747,7 @@ await post("/v1/feedback", { memoryId: "mem_123", feedback: "positive", eventVal
 // 6) Reflect + job polling
 const reflect = await post("/v1/memory/reflect", {
   docId: "swe_notes",
+  policy: "amvl",
   types: ["semantic", "summary"],
   collection: "default"
 }, { "Idempotency-Key": "reflect-001" });
@@ -764,6 +778,7 @@ while (true) {
                   <div class="doc-label">Server-side privileges (no end-user login)</div>
                   <pre class="doc-code">await post("/v1/memory/recall", {
   query: "policy details",
+  policy: "amvl",
   collection: "internal",
   principalId: "user:alice",
   privileges: ["role:employee", "dept:hr"],
@@ -811,6 +826,7 @@ while (true) {
   -H "Content-Type: application/json" \
   -d '{
     "query": "policy details",
+    "policy": "amvl",
     "collection": "internal",
     "principalId": "user:alice",
     "privileges": ["role:employee", "dept:hr"],

@@ -569,6 +569,9 @@
             ],
             "description": "Controls answer depth. auto adapts based on retrieved source detail."
           },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
+          },
           "collection": {
             "type": "string"
           },
@@ -640,6 +643,15 @@
           "summary"
         ]
       },
+      "MemoryPolicy": {
+        "type": "string",
+        "enum": [
+          "amvl",
+          "ttl",
+          "lru"
+        ],
+        "description": "Memory policy mode. Defaults to amvl when omitted."
+      },
       "MemoryReflectType": {
         "type": "string",
         "enum": [
@@ -667,6 +679,9 @@
           },
           "type": {
             "$ref": "#/components/schemas/MemoryType"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
           },
           "externalId": {
             "type": [
@@ -832,6 +847,9 @@
           "ttlSeconds": {
             "type": "number"
           },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
@@ -895,6 +913,9 @@
           },
           "k": {
             "type": "integer"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
           },
           "types": {
             "type": "array",
@@ -982,6 +1003,9 @@
           "maxItems": {
             "type": "integer"
           },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
+          },
           "visibility": {
             "type": "string",
             "enum": [
@@ -1047,6 +1071,9 @@
           },
           "maxItems": {
             "type": "integer"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
           },
           "summaryType": {
             "$ref": "#/components/schemas/MemoryType"
@@ -1941,6 +1968,7 @@
                 "question": "What does AtlasRAG store?",
                 "k": 4,
                 "answerLength": "auto",
+                "policy": "amvl",
                 "collection": "default"
               }
             }
@@ -2000,6 +2028,7 @@
               "example": {
                 "text": "Use idempotency keys for memory and indexing writes.",
                 "type": "semantic",
+                "policy": "amvl",
                 "title": "Idempotency guidance",
                 "tags": [
                   "reliability",
@@ -2052,6 +2081,7 @@
               },
               "example": {
                 "query": "How do we avoid duplicate writes?",
+                "policy": "amvl",
                 "k": 3,
                 "types": [
                   "semantic"
@@ -2116,6 +2146,7 @@
               },
               "example": {
                 "docId": "onboarding-guide",
+                "policy": "amvl",
                 "types": [
                   "semantic",
                   "summary"
@@ -2216,6 +2247,7 @@
                 "types": [
                   "semantic"
                 ],
+                "policy": "amvl",
                 "maxItems": 10,
                 "deleteOriginals": false,
                 "collection": "default"

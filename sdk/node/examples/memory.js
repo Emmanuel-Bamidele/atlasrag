@@ -17,6 +17,7 @@ async function main() {
   const write = await client.memoryWrite({
     text: "Use Redis for low-latency vector lookups.",
     type: "memory",
+    policy: "amvl",
     title: "Vector lookup guidance",
     visibility: "private",
     acl: ["user:alice", "svc:agent-api"],
@@ -28,6 +29,7 @@ async function main() {
   const recall = await client.memoryRecall({
     query: "How do we do low-latency vector search?",
     k: 3,
+    policy: "amvl",
     types: ["memory"]
   });
 
@@ -36,6 +38,7 @@ async function main() {
   await client.indexText("artifact_doc", "AtlasRAG keeps artifacts and reflects them into semantic memory.");
   const reflect = await client.memoryReflect({
     docId: "artifact_doc",
+    policy: "amvl",
     types: ["semantic", "summary"],
     maxItems: 2,
     visibility: "acl",

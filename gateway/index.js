@@ -382,6 +382,46 @@ const ROLE_ALIASES = new Map([
   ["reader", "reader"]
 ]);
 const MEMORY_TYPES = ["artifact", "semantic", "procedural", "episodic", "conversation", "summary"];
+const DEFAULT_MEMORY_POLICY = "amvl";
+const MEMORY_POLICIES = [DEFAULT_MEMORY_POLICY, "ttl", "lru"];
+const MEMORY_POLICY_ALIASES = new Map([
+  ["amv-l", DEFAULT_MEMORY_POLICY],
+  ["amv_l", DEFAULT_MEMORY_POLICY]
+]);
+const MEMORY_POLICY_OVERRIDES = Object.freeze({
+  ttl: {
+    tierHotUp: 0.51,
+    tierHotDown: 0.01,
+    tierWarmUp: 0.50,
+    tierWarmDown: 0.00,
+    tierEvict: 0.00,
+    initValue: 0.50,
+    retrievalWarmSampleK: 2000,
+    retrievalWarmSamplePoolMultiplier: 8,
+    retrievalWarmSelection: "random",
+    valueDecayLoopEnabled: false,
+    redundancyEnabled: false,
+    lifecycleEnabled: false
+  },
+  lru: {
+    tierHotUp: 0.99,
+    tierHotDown: 0.01,
+    tierWarmUp: 0.00,
+    tierWarmDown: 0.00,
+    tierEvict: 0.00,
+    initValue: 0.50,
+    accessAlpha: 0,
+    contributionBeta: 0,
+    negativeStep: 0,
+    valueDecayLambda: 0,
+    retrievalWarmSampleK: 8,
+    retrievalWarmSamplePoolMultiplier: 1,
+    retrievalWarmSelection: "lru",
+    valueDecayLoopEnabled: false,
+    redundancyEnabled: false,
+    lifecycleEnabled: false
+  }
+});
 const LEGACY_TYPE_ALIASES = new Map([
   ["memory", "semantic"]
 ]);
@@ -550,6 +590,62 @@ function normalizeItemType(value) {
     throw new Error(`type must be one of: ${MEMORY_TYPES.join(", ")}`);
   }
   return normalized;
+}
+
+function normalizeMemoryPolicy(value, fallback = DEFAULT_MEMORY_POLICY) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return fallback;
+  const normalized = MEMORY_POLICY_ALIASES.get(clean) || clean;
+  if (MEMORY_POLICIES.includes(normalized)) return normalized;
+  throw new Error(`policy must be one of: ${MEMORY_POLICIES.join(", ")}`);
+}
+
+function resolveRequestedMemoryPolicy(input, fallback = DEFAULT_MEMORY_POLICY) {
+  if (!input || typeof input !== "object") return fallback;
+  return normalizeMemoryPolicy(input.policy ?? input.mode, fallback);
+}
+
+function getMemoryPolicy(memory, fallback = DEFAULT_MEMORY_POLICY) {
+  const metadata = memory?.metadata && typeof memory.metadata === "object" && !Array.isArray(memory.metadata)
+    ? memory.metadata
+    : null;
+  try {
+    return normalizeMemoryPolicy(metadata?._policy ?? memory?.policy, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function resolveMemoryPolicyConfig(policy = DEFAULT_MEMORY_POLICY) {
+  const clean = normalizeMemoryPolicy(policy, DEFAULT_MEMORY_POLICY);
+  const base = {
+    policy: clean,
+    valueMax: Number.isFinite(MEMORY_VALUE_MAX) && MEMORY_VALUE_MAX > 0 ? MEMORY_VALUE_MAX : 1,
+    accessAlpha: Number.isFinite(MEMORY_ACCESS_ALPHA) ? MEMORY_ACCESS_ALPHA : 0,
+    contributionBeta: Number.isFinite(MEMORY_CONTRIBUTION_BETA) ? MEMORY_CONTRIBUTION_BETA : 0,
+    negativeStep: Number.isFinite(MEMORY_NEGATIVE_STEP) ? MEMORY_NEGATIVE_STEP : 0,
+    valueDecayLambda: Number.isFinite(MEMORY_VALUE_DECAY_LAMBDA) && MEMORY_VALUE_DECAY_LAMBDA >= 0 ? MEMORY_VALUE_DECAY_LAMBDA : 0,
+    tierHotUp: Number.isFinite(MEMORY_TIER_HOT_UP) ? MEMORY_TIER_HOT_UP : 0.7,
+    tierHotDown: Number.isFinite(MEMORY_TIER_HOT_DOWN) ? MEMORY_TIER_HOT_DOWN : 0.62,
+    tierWarmUp: Number.isFinite(MEMORY_TIER_WARM_UP) ? MEMORY_TIER_WARM_UP : 0.45,
+    tierWarmDown: Number.isFinite(MEMORY_TIER_WARM_DOWN) ? MEMORY_TIER_WARM_DOWN : 0.25,
+    tierEvict: Number.isFinite(MEMORY_TIER_EVICT) ? MEMORY_TIER_EVICT : 0.25,
+    initValue: Number.isFinite(MEMORY_INIT_VALUE) ? MEMORY_INIT_VALUE : 0.5,
+    retrievalWarmSampleK: Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) && MEMORY_RETRIEVAL_WARM_SAMPLE_K > 0 ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 8,
+    retrievalWarmSamplePoolMultiplier: Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER) && MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER > 0
+      ? MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER
+      : 4,
+    retrievalWarmSelection: MEMORY_RETRIEVAL_WARM_SELECTION === "lru" ? "lru" : "random",
+    retrievalColdProbeEpsilon: Number.isFinite(MEMORY_RETRIEVAL_COLD_PROBE_EPSILON) && MEMORY_RETRIEVAL_COLD_PROBE_EPSILON > 0
+      ? Math.floor(MEMORY_RETRIEVAL_COLD_PROBE_EPSILON)
+      : 0,
+    valueDecayLoopEnabled: true,
+    redundancyEnabled: true,
+    lifecycleEnabled: true
+  };
+  const override = MEMORY_POLICY_OVERRIDES[clean] || null;
+  return override ? { ...base, ...override, policy: clean } : base;
 }
 
 function normalizeVisibility(value) {
@@ -1008,12 +1104,34 @@ function withTokenEstimate(metadata, text) {
   return base;
 }
 
+function withStoredMemoryPolicy(metadata, policy) {
+  const cleanPolicy = normalizeMemoryPolicy(policy, DEFAULT_MEMORY_POLICY);
+  const hasMeta = metadata && typeof metadata === "object" && !Array.isArray(metadata);
+  const out = hasMeta ? { ...metadata } : {};
+  out._policy = cleanPolicy;
+  return out;
+}
+
+function buildStoredMemoryMetadata(metadata, text, policy) {
+  return withStoredMemoryPolicy(withTokenEstimate(metadata, text), policy);
+}
+
+function formatMemoryMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return metadata || null;
+  }
+  const out = { ...metadata };
+  delete out._policy;
+  return Object.keys(out).length ? out : null;
+}
+
 function formatMemoryItem(memory) {
   if (!memory) return null;
   return {
     id: memory.id,
     namespaceId: memory.namespace_id,
     type: memory.item_type,
+    policy: getMemoryPolicy(memory),
     externalId: memory.external_id || null,
     principalId: memory.principal_id || null,
     agentId: memory.agent_id || null,
@@ -1023,7 +1141,7 @@ function formatMemoryItem(memory) {
     title: memory.title || null,
     sourceType: memory.source_type || null,
     sourceUrl: memory.source_url || null,
-    metadata: memory.metadata || null,
+    metadata: formatMemoryMetadata(memory.metadata),
     createdAt: memory.created_at,
     expiresAt: memory.expires_at || null,
     valueScore: memory.value_score ?? null,
@@ -1131,22 +1249,24 @@ function updateTrustScore(previous, eventType, eventValue) {
 }
 
 function buildValueUpdateForMemory(memory, eventType, normalizedValue, nowMs, options = {}) {
+  const policy = normalizeMemoryPolicy(options.policy ?? getMemoryPolicy(memory), DEFAULT_MEMORY_POLICY);
+  const config = resolveMemoryPolicyConfig(policy);
   const now = Number.isFinite(nowMs) ? Math.floor(nowMs) : Date.now();
-  const maxValue = Number.isFinite(MEMORY_VALUE_MAX) && MEMORY_VALUE_MAX > 0 ? MEMORY_VALUE_MAX : 1;
+  const maxValue = Number.isFinite(config.valueMax) && config.valueMax > 0 ? config.valueMax : 1;
   const existingValue = clampNumber(
-    Number(memory?.value_score ?? resolveInitialValueScore()),
+    Number(memory?.value_score ?? resolveInitialValueScore(config)),
     0,
     maxValue
   );
   const existingTs = Number(memory?.value_last_update_ts);
   const lastUpdateTs = Number.isFinite(existingTs) && existingTs > 0 ? existingTs : now;
-  const decayed = decayMemoryValue(existingValue, lastUpdateTs, now);
+  const decayed = decayMemoryValue(existingValue, lastUpdateTs, now, config);
 
   let delta = 0;
   if (!options.decayOnly) {
-    const accessAlpha = Number.isFinite(MEMORY_ACCESS_ALPHA) ? MEMORY_ACCESS_ALPHA : 0;
-    const contributionBeta = Number.isFinite(MEMORY_CONTRIBUTION_BETA) ? MEMORY_CONTRIBUTION_BETA : 0;
-    const negativeStep = Number.isFinite(MEMORY_NEGATIVE_STEP) ? MEMORY_NEGATIVE_STEP : 0;
+    const accessAlpha = Number.isFinite(config.accessAlpha) ? config.accessAlpha : 0;
+    const contributionBeta = Number.isFinite(config.contributionBeta) ? config.contributionBeta : 0;
+    const negativeStep = Number.isFinite(config.negativeStep) ? config.negativeStep : 0;
     const access = shouldIncrementReuse(eventType) ? 1 : 0;
     const contribution = isContributionEvent(eventType, normalizedValue) ? 1 : 0;
     delta += accessAlpha * access;
@@ -1158,7 +1278,7 @@ function buildValueUpdateForMemory(memory, eventType, normalizedValue, nowMs, op
 
   const nextValue = clampNumber(decayed + delta, 0, maxValue);
   const currentTier = normalizeTier(memory?.tier, "WARM");
-  const nextTier = resolveTierForValue(currentTier, nextValue, Boolean(memory?.pinned));
+  const nextTier = resolveTierForValue(currentTier, nextValue, Boolean(memory?.pinned), config);
   const priorTierTs = Number(memory?.tier_last_update_ts);
   const tierLastUpdateTs = nextTier === currentTier
     ? (Number.isFinite(priorTierTs) && priorTierTs > 0 ? priorTierTs : now)
@@ -1799,24 +1919,23 @@ function normalizeTier(tier, fallback = "WARM") {
   return fallback;
 }
 
-function resolveTierThresholds() {
-  const hotUp = clampNumber(MEMORY_TIER_HOT_UP, 0, 1);
-  let hotDown = clampNumber(MEMORY_TIER_HOT_DOWN, 0, 1);
+function resolveTierThresholds(policy = DEFAULT_MEMORY_POLICY) {
+  const config = typeof policy === "object" && policy !== null
+    ? policy
+    : resolveMemoryPolicyConfig(policy);
+  const hotUp = clampNumber(config.tierHotUp, 0, 1);
+  let hotDown = clampNumber(config.tierHotDown, 0, 1);
   if (hotDown >= hotUp) {
     hotDown = Math.max(0, hotUp - 0.01);
   }
 
-  let warmUp = clampNumber(MEMORY_TIER_WARM_UP, 0, 1);
-  if (warmUp >= hotDown) {
-    warmUp = Math.max(0, hotDown - 0.01);
-  }
-
-  let warmDown = clampNumber(MEMORY_TIER_WARM_DOWN, 0, 1);
+  const warmUp = clampNumber(config.tierWarmUp, 0, 1);
+  let warmDown = clampNumber(config.tierWarmDown, 0, 1);
   if (warmDown >= warmUp) {
     warmDown = Math.max(0, warmUp - 0.01);
   }
 
-  let evict = clampNumber(MEMORY_TIER_EVICT, 0, 1);
+  let evict = clampNumber(config.tierEvict, 0, 1);
   if (evict > warmDown) {
     evict = warmDown;
   }
@@ -1826,35 +1945,46 @@ function resolveTierThresholds() {
 
 const MEMORY_TIER_THRESHOLDS = resolveTierThresholds();
 
-function resolveInitialValueScore() {
-  const warmFloor = MEMORY_TIER_THRESHOLDS.warmUp;
-  const hotCeil = Math.max(warmFloor, MEMORY_TIER_THRESHOLDS.hotUp - 1e-6);
-  return clampNumber(MEMORY_INIT_VALUE, warmFloor, hotCeil);
+function resolveInitialValueScore(policy = DEFAULT_MEMORY_POLICY) {
+  const config = typeof policy === "object" && policy !== null
+    ? policy
+    : resolveMemoryPolicyConfig(policy);
+  const thresholds = resolveTierThresholds(config);
+  const warmFloor = thresholds.warmUp;
+  const hotCeil = Math.max(warmFloor, thresholds.hotUp - 1e-6);
+  return clampNumber(config.initValue, warmFloor, hotCeil);
 }
 
-function decayMemoryValue(currentValue, lastUpdateTs, nowTs) {
+function decayMemoryValue(currentValue, lastUpdateTs, nowTs, policy = DEFAULT_MEMORY_POLICY) {
+  const config = typeof policy === "object" && policy !== null
+    ? policy
+    : resolveMemoryPolicyConfig(policy);
   const now = Number.isFinite(nowTs) ? nowTs : Date.now();
   const last = Number.isFinite(lastUpdateTs) ? lastUpdateTs : now;
   const dtDays = Math.max(0, now - last) / 86400000;
-  const lambda = Number.isFinite(MEMORY_VALUE_DECAY_LAMBDA) && MEMORY_VALUE_DECAY_LAMBDA >= 0
-    ? MEMORY_VALUE_DECAY_LAMBDA
+  const lambda = Number.isFinite(config.valueDecayLambda) && config.valueDecayLambda >= 0
+    ? config.valueDecayLambda
     : 0;
   return currentValue * Math.exp(-lambda * dtDays);
 }
 
-function resolveTierForValue(currentTier, valueScore, pinned) {
+function resolveTierForValue(currentTier, valueScore, pinned, policy = DEFAULT_MEMORY_POLICY) {
+  const config = typeof policy === "object" && policy !== null
+    ? policy
+    : resolveMemoryPolicyConfig(policy);
+  const thresholds = resolveTierThresholds(config);
   const tier = normalizeTier(currentTier, "WARM");
-  const value = clampNumber(valueScore, 0, Math.max(0, MEMORY_VALUE_MAX));
+  const value = clampNumber(valueScore, 0, Math.max(0, config.valueMax));
   if (tier === "HOT") {
-    if (!pinned && value < MEMORY_TIER_THRESHOLDS.hotDown) return "WARM";
+    if (!pinned && value < thresholds.hotDown) return "WARM";
     return "HOT";
   }
   if (tier === "WARM") {
-    if (value >= MEMORY_TIER_THRESHOLDS.hotUp) return "HOT";
-    if (!pinned && value < MEMORY_TIER_THRESHOLDS.warmDown) return "COLD";
+    if (value >= thresholds.hotUp) return "HOT";
+    if (!pinned && value < thresholds.warmDown) return "COLD";
     return "WARM";
   }
-  if (value >= MEMORY_TIER_THRESHOLDS.warmUp) return "WARM";
+  if (value >= thresholds.warmUp) return "WARM";
   return "COLD";
 }
 
@@ -2097,7 +2227,7 @@ function listMcpTools() {
   return [
     {
       name: "search_docs",
-      description: "Search AtlasRAG documentation for setup, APIs, auth, and AMV-L details.",
+      description: "Search AtlasRAG documentation for setup, APIs, auth, memory policy modes (amvl/ttl/lru), and lifecycle details.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2225,6 +2355,7 @@ async function handleMcpMethod(method, params, req) {
       instructions: [
         "Use tools/search_docs to find AtlasRAG API and product guidance.",
         "Use resources/list and resources/read to access full docs pages.",
+        "Memory policy values are amvl, ttl, and lru; amvl is the default when policy is omitted.",
         "For /v1/ask, answer length can be controlled with answerLength: auto, short, medium, or long."
       ].join(" ")
     };
@@ -2597,18 +2728,19 @@ function recencyTimestampMs(memory) {
   return 0;
 }
 
-function selectWarmCandidates(items, size) {
+function selectWarmCandidates(items, size, selection = MEMORY_RETRIEVAL_WARM_SELECTION) {
   const list = Array.isArray(items) ? items.slice() : [];
   const k = Number.isFinite(size) && size > 0 ? Math.floor(size) : 0;
+  const sampleMode = String(selection || "").trim().toLowerCase() === "lru" ? "lru" : "random";
   if (!k || list.length <= k) {
-    if (MEMORY_RETRIEVAL_WARM_SELECTION !== "lru") return list;
+    if (sampleMode !== "lru") return list;
     return list.sort((a, b) => {
       const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
       if (diff !== 0) return diff;
       return String(a?.id || "").localeCompare(String(b?.id || ""));
     });
   }
-  if (MEMORY_RETRIEVAL_WARM_SELECTION === "lru") {
+  if (sampleMode === "lru") {
     list.sort((a, b) => {
       const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
       if (diff !== 0) return diff;
@@ -2630,11 +2762,13 @@ async function getTierBoundedRetrievalSet({
   since,
   until,
   warmSampleSize,
-  docIds
+  docIds,
+  policy
 }) {
+  const policyConfig = resolveMemoryPolicyConfig(policy);
   const warmK = Number.isFinite(warmSampleSize) && warmSampleSize > 0
     ? Math.floor(warmSampleSize)
-    : (Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) && MEMORY_RETRIEVAL_WARM_SAMPLE_K > 0 ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 8);
+    : (Number.isFinite(policyConfig.retrievalWarmSampleK) && policyConfig.retrievalWarmSampleK > 0 ? policyConfig.retrievalWarmSampleK : 8);
   const typeFilter = Array.isArray(types) && types.length ? types : null;
 
   if (Array.isArray(docIds) && docIds.length && collection) {
@@ -2657,7 +2791,7 @@ async function getTierBoundedRetrievalSet({
       if (tier === "HOT") hot.push(memory);
       else if (tier === "WARM") warm.push(memory);
     }
-    const sampledWarm = selectWarmCandidates(warm, warmK);
+    const sampledWarm = selectWarmCandidates(warm, warmK, policyConfig.retrievalWarmSelection);
     return {
       hot,
       warm: sampledWarm,
@@ -2684,27 +2818,27 @@ async function getTierBoundedRetrievalSet({
     ...baseFilters,
     tier: "HOT"
   });
-  const warmPoolMultiplier = Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER)
-    ? Math.max(1, Math.floor(MEMORY_RETRIEVAL_WARM_SAMPLE_POOL_MULTIPLIER))
+  const warmPoolMultiplier = Number.isFinite(policyConfig.retrievalWarmSamplePoolMultiplier)
+    ? Math.max(1, Math.floor(policyConfig.retrievalWarmSamplePoolMultiplier))
     : 4;
-  const warmPoolLimit = MEMORY_RETRIEVAL_WARM_SELECTION === "lru"
+  const warmPoolLimit = policyConfig.retrievalWarmSelection === "lru"
     ? warmK
     : warmK * warmPoolMultiplier;
   const warmPool = await listMemoryItemsByTier({
     ...baseFilters,
     tier: "WARM",
     limit: warmPoolLimit,
-    sample: MEMORY_RETRIEVAL_WARM_SELECTION
+    sample: policyConfig.retrievalWarmSelection
   });
-  const warm = selectWarmCandidates(warmPool, warmK);
-  const coldProbe = Number.isFinite(MEMORY_RETRIEVAL_COLD_PROBE_EPSILON) && MEMORY_RETRIEVAL_COLD_PROBE_EPSILON > 0
+  const warm = selectWarmCandidates(warmPool, warmK, policyConfig.retrievalWarmSelection);
+  const coldProbe = Number.isFinite(policyConfig.retrievalColdProbeEpsilon) && policyConfig.retrievalColdProbeEpsilon > 0
     ? await listMemoryItemsByTier({
       ...baseFilters,
       tier: "COLD",
-      limit: MEMORY_RETRIEVAL_COLD_PROBE_EPSILON * warmPoolMultiplier
+      limit: policyConfig.retrievalColdProbeEpsilon * warmPoolMultiplier
     })
     : [];
-  const sampledColdProbe = sampleItems(coldProbe, MEMORY_RETRIEVAL_COLD_PROBE_EPSILON);
+  const sampledColdProbe = sampleItems(coldProbe, policyConfig.retrievalColdProbeEpsilon);
 
   return {
     hot,
@@ -2716,13 +2850,14 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
     collection,
     source: telemetry?.source || "search_query"
   });
+  const policyConfig = resolveMemoryPolicyConfig(policy);
   const { vectors: [qvec], usage } = await embedTexts([query]);
   recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
@@ -2738,10 +2873,11 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     types: Array.isArray(candidateTypes) ? candidateTypes : null,
     since,
     until,
-    warmSampleSize: Math.max(topK, Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 0),
-    docIds: cleanDocIds
+    warmSampleSize: Math.max(topK, Number.isFinite(policyConfig.retrievalWarmSampleK) ? policyConfig.retrievalWarmSampleK : 0),
+    docIds: cleanDocIds,
+    policy: policyConfig
   });
-  if (MEMORY_RETRIEVAL_COLD_PROBE_EPSILON <= 0 && (retrievalSet.coldCandidates || 0) !== 0) {
+  if (policyConfig.retrievalColdProbeEpsilon <= 0 && (retrievalSet.coldCandidates || 0) !== 0) {
     throw new Error("retrieval invariant violated: cold candidates present with cold probe disabled");
   }
   const retrievalMemories = [
@@ -2749,7 +2885,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     ...(retrievalSet.warm || []),
     ...(retrievalSet.cold || [])
   ];
-  const warmSampleBudget = Math.max(topK, Number.isFinite(MEMORY_RETRIEVAL_WARM_SAMPLE_K) ? MEMORY_RETRIEVAL_WARM_SAMPLE_K : 0);
+  const warmSampleBudget = Math.max(topK, Number.isFinite(policyConfig.retrievalWarmSampleK) ? policyConfig.retrievalWarmSampleK : 0);
   const seenNamespaceIds = new Set();
   const candidateNamespaceIds = [];
   for (const memory of retrievalMemories) {
@@ -2812,7 +2948,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   if (candidateNamespaceIds.length > ((retrievalSet.hotCount || 0) + warmSampleBudget + (retrievalSet.coldCandidates || 0))) {
     console.warn(`[memory_candidates] retrieval bound exceeded set=${candidateNamespaceIds.length} hot=${retrievalSet.hotCount || 0} warm_budget=${warmSampleBudget}`);
   }
-  if ((retrievalSet.coldCandidates || 0) > 0 && MEMORY_RETRIEVAL_COLD_PROBE_EPSILON <= 0) {
+  if ((retrievalSet.coldCandidates || 0) > 0 && policyConfig.retrievalColdProbeEpsilon <= 0) {
     console.warn(`[memory_candidates] cold candidates should be zero; got=${retrievalSet.coldCandidates}`);
   }
 
@@ -2973,7 +3109,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -2991,6 +3127,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     privileges,
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
+    policy,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -3202,6 +3339,7 @@ async function indexMemoryText(namespaceId, text, options = {}) {
 function scheduleRedundancyUpdate(item) {
   if (!item || !item.id) return;
   if (item.item_type === "artifact") return;
+  if (!resolveMemoryPolicyConfig(getMemoryPolicy(item)).redundancyEnabled) return;
   if (redundancyPending.has(item.id)) return;
   redundancyPending.add(item.id);
   setImmediate(async () => {
@@ -3240,6 +3378,7 @@ async function memoryWriteCore(req) {
   const tenantId = resolveTenantId(req);
   const principalId = resolvePrincipalId(req);
   const collection = resolveCollection(req);
+  const policy = resolveRequestedMemoryPolicy(req.body);
   const itemType = normalizeItemType(type);
   const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
   const tags = parseTagsInput(req.body?.tags);
@@ -3271,9 +3410,9 @@ async function memoryWriteCore(req) {
   const memoryId = crypto.randomUUID();
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
   const nowMs = Date.now();
-  const initialValueScore = resolveInitialValueScore();
+  const initialValueScore = resolveInitialValueScore(policy);
 
-  const metadataWithTokens = withTokenEstimate(metadata, text);
+  const metadataWithTokens = buildStoredMemoryMetadata(metadata, text, policy);
   const memory = await upsertMemoryItem({
     tenantId,
     collection,
@@ -3316,7 +3455,8 @@ async function memoryWriteCore(req) {
     collection,
     memory,
     chunksIndexed,
-    truncated
+    truncated,
+    policy
   };
 }
 
@@ -3457,6 +3597,7 @@ async function runReflectionJob(jobId, tenantId) {
     const collection = normalizeCollection(input.collection);
     const types = Array.isArray(input.types) ? input.types : [];
     const maxItems = Number.isFinite(input.maxItems) ? input.maxItems : undefined;
+    const requestedPolicy = resolveRequestedMemoryPolicy(input, null);
     const principalId = input.principalId && PRINCIPAL_RE.test(String(input.principalId).trim())
       ? String(input.principalId).trim()
       : null;
@@ -3529,6 +3670,7 @@ async function runReflectionJob(jobId, tenantId) {
     await cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExternalIds });
 
     const ownerId = principalId || sourceItem.principal_id || null;
+    const derivedPolicy = requestedPolicy || getMemoryPolicy(sourceItem);
     const resolvedVisibility = requestedVisibility || sourceItem.visibility || "tenant";
     const aclList = resolvedVisibility === "acl"
       ? normalizeAclList(requestedAcl || sourceItem.acl_principals || [], ownerId)
@@ -3560,13 +3702,13 @@ async function runReflectionJob(jobId, tenantId) {
           title: item.title || null,
           sourceType: "reflection",
           sourceUrl: null,
-          metadata: withTokenEstimate({
+          metadata: buildStoredMemoryMetadata({
             origin: "reflect",
             artifactId: sourceType === "artifact" ? sourceItem.id : null,
             conversationId: sourceType === "conversation" ? sourceItem.id : null,
             jobId,
             type
-          }, content),
+          }, content, derivedPolicy),
           principalId: ownerId,
           agentId: derivedAgentId,
           tags: derivedTags,
@@ -3701,6 +3843,7 @@ async function runCompactionJob(jobId, tenantId) {
     const limit = parseInt(input.maxItems || "25", 10);
     const summaryType = normalizeItemType(input.summaryType || "summary");
     const deleteOriginals = Boolean(input.deleteOriginals);
+    const requestedPolicy = resolveRequestedMemoryPolicy(input, null);
     const principalId = input.principalId && PRINCIPAL_RE.test(String(input.principalId).trim())
       ? String(input.principalId).trim()
       : null;
@@ -3770,6 +3913,12 @@ async function runCompactionJob(jobId, tenantId) {
     });
 
     const ownerId = principalId || (included[0]?.principal_id || null);
+    let summaryPolicy = requestedPolicy;
+    if (!summaryPolicy && included.length) {
+      const basePolicy = getMemoryPolicy(included[0]);
+      const samePolicy = included.every((item) => getMemoryPolicy(item) === basePolicy);
+      summaryPolicy = samePolicy ? basePolicy : DEFAULT_MEMORY_POLICY;
+    }
     let resolvedVisibility = requestedVisibility;
     let resolvedAcl = requestedAcl;
     if (!resolvedVisibility && included.length) {
@@ -3813,12 +3962,12 @@ async function runCompactionJob(jobId, tenantId) {
       title: summary.title || "Compacted memory",
       sourceType: "compaction",
       sourceUrl: null,
-      metadata: withTokenEstimate({
+      metadata: buildStoredMemoryMetadata({
         origin: "compaction",
         jobId,
         sourceCount: included.length,
         types
-      }, summary.content),
+      }, summary.content, summaryPolicy),
       principalId: ownerId,
       visibility: resolvedVisibility,
       acl: aclList
@@ -4001,16 +4150,18 @@ async function deleteMemoryItemFully(item, options = {}) {
 
 async function ensureValueScore(item) {
   if (!item) return null;
+  const policy = getMemoryPolicy(item);
   const nowMs = Date.now();
   const previousTier = normalizeTier(item.tier, "WARM");
   const existingValue = Number(item.value_score);
   if (!Number.isFinite(existingValue)) {
-    item.value_score = resolveInitialValueScore();
+    item.value_score = resolveInitialValueScore(policy);
     item.tier = normalizeTier(item.tier, "WARM");
     item.value_last_update_ts = nowMs;
     item.tier_last_update_ts = nowMs;
   }
   const valueUpdate = buildValueUpdateForMemory(item, "retrieved", 0, nowMs, {
+    policy,
     decayOnly: true
   });
   const updated = await updateMemoryItemMetrics({
@@ -4059,6 +4210,7 @@ async function isRecentExternalPrefix({ tenantId, collection, prefix, cooldownHo
 
 async function promoteMemoryItem(item, options = {}) {
   if (!item) return { created: 0 };
+  const policy = getMemoryPolicy(item);
   const cooldownHit = await isRecentExternalPrefix({
     tenantId: item.tenant_id,
     collection: item.collection,
@@ -4122,11 +4274,11 @@ async function promoteMemoryItem(item, options = {}) {
         title: entry.title || null,
         sourceType: "promotion",
         sourceUrl: null,
-        metadata: withTokenEstimate({
+        metadata: buildStoredMemoryMetadata({
           origin: "promotion",
           sourceId: item.id,
           type
-        }, content),
+        }, content, policy),
         principalId: item.principal_id || null,
         agentId: item.agent_id || null,
         tags: Array.isArray(item.tags) ? item.tags : null,
@@ -4176,6 +4328,7 @@ async function promoteMemoryItem(item, options = {}) {
 
 async function compactLowValueGroup(seed, options = {}) {
   if (!seed) return { created: 0 };
+  const policy = getMemoryPolicy(seed);
   const cooldownHit = await isRecentExternalPrefix({
     tenantId: seed.tenant_id,
     collection: seed.collection,
@@ -4198,6 +4351,7 @@ async function compactLowValueGroup(seed, options = {}) {
     candidateTypes: MEMORY_TYPES.filter(t => t !== "artifact"),
     tags: seed.tags || null,
     agentId: seed.agent_id || null,
+    policy,
     telemetry: buildTelemetryContext({
       requestId: options.requestId || null,
       tenantId: seed.tenant_id,
@@ -4287,11 +4441,11 @@ async function compactLowValueGroup(seed, options = {}) {
     title: summary.title || "Compacted memory",
     sourceType: "lifecycle_compaction",
     sourceUrl: null,
-    metadata: withTokenEstimate({
+    metadata: buildStoredMemoryMetadata({
       origin: "lifecycle_compaction",
       sourceCount: included.length,
       seedId: seed.id
-    }, summary.content),
+    }, summary.content, policy),
     principalId: ownerId,
     visibility,
     acl: aclList
@@ -4376,9 +4530,16 @@ async function runValueDecayOnce() {
       const items = await listMemoryItemsForValueDecay({ limit: batchSize, afterId });
       if (!items.length) break;
       for (const item of items) {
+        const policy = getMemoryPolicy(item);
+        if (!resolveMemoryPolicyConfig(policy).valueDecayLoopEnabled) {
+          processed += 1;
+          if (maxItems && processed >= maxItems) break;
+          continue;
+        }
         const previousTier = normalizeTier(item.tier, "WARM");
         const nowMs = Date.now();
         const valueUpdate = buildValueUpdateForMemory(item, "retrieved", 0, nowMs, {
+          policy,
           decayOnly: true
         });
         await updateMemoryItemMetrics({
@@ -4427,6 +4588,10 @@ async function computeRedundancyForItem(item) {
   if (!item || !item.id) return { updated: false, skipped: "missing" };
   if (item.item_type === "artifact") return { updated: false, skipped: "artifact" };
   if (isExpiredMemory(item)) return { updated: false, skipped: "expired" };
+  const policy = getMemoryPolicy(item);
+  if (!resolveMemoryPolicyConfig(policy).redundancyEnabled) {
+    return { updated: false, skipped: "policy" };
+  }
 
   const queryText = await loadMemoryTextSnippet(item, MEMORY_REDUNDANCY_QUERY_CHARS);
   if (!queryText.trim()) return { updated: false, skipped: "empty" };
@@ -4441,7 +4606,8 @@ async function computeRedundancyForItem(item) {
     privileges: null,
     candidateTypes: MEMORY_TYPES.filter(t => t !== "artifact"),
     tags: item.tags || null,
-    agentId: item.agent_id || null
+    agentId: item.agent_id || null,
+    policy
   });
 
   const namespaceIds = results.map(r => r._row.doc_id);
@@ -4525,6 +4691,18 @@ async function runLifecycleOnce() {
       const items = await listMemoryItemsForLifecycle({ limit: batchSize, afterId });
       if (!items.length) break;
       for (const item of items) {
+        const policy = getMemoryPolicy(item);
+        const policyConfig = resolveMemoryPolicyConfig(policy);
+        if (!policyConfig.lifecycleEnabled) {
+          emitLifecycleActionTelemetry("retain", item, {
+            reason: "policy_disabled",
+            policy
+          }, {
+            requestId: lifecycleRequestId,
+            source: "lifecycle_sweep"
+          });
+          continue;
+        }
         if (isExpiredMemory(item, now)) {
           if (MEMORY_LIFECYCLE_DRY_RUN) {
             console.log(`[lifecycle] dry_run action=delete id=${item.id} reason=expired`);
@@ -4787,6 +4965,7 @@ app.get("/llms.txt", (req, res) => {
     "# AtlasRAG documentation endpoints",
     "",
     "AtlasRAG provides durable memory APIs and multi-tenant retrieval infrastructure for production AI agents.",
+    "Memory policy values are amvl, ttl, and lru. If policy is omitted, AtlasRAG uses amvl.",
     "",
     "## Primary links",
     `- Product docs UI: ${uiDocsUrl}`,
@@ -4797,6 +4976,7 @@ app.get("/llms.txt", (req, res) => {
     "",
     "## Suggested usage",
     "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
+    "- For memory/ask APIs, policy can be set to amvl, ttl, or lru; the default is amvl.",
     "- For /v1/ask, use answerLength (auto|short|medium|long) to control response depth.",
     "- Use llms.txt for quick discovery of docs and MCP entrypoints."
   ];
@@ -5775,6 +5955,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.body);
 
     const result = await answerQuestion({
       tenantId,
@@ -5785,6 +5966,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
+      policy,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -5827,6 +6009,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.body);
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -5836,6 +6019,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
+      policy,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6133,6 +6317,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     const untilTime = parseTimeInput(until, "until");
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
+    const policy = resolveRequestedMemoryPolicy(req.body);
 
     const results = await searchChunks({
       tenantId,
@@ -6147,6 +6332,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       agentId,
       since: sinceTime,
       until: untilTime,
+      policy,
       telemetry: telemetryContext
     });
 
@@ -6235,6 +6421,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     const untilTime = parseTimeInput(until, "until");
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
+    const policy = resolveRequestedMemoryPolicy(req.body);
 
     const results = await searchChunks({
       tenantId,
@@ -6249,6 +6436,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       agentId,
       since: sinceTime,
       until: untilTime,
+      policy,
       telemetry: telemetryContext
     });
 
@@ -6396,6 +6584,7 @@ const memoryReflectLegacy = async (req, res) => {
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
     const reflectTypes = normalizeReflectTypes(types);
+    const policy = resolveRequestedMemoryPolicy(req.body);
     const limit = parseInt(maxItems || "5", 10);
     if (!Number.isFinite(limit) || limit <= 0) {
       throw new Error("maxItems must be a positive number");
@@ -6419,6 +6608,7 @@ const memoryReflectLegacy = async (req, res) => {
         maxItems: limit,
         collection,
         principalId,
+        policy,
         visibility: resolvedVisibility,
         acl: aclList
       }
@@ -6464,6 +6654,7 @@ const memoryReflectV1 = async (req, res) => {
   }
 
   const reflectTypes = normalizeReflectTypes(types);
+  const policy = resolveRequestedMemoryPolicy(req.body);
   const limit = parseInt(maxItems || "5", 10);
   if (!Number.isFinite(limit) || limit <= 0) {
     return res.status(400).json(buildErrorPayload("maxItems must be a positive number", "INVALID_INPUT", tenantId, collection));
@@ -6490,6 +6681,7 @@ const memoryReflectV1 = async (req, res) => {
       collection,
       tenantId,
       principalId,
+      policy,
       visibility: resolvedVisibility,
       acl: aclList
     },
@@ -6508,6 +6700,7 @@ const memoryReflectV1 = async (req, res) => {
             maxItems: limit,
             collection,
             principalId,
+            policy,
             visibility: resolvedVisibility,
             acl: aclList
           }
@@ -6631,6 +6824,7 @@ const memoryCompactLegacy = async (req, res) => {
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);
+    const policy = resolveRequestedMemoryPolicy(req.body);
 
     const job = await createMemoryJob({
       tenantId,
@@ -6646,6 +6840,7 @@ const memoryCompactLegacy = async (req, res) => {
         deleteOriginals: Boolean(deleteOriginals),
         collection,
         principalId,
+        policy,
         visibility: visibility || null,
         acl: acl || null
       }
@@ -6675,6 +6870,7 @@ const memoryCompactV1 = async (req, res) => {
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);
+    const policy = resolveRequestedMemoryPolicy(req.body);
 
     const job = await createMemoryJob({
       tenantId,
@@ -6690,6 +6886,7 @@ const memoryCompactV1 = async (req, res) => {
         deleteOriginals: Boolean(deleteOriginals),
         collection,
         principalId,
+        policy,
         visibility: visibility || null,
         acl: acl || null
       }
@@ -6889,7 +7086,11 @@ if (require.main === module) {
 
 module.exports = {
   __testHooks: {
+    normalizeMemoryPolicy,
+    getMemoryPolicy,
+    resolveMemoryPolicyConfig,
     normalizeTier,
+    resolveTierThresholds,
     resolveTierForValue,
     resolveInitialValueScore,
     decayMemoryValue,

@@ -4,7 +4,11 @@ const { __testHooks } = require("../index");
 assert(__testHooks, "expected __testHooks export from gateway/index.js");
 
 const {
+  normalizeMemoryPolicy,
+  getMemoryPolicy,
+  resolveMemoryPolicyConfig,
   normalizeTier,
+  resolveTierThresholds,
   resolveTierForValue,
   resolveInitialValueScore,
   decayMemoryValue,
@@ -27,9 +31,30 @@ const NOW = Date.parse("2026-02-18T00:00:00Z");
 const DAY_MS = 86400000;
 
 (() => {
+  assert.strictEqual(normalizeMemoryPolicy(undefined), "amvl");
+  assert.strictEqual(normalizeMemoryPolicy("AMV-L"), "amvl");
+  assert.strictEqual(normalizeMemoryPolicy("ttl"), "ttl");
+  assert.strictEqual(normalizeMemoryPolicy("lru"), "lru");
+})();
+
+(() => {
+  assert.strictEqual(getMemoryPolicy({ metadata: { _policy: "lru" } }), "lru");
+  assert.strictEqual(getMemoryPolicy({ metadata: { _policy: "ttl" } }), "ttl");
+  assert.strictEqual(getMemoryPolicy({ metadata: { _policy: "not-real" } }), "amvl");
+})();
+
+(() => {
   const init = resolveInitialValueScore();
   assert.ok(init >= MEMORY_TIER_THRESHOLDS.warmUp, "initial value should be >= warmUp");
   assert.ok(init < MEMORY_TIER_THRESHOLDS.hotUp, "initial value should be < hotUp");
+})();
+
+(() => {
+  const ttlThresholds = resolveTierThresholds("ttl");
+  assert.ok(ttlThresholds.warmUp > ttlThresholds.hotDown, "ttl should preserve the HOT/WARM hysteresis gap");
+  const ttlInit = resolveInitialValueScore("ttl");
+  assert.ok(ttlInit >= ttlThresholds.warmUp, "ttl initial value should stay in warm band");
+  assert.ok(ttlInit < ttlThresholds.hotUp, "ttl initial value should stay below hot promotion");
 })();
 
 (() => {
@@ -159,6 +184,25 @@ const DAY_MS = 86400000;
   const decayed = decayMemoryValue(0.6, NOW - DAY_MS, NOW);
   const expected = 0.6 * Math.exp(-MEMORY_VALUE_DECAY_LAMBDA);
   approxEqual(decayed, expected);
+})();
+
+(() => {
+  const lruConfig = resolveMemoryPolicyConfig("lru");
+  assert.strictEqual(lruConfig.retrievalWarmSelection, "lru");
+  assert.strictEqual(lruConfig.accessAlpha, 0);
+  assert.strictEqual(lruConfig.contributionBeta, 0);
+
+  const baseline = {
+    value_score: 0.5,
+    tier: "WARM",
+    pinned: false,
+    value_last_update_ts: NOW - DAY_MS,
+    tier_last_update_ts: NOW - 1000,
+    metadata: { _policy: "lru" }
+  };
+  const updated = buildValueUpdateForMemory(baseline, "used_in_answer", 1, NOW);
+  assert.strictEqual(updated.valueScore, 0.5, "lru items should not change value from access/contribution events");
+  assert.strictEqual(updated.tier, "WARM", "lru items should remain warm with zeroed dynamics");
 })();
 
 console.log("AMV-L value lifecycle unit tests passed");

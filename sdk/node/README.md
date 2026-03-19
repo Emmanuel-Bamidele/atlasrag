@@ -85,10 +85,13 @@ Write/index/reflect endpoints require `Idempotency-Key`. Pass `idempotencyKey` i
 Memory writes and reflect support access control via `visibility` (`tenant`, `private`, `acl`) and `acl` list (array of principal IDs). The principal is derived from the auth token subject; if you pass `principalId` it must match the token.
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
-Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, and `pinned`.
+Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
+Ask and memory recall requests also accept `policy` to choose retrieval mode per request.
+Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
 Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
+Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
 
 ## Examples
