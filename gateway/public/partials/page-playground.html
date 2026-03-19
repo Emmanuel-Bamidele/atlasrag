@@ -98,6 +98,15 @@
                     </select>
                     <div class="hint">Scope retrieval to one collection, or keep <span class="mono">All collections</span>.</div>
                   </div>
+                  <div class="field">
+                    <label for="searchPolicy">Mode</label>
+                    <select id="searchPolicy">
+                      <option value="amvl" selected>AMV-L</option>
+                      <option value="ttl">TTL</option>
+                      <option value="lru">LRU</option>
+                    </select>
+                    <div class="hint">Retrieval policy mode. <span class="mono">AMV-L</span> is the default.</div>
+                  </div>
                 </div>
 
                 <div class="actions">
@@ -148,6 +157,15 @@
                       <option value="long">Long</option>
                     </select>
                     <div class="hint">Choose response depth. <span class="mono">Auto</span> adapts to available source detail.</div>
+                  </div>
+                  <div class="field">
+                    <label for="askPolicy">Mode</label>
+                    <select id="askPolicy">
+                      <option value="amvl" selected>AMV-L</option>
+                      <option value="ttl">TTL</option>
+                      <option value="lru">LRU</option>
+                    </select>
+                    <div class="hint">Answer retrieval policy mode. <span class="mono">AMV-L</span> is the default.</div>
                   </div>
                 </div>
 

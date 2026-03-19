@@ -15,6 +15,11 @@ function clearBanner(el){
   el.textContent = "";
 }
 
+function normalizePolicy(value){
+  const clean = String(value || "").trim().toLowerCase();
+  return ["amvl", "ttl", "lru"].includes(clean) ? clean : "amvl";
+}
+
 const AUTH_TOKEN_KEY = "atlasragAuthToken";
 const AUTH_TYPE_KEY = "atlasragAuthType";
 const LEGACY_JWT_KEY = "atlasragJwt";
@@ -2024,6 +2029,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("searchClearBtn").onclick = () => {
     $("searchCards").innerHTML = "";
     $("searchRaw").textContent = "(no output)";
+    if ($("searchPolicy")) $("searchPolicy").value = "amvl";
     clearBanner($("searchBanner"));
   };
 
@@ -2034,6 +2040,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const q = $("searchQ").value.trim();
     const k = parseInt($("searchK").value || "5", 10);
     const scope = String($("searchCollectionScope")?.value || "all").trim();
+    const policy = normalizePolicy($("searchPolicy")?.value || "amvl");
 
     if (!q){
       setBanner($("searchBanner"), "err", "Please enter a search query.");
@@ -2048,7 +2055,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const collectionParam = effectiveCollection
         ? `&collection=${encodeURIComponent(effectiveCollection)}`
         : "&collectionScope=all";
-      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}${collectionParam}`, {
+      const res = await fetch(`/search?q=${encodeURIComponent(q)}&k=${k}${collectionParam}&policy=${encodeURIComponent(policy)}`, {
         headers: apiHeaders()
       });
 
@@ -2057,7 +2064,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (res.ok && data.results){
         const label = effectiveCollection || "all collections";
-        setBanner($("searchBanner"), "ok", `Found ${data.results.length} result(s) in "${label}".`);
+        setBanner($("searchBanner"), "ok", `Found ${data.results.length} result(s) in "${label}" (${policy.toUpperCase()}).`);
         renderSearch(data.results);
       }else{
         setBanner($("searchBanner"), "err", data.error || "Search failed.");
@@ -2073,6 +2080,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("askClearBtn").onclick = () => {
     $("askAnswerCard").innerHTML = "";
     $("askRaw").textContent = "(no output)";
+    if ($("askPolicy")) $("askPolicy").value = "amvl";
     clearBanner($("askBanner"));
   };
 
@@ -2084,6 +2092,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const k = parseInt($("askK").value || "5", 10);
     const scope = String($("askCollectionScope")?.value || "all").trim();
     const answerLength = String($("askAnswerLength")?.value || "auto").trim().toLowerCase();
+    const policy = normalizePolicy($("askPolicy")?.value || "amvl");
 
     if (!question){
       setBanner($("askBanner"), "err", "Please enter a question.");
@@ -2103,6 +2112,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (answerLength){
         body.answerLength = answerLength;
       }
+      body.policy = policy;
 
       const res = await fetch("/ask", {
         method:"POST",
@@ -2116,7 +2126,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (res.ok && data.answer){
         const label = scope === "all" ? "all collections" : scope;
         const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
-        setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}).`);
+        setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}).`);
         renderAnswer(data);
       }else{
         setBanner($("askBanner"), "err", data.error || "Ask failed.");

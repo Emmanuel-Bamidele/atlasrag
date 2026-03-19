@@ -6132,6 +6132,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.query);
 
     const results = await searchChunks({
       tenantId,
@@ -6139,6 +6140,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       query: q,
       k,
       docIds,
+      policy,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
@@ -6181,12 +6183,14 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
     tenantId = resolveTenantId(req);
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.query);
     const results = await searchChunks({
       tenantId,
       collection,
       query: q,
       k,
       docIds,
+      policy,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
