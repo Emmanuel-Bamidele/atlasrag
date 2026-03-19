@@ -4,6 +4,8 @@ AtlasRAG is a self-hosted memory and retrieval platform for AI agents. It combin
 
 Current public scope: single-node self-hosted deployment. You run it in your own environment and bring your own model provider credentials.
 
+License: MIT
+
 ## Main Surfaces
 
 - `gateway/`: Node.js/Express gateway, auth, APIs, public docs UI, and background jobs.

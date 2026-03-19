@@ -2,6 +2,7 @@
   "name": "atlasrag-cli",
   "version": "0.1.0",
   "description": "AtlasRAG local CLI for onboarding, operations, and API workflows",
+  "license": "MIT",
   "type": "commonjs",
   "bin": {
     "atlasrag": "bin/atlasrag.js"

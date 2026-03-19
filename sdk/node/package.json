@@ -2,6 +2,7 @@
   "name": "@atlasrag/sdk",
   "version": "0.1.0",
   "description": "AtlasRAG Node.js SDK",
+  "license": "MIT",
   "main": "src/index.js",
   "type": "commonjs",
   "files": [
