@@ -1,0 +1,314 @@
+const crypto = require("crypto");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+const PACKAGE_ROOT = path.resolve(__dirname, "..");
+const CONFIG_DIR = path.join(os.homedir(), ".atlasrag");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+const INGESTIBLE_TEXT_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".csv",
+  ".log",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".ini",
+  ".cfg",
+  ".conf",
+  ".toml",
+  ".sql",
+  ".html",
+  ".htm",
+  ".css",
+  ".scss",
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".c",
+  ".cc",
+  ".cpp",
+  ".h",
+  ".hpp",
+  ".sh",
+  ".bash",
+  ".zsh"
+]);
+const BOOLEAN_FLAGS = new Set([
+  "build",
+  "down",
+  "external-postgres",
+  "force",
+  "json",
+  "non-interactive",
+  "show-secrets"
+]);
+
+function parseCliArgs(argv) {
+  const args = Array.isArray(argv) ? argv.slice() : [];
+  const positionals = [];
+  const flags = {};
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = String(args[i] || "");
+    if (!token.startsWith("--")) {
+      positionals.push(token);
+      continue;
+    }
+    const body = token.slice(2);
+    if (!body) continue;
+
+    const eqIndex = body.indexOf("=");
+    if (eqIndex >= 0) {
+      const key = body.slice(0, eqIndex);
+      const value = body.slice(eqIndex + 1);
+      flags[key] = value;
+      continue;
+    }
+
+    const next = args[i + 1];
+    if (!BOOLEAN_FLAGS.has(body) && next !== undefined && !String(next).startsWith("--")) {
+      flags[body] = String(next);
+      i += 1;
+    } else {
+      flags[body] = true;
+    }
+  }
+
+  return {
+    command: positionals[0] || "help",
+    subcommand: positionals[1] || "",
+    positionals,
+    flags
+  };
+}
+
+function hasProjectMarkers(dir) {
+  return fs.existsSync(path.join(dir, "docker-compose.yml"))
+    && fs.existsSync(path.join(dir, ".env.example"))
+    && fs.existsSync(path.join(dir, "gateway"));
+}
+
+function detectProjectRoot(startDir = process.cwd()) {
+  let current = path.resolve(startDir);
+  while (true) {
+    if (hasProjectMarkers(current)) return current;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return PACKAGE_ROOT;
+}
+
+function resolveProjectRoot(config = {}, explicitRoot = "") {
+  const candidate = explicitRoot
+    ? path.resolve(explicitRoot)
+    : (config.projectRoot ? path.resolve(config.projectRoot) : detectProjectRoot());
+  return hasProjectMarkers(candidate) ? candidate : PACKAGE_ROOT;
+}
+
+function readJson(filePath, fallback = null) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function readConfig() {
+  return readJson(CONFIG_FILE, {}) || {};
+}
+
+function ensureConfigDir() {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+}
+
+function writeConfig(config) {
+  ensureConfigDir();
+  const tempPath = `${CONFIG_FILE}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+  fs.renameSync(tempPath, CONFIG_FILE);
+  try {
+    fs.chmodSync(CONFIG_FILE, 0o600);
+  } catch {
+    // Best effort only.
+  }
+}
+
+function maskSecret(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  if (text.length <= 8) return `${text.slice(0, 2)}...`;
+  return `${text.slice(0, 4)}...${text.slice(-4)}`;
+}
+
+function formatEnvValue(value) {
+  const text = String(value ?? "");
+  if (text === "") return "";
+  if (!/[\s#"\\]/.test(text)) return text;
+  return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function mergeEnvText(templateText, updates) {
+  const lines = String(templateText || "").split(/\r?\n/);
+  const remaining = new Map(Object.entries(updates || {}));
+  const output = lines.map((line) => {
+    const match = /^([A-Z0-9_]+)=.*$/.exec(line);
+    if (!match) return line;
+    const key = match[1];
+    if (!remaining.has(key)) return line;
+    const next = `${key}=${formatEnvValue(remaining.get(key))}`;
+    remaining.delete(key);
+    return next;
+  });
+  if (remaining.size > 0) {
+    output.push("");
+    for (const [key, value] of remaining.entries()) {
+      output.push(`${key}=${formatEnvValue(value)}`);
+    }
+  }
+  return `${output.join("\n").replace(/\s+$/u, "")}\n`;
+}
+
+function backupFileIfExists(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${filePath}.${stamp}.bak`;
+  fs.copyFileSync(filePath, backupPath);
+  return backupPath;
+}
+
+function randomSecret(bytes = 24) {
+  return crypto.randomBytes(bytes).toString("base64url");
+}
+
+function randomPassword(length = 24) {
+  const raw = crypto.randomBytes(length).toString("base64url");
+  return raw.slice(0, length);
+}
+
+function resolveBaseUrl(port) {
+  return `http://localhost:${String(port || "3000").trim() || "3000"}`;
+}
+
+function defaultCollectionFromFolder(folderPath) {
+  return path.basename(path.resolve(String(folderPath || "").trim()));
+}
+
+function isIngestibleTextPath(filePath) {
+  const ext = path.extname(String(filePath || "")).toLowerCase();
+  return INGESTIBLE_TEXT_EXTENSIONS.has(ext);
+}
+
+function isProbablyTextBuffer(buffer) {
+  if (!buffer || !buffer.length) return true;
+  const sample = buffer.subarray(0, Math.min(buffer.length, 2048));
+  let weird = 0;
+  for (const byte of sample) {
+    if (byte === 0) return false;
+    if (byte < 7 || (byte > 14 && byte < 32)) weird += 1;
+  }
+  return weird / sample.length < 0.15;
+}
+
+function safeDocIdFromPath(relativePath) {
+  const text = String(relativePath || "").trim();
+  const normalized = text
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join("__")
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+  return normalized || `doc-${randomSecret(6)}`;
+}
+
+function boolFromFlag(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (value === true) return true;
+  const text = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(text)) return true;
+  if (["0", "false", "no", "n", "off"].includes(text)) return false;
+  return fallback;
+}
+
+function normalizeCommandName(text) {
+  return String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+}
+
+function buildComposeContext(projectRoot, config = {}) {
+  const composeFile = config.composeFile
+    ? path.resolve(projectRoot, config.composeFile)
+    : path.resolve(projectRoot, "docker-compose.yml");
+  const envFile = config.envFile
+    ? path.resolve(projectRoot, config.envFile)
+    : path.resolve(projectRoot, ".env");
+  return { projectRoot, composeFile, envFile };
+}
+
+function createOnboardConfig({
+  projectRoot,
+  mode,
+  envFile,
+  composeFile,
+  baseUrl,
+  tenantId,
+  adminUsername,
+  apiKey,
+  openAiApiKey
+}) {
+  return {
+    version: 1,
+    projectRoot,
+    mode,
+    envFile,
+    composeFile,
+    baseUrl,
+    tenantId,
+    adminUsername,
+    apiKey,
+    openAiApiKey: openAiApiKey || "",
+    updatedAt: new Date().toISOString()
+  };
+}
+
+module.exports = {
+  PACKAGE_ROOT,
+  CONFIG_DIR,
+  CONFIG_FILE,
+  backupFileIfExists,
+  boolFromFlag,
+  buildComposeContext,
+  createOnboardConfig,
+  defaultCollectionFromFolder,
+  detectProjectRoot,
+  formatEnvValue,
+  INGESTIBLE_TEXT_EXTENSIONS,
+  isIngestibleTextPath,
+  isProbablyTextBuffer,
+  maskSecret,
+  mergeEnvText,
+  normalizeCommandName,
+  parseCliArgs,
+  randomPassword,
+  randomSecret,
+  readConfig,
+  readJson,
+  resolveBaseUrl,
+  resolveProjectRoot,
+  safeDocIdFromPath,
+  writeConfig
+};

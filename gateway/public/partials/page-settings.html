@@ -14,7 +14,7 @@
                     <option value="bearer">JWT (Bearer)</option>
                     <option value="api_key">Service token (API key)</option>
                   </select>
-                  <div class="hint">Use service tokens for server-to-server integrations.</div>
+                  <div class="hint">Use service tokens for apps, agents, and server-to-server integrations. JWTs are mainly for human admin sessions.</div>
                 </div>
                 <div class="field">
                   <label for="apiKey">Access token / API key</label>
@@ -27,7 +27,7 @@
                 <div class="field">
                   <label for="loginUser">Login (username)</label>
                   <input id="loginUser" placeholder="username">
-                  <div class="hint">Use /login to generate a JWT and save it automatically.</div>
+                  <div class="hint">Use /login for one-time admin setup or browser sessions. Agents should usually use a service token instead.</div>
                 </div>
                 <div class="field">
                   <label for="loginPass">Login (password)</label>
@@ -35,9 +35,19 @@
                 </div>
               </div>
 
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="openAiApiKeyOverride">OpenAI key override (optional)</label>
+                  <input id="openAiApiKeyOverride" type="password" placeholder="sk-...">
+                  <div class="hint">Use this when you want AtlasRAG to use your OpenAI key while still using this AtlasRAG deployment and its Postgres. Saved locally in your browser and sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
+                </div>
+              </div>
+
               <div class="field" style="margin-top:12px;">
                 <label>Tips</label>
                 <div class="hint">
+                  - Recommended flow: run <span class="mono">node scripts/bootstrap_instance.js</span> once, then store the returned service token in your app or agent env.<br>
+                  - Optional third mode: keep AtlasRAG auth the same, but send your own OpenAI key with requests.<br>
                   - Index at least one document before searching or asking.<br>
                   - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
                   - Health check only verifies gateway to TCP reachability.<br>
@@ -46,12 +56,10 @@
               </div>
 
               <div class="actions">
-                <button class="btn secondary" id="loginBtn">Login and save token</button>
-                <a class="btn secondary" href="/auth/google/login">Login with Google SSO</a>
-                <a class="btn secondary" href="/auth/azure/login">Login with Azure SSO</a>
-                <a class="btn secondary" href="/auth/okta/login">Login with Okta SSO</a>
-                <button class="btn" id="saveKeyBtn">Save token</button>
-                <button class="btn danger" id="clearKeyBtn">Forget token</button>
+                <button class="btn secondary" id="loginBtn">Login and Save Token</button>
+                <button class="btn danger" id="clearKeyBtn">Forget Token</button>
+                <button class="btn secondary" id="saveOpenAiOverrideBtn">Use OpenAI Key</button>
+                <button class="btn danger" id="clearOpenAiOverrideBtn">Forget OpenAI key</button>
               </div>
 
               <div class="banner" id="settingsBanner"></div>
@@ -61,7 +69,7 @@
                 <div class="field">
                   <label for="apiKeyName">Create API key (admin)</label>
                   <input id="apiKeyName" placeholder="ci-pipeline">
-                  <div class="hint">Admins can issue service tokens for server-to-server use.</div>
+                  <div class="hint">Admins can issue service tokens for apps and agents. The bootstrap helper can mint the first one for you.</div>
                 </div>
               </div>
 

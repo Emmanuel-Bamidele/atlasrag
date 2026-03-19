@@ -4,6 +4,7 @@ class AtlasRAGClient {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.token = options.token || null;
     this.apiKey = options.apiKey || null;
+    this.openAiApiKey = options.openAiApiKey || null;
     this.tenantId = options.tenantId || null;
     this.collection = options.collection || null;
     this.principalId = options.principalId || null;
@@ -15,6 +16,10 @@ class AtlasRAGClient {
 
   setApiKey(apiKey) {
     this.apiKey = apiKey;
+  }
+
+  setOpenAiApiKey(openAiApiKey) {
+    this.openAiApiKey = openAiApiKey;
   }
 
   setTenant(tenantId) {
@@ -65,6 +70,9 @@ class AtlasRAGClient {
       } else if (this.token) {
         headers.Authorization = `Bearer ${this.token}`;
       }
+    }
+    if (this.openAiApiKey) {
+      headers["X-OpenAI-API-Key"] = this.openAiApiKey;
     }
     if (options.idempotencyKey) {
       headers["Idempotency-Key"] = options.idempotencyKey;

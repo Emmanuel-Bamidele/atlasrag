@@ -14,18 +14,30 @@ const OpenAI = require("openai");
 const crypto = require("crypto");
 
 let defaultClient = null;
-function getClient() {
+function createClient(key) {
+  const cleanKey = String(key || "").trim();
+  if (!cleanKey) {
+    throw new Error("OPENAI_API_KEY not set on server");
+  }
+  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
+  const options = { apiKey: cleanKey };
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    options.timeout = timeoutMs;
+  }
+  return new OpenAI(options);
+}
+
+function getClient(apiKey = "") {
+  const overrideKey = String(apiKey || "").trim();
+  if (overrideKey) {
+    return createClient(overrideKey);
+  }
   if (defaultClient) return defaultClient;
   const key = String(process.env.OPENAI_API_KEY || "").trim();
   if (!key) {
     throw new Error("OPENAI_API_KEY not set on server");
   }
-  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
-  const options = { apiKey: key };
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    options.timeout = timeoutMs;
-  }
-  defaultClient = new OpenAI(options);
+  defaultClient = createClient(key);
   return defaultClient;
 }
 
@@ -97,15 +109,26 @@ function fallbackEmbeddings(texts, reason, usage) {
 }
 
 // embedTexts takes an array of strings and returns an array of vectors
-async function embedTexts(texts, batchSize = DEFAULT_BATCH_SIZE) {
+function normalizeEmbedOptions(batchSizeOrOptions) {
+  if (typeof batchSizeOrOptions === "number") {
+    return { batchSize: batchSizeOrOptions };
+  }
+  if (batchSizeOrOptions && typeof batchSizeOrOptions === "object") {
+    return batchSizeOrOptions;
+  }
+  return {};
+}
+
+async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   const out = [];
   const usage = { prompt_tokens: 0, total_tokens: 0 };
-  const safeBatch = Number.isFinite(batchSize) && batchSize > 0 ? batchSize : 64;
+  const options = normalizeEmbedOptions(batchSizeOrOptions);
+  const safeBatch = Number.isFinite(options.batchSize) && options.batchSize > 0 ? options.batchSize : 64;
   const list = Array.isArray(texts) ? texts : [];
 
   let client = null;
   try {
-    client = getClient();
+    client = getClient(options.apiKey);
   } catch (err) {
     if (!EMBED_FALLBACK_ON_ERROR) throw err;
     return {

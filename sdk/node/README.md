@@ -9,18 +9,48 @@ cd sdk/node
 npm install
 ```
 
+## Bootstrap once (recommended)
+
+Fastest local path:
+
+```bash
+atlasrag onboard
+```
+
+That creates the local env, starts Docker, bootstraps the first admin, and stores the service token for later CLI usage.
+
+Manual path if you want to bootstrap the running gateway directly:
+
+Create the first admin and a service token from the running AtlasRAG gateway:
+
+```bash
+docker compose exec gateway node scripts/bootstrap_instance.js \
+  --username admin \
+  --password change_me \
+  --tenant default \
+  --service-token-name node-sdk
+```
+
+Store the printed values in your environment:
+
+```bash
+export ATLASRAG_BASE_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export OPENAI_API_KEY="YOUR_OPENAI_KEY"
+```
+
 ## Quick start
 
 ```js
 const { AtlasRAGClient } = require("@atlasrag/sdk");
 
 const client = new AtlasRAGClient({
-  baseUrl: process.env.ATLASRAG_URL || "http://localhost:3000"
+  baseUrl: process.env.ATLASRAG_BASE_URL || process.env.ATLASRAG_URL || "http://localhost:3000",
+  apiKey: process.env.ATLASRAG_API_KEY,
+  openAiApiKey: process.env.OPENAI_API_KEY
 });
 
 async function main() {
-  await client.login(process.env.ATLASRAG_USER, process.env.ATLASRAG_PASS);
-
   await client.indexText("welcome", "AtlasRAG stores memory for agents.", {
     collection: "default"
   });
@@ -34,13 +64,27 @@ main().catch(console.error);
 
 ## Authentication
 
-Use a JWT (Bearer) or a service token (API key). If both are set, the SDK prefers the API key.
+Use a JWT (Bearer) or a service token (API key). For apps, agents, workers, and backends, prefer a service token. If both are set, the SDK prefers the API key.
 
 ```js
 const client = new AtlasRAGClient({
-  baseUrl: "http://localhost:3000",
-  apiKey: process.env.ATLASRAG_API_KEY
+  baseUrl: process.env.ATLASRAG_BASE_URL || "http://localhost:3000",
+  apiKey: process.env.ATLASRAG_API_KEY,
+  openAiApiKey: process.env.OPENAI_API_KEY
 });
+```
+
+If `openAiApiKey` is set, the SDK sends `X-OpenAI-API-Key` so AtlasRAG can use your OpenAI key while still using the shared AtlasRAG deployment and its Postgres/auth state.
+
+Current limitation:
+
+- request-scoped OpenAI key override works on sync requests such as docs, search, ask, memory write, and memory recall
+- `memoryReflect()` and `memoryCompact()` should keep using the server-side OpenAI key today because those flows continue asynchronously after the request ends
+
+Human admin login is still available when you need a JWT for the UI or admin setup:
+
+```js
+await client.login(process.env.ATLASRAG_USER, process.env.ATLASRAG_PASS);
 ```
 
 ## Methods

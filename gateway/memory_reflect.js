@@ -4,18 +4,30 @@
 const OpenAI = require("openai");
 
 let defaultClient = null;
-function getClient() {
+function createClient(key) {
+  const cleanKey = String(key || "").trim();
+  if (!cleanKey) {
+    throw new Error("OPENAI_API_KEY not set on server");
+  }
+  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
+  const options = { apiKey: cleanKey };
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    options.timeout = timeoutMs;
+  }
+  return new OpenAI(options);
+}
+
+function getClient(apiKey = "") {
+  const overrideKey = String(apiKey || "").trim();
+  if (overrideKey) {
+    return createClient(overrideKey);
+  }
   if (defaultClient) return defaultClient;
   const key = String(process.env.OPENAI_API_KEY || "").trim();
   if (!key) {
     throw new Error("OPENAI_API_KEY not set on server");
   }
-  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
-  const options = { apiKey: key };
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    options.timeout = timeoutMs;
-  }
-  defaultClient = new OpenAI(options);
+  defaultClient = createClient(key);
   return defaultClient;
 }
 
@@ -99,14 +111,14 @@ function buildFallbackReflection({ text, types, maxItems }) {
   return { semantic, procedural, summary, usage: null };
 }
 
-async function reflectMemories({ text, types, maxItems }) {
+async function reflectMemories({ text, types, maxItems, apiKey }) {
   const selected = normalizeTypes(types);
   const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
   const input = buildPrompt(text, selected, limit);
 
   let resp = null;
   try {
-    resp = await getClient().responses.create({
+    resp = await getClient(apiKey).responses.create({
       model: DEFAULT_MODEL,
       input,
       temperature: 0.2,
@@ -154,11 +166,11 @@ function buildFallbackCompaction(text) {
   };
 }
 
-async function summarizeMemories({ text }) {
+async function summarizeMemories({ text, apiKey }) {
   const input = buildCompactPrompt(text);
   let resp = null;
   try {
-    resp = await getClient().responses.create({
+    resp = await getClient(apiKey).responses.create({
       model: COMPACT_MODEL,
       input,
       temperature: 0.2,

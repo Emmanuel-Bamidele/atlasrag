@@ -9,7 +9,8 @@
     "test:integration": "node tests/mcp_public_endpoints.test.js",
     "test:e2e": "node tests/api_e2e.test.js",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "ci:ensure-user": "node scripts/ensure_user.js"
+    "ci:ensure-user": "node scripts/ensure_user.js",
+    "bootstrap:instance": "node scripts/bootstrap_instance.js"
   },
   "keywords": [],
   "author": "",

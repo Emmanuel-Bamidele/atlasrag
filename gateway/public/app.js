@@ -23,6 +23,7 @@ function normalizePolicy(value){
 const AUTH_TOKEN_KEY = "atlasragAuthToken";
 const AUTH_TYPE_KEY = "atlasragAuthType";
 const LEGACY_JWT_KEY = "atlasragJwt";
+const OPENAI_OVERRIDE_KEY = "atlasragOpenAiApiKey";
 const UI_THEME_KEY = "atlasragUiTheme";
 const UI_THEME_USER_SET_KEY = "atlasragUiThemeUserSet";
 const SYSTEM_THEME_QUERY = "(prefers-color-scheme: light)";
@@ -81,6 +82,18 @@ function clearStoredAuth(){
   localStorage.removeItem(LEGACY_JWT_KEY);
   authRejected = false;
   authRejectedMessage = "";
+}
+
+function loadStoredOpenAiOverride(){
+  return String(localStorage.getItem(OPENAI_OVERRIDE_KEY) || "").trim();
+}
+
+function saveStoredOpenAiOverride(value){
+  localStorage.setItem(OPENAI_OVERRIDE_KEY, String(value || "").trim());
+}
+
+function clearStoredOpenAiOverride(){
+  localStorage.removeItem(OPENAI_OVERRIDE_KEY);
 }
 
 function setThemeButtonState(theme){
@@ -169,6 +182,10 @@ function apiHeaders(){
     }else{
       headers["Authorization"] = `Bearer ${auth.token}`;
     }
+  }
+  const openAiApiKey = loadStoredOpenAiOverride();
+  if (openAiApiKey){
+    headers["X-OpenAI-API-Key"] = openAiApiKey;
   }
   return headers;
 }
@@ -672,6 +689,10 @@ function buildDocConnectContent(baseUrl){
       `API docs: ${apiDocsUrl}`,
       `llms.txt: ${llmsUrl}`,
       `MCP server: ${mcpUrl}`,
+      "If you are operating on a local computer with this repo, prefer the atlasrag CLI over raw bootstrap commands.",
+      "Run atlasrag doctor first. If AtlasRAG is not configured, run atlasrag onboard.",
+      "On the local CLI path, atlasrag onboard creates the first admin and first service token and saves local config for later CLI use.",
+      "Use --collection explicitly on atlasrag write/search/ask when scope matters. atlasrag write --folder ./name uses the folder name as the default collection.",
       "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
       "When answering, cite the endpoint path and required headers for each AtlasRAG API call."
     ].join("\n")
@@ -739,6 +760,7 @@ function initDocsAgentConnect(){
 }
 
 function showPage(pageId){
+  const shell = document.querySelector(".shell");
   const tabs = [
     ["tabProduct","pageProduct"],
     ["tabPlayground","pagePlayground"],
@@ -763,6 +785,10 @@ function showPage(pageId){
     $(found[1]).classList.add("active");
   }
 
+  if (shell) {
+    shell.classList.toggle("shell-docs-mode", pageId === "pageDocs");
+  }
+
   if (pageId === "pageMetrics" && !metricsLoaded){
     loadStats();
   }
@@ -782,6 +808,7 @@ const HASH_PAGE_ROUTES = new Map([
   ["pagedocstop", "pageDocs"],
   ["pagesettings", "pageSettings"],
   ["docs", "pageDocs"],
+  ["setup", "pageDocs"],
   ["documentation", "pageDocs"]
 ]);
 
@@ -789,7 +816,7 @@ function resolvePageIdFromHash(rawHash){
   const clean = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim()).toLowerCase();
   if (!clean) return null;
   if (HASH_PAGE_ROUTES.has(clean)) return HASH_PAGE_ROUTES.get(clean);
-  if (clean.startsWith("doc-") || clean.startsWith("amv-")) return "pageDocs";
+  if (clean.startsWith("doc-") || clean.startsWith("amv-") || clean.startsWith("mode-")) return "pageDocs";
   return null;
 }
 
@@ -845,6 +872,23 @@ function syncDocsPanelFromHash(rawHash){
   if (!clean) return;
   if (clean.startsWith("amv-")) {
     activateDocPanel("docs", "amv");
+    return;
+  }
+  if (clean === "doc-setup-modes" || clean === "doc-setup-guides" || clean === "setup") {
+    activateDocPanel("docs", "setup");
+    return;
+  }
+  const usageModes = {
+    "mode-bundled": "bundled",
+    "mode-byo-postgres": "byoPostgres",
+    "mode-shared": "shared",
+    "mode-shared-openai": "sharedOpenAi",
+    "mode-backend-proxy": "backendProxy",
+    "mode-human-admin": "humanAdmin"
+  };
+  if (usageModes[clean]) {
+    activateDocPanel("docs", "setup");
+    activateDocPanel("usageModes", usageModes[clean]);
     return;
   }
   if (clean.startsWith("doc-") || clean === "pagedocstop" || clean === "pagedocs" || clean === "docs") {
@@ -1680,6 +1724,29 @@ window.addEventListener("DOMContentLoaded", () => {
     footerYearEl.textContent = String(new Date().getFullYear());
   }
 
+  const footerDateEl = $("footerDate");
+  const renderFooterDate = () => {
+    if (!footerDateEl) return;
+    footerDateEl.textContent = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }).format(new Date());
+  };
+  const scheduleFooterDateRefresh = () => {
+    if (!footerDateEl) return;
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(24, 0, 5, 0);
+    const delay = Math.max(1000, next.getTime() - now.getTime());
+    window.setTimeout(() => {
+      renderFooterDate();
+      scheduleFooterDateRefresh();
+    }, delay);
+  };
+  renderFooterDate();
+  scheduleFooterDateRefresh();
+
   initTheme();
   initDocTabs();
   initDocsAgentConnect();
@@ -1706,19 +1773,22 @@ window.addEventListener("DOMContentLoaded", () => {
   const auth = loadStoredAuth();
   $("apiKey").value = auth.token;
   if ($("authType")) $("authType").value = auth.type || "bearer";
+  if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = loadStoredOpenAiOverride();
 
-  $("saveKeyBtn").onclick = () => {
-    const authType = $("authType") ? $("authType").value : "bearer";
-    const key = $("apiKey").value.trim();
-    if (!key){
-      setBanner($("settingsBanner"), "err", "Please paste a token first.");
-      return;
-    }
-    saveStoredAuth(authType, key);
+  if ($("saveKeyBtn")) {
+    $("saveKeyBtn").onclick = () => {
+      const authType = $("authType") ? $("authType").value : "bearer";
+      const key = $("apiKey").value.trim();
+      if (!key){
+        setBanner($("settingsBanner"), "err", "Please paste a token first.");
+        return;
+      }
+      saveStoredAuth(authType, key);
       setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
       loadDocsList();
       loadCollectionScopeOptions();
     };
+  }
 
   $("loginBtn").onclick = async () => {
     clearBanner($("settingsBanner"));
@@ -1755,7 +1825,7 @@ window.addEventListener("DOMContentLoaded", () => {
       setBanner($("settingsBanner"), "err", "Error: " + e);
     }finally{
       $("loginBtn").disabled = false;
-      $("loginBtn").textContent = "Login and save token";
+      $("loginBtn").textContent = "Login and Save Token";
     }
   };
 
@@ -1768,6 +1838,26 @@ window.addEventListener("DOMContentLoaded", () => {
     setDocOptions([]);
     setCollectionScopeOptions([]);
   };
+
+  if ($("saveOpenAiOverrideBtn")) {
+    $("saveOpenAiOverrideBtn").onclick = () => {
+      const value = $("openAiApiKeyOverride").value.trim();
+      if (!value){
+        setBanner($("settingsBanner"), "err", "Please paste an OpenAI key first.");
+        return;
+      }
+      saveStoredOpenAiOverride(value);
+      setBanner($("settingsBanner"), "ok", "Saved OpenAI key override. AtlasRAG requests from this browser will now send X-OpenAI-API-Key.");
+    };
+  }
+
+  if ($("clearOpenAiOverrideBtn")) {
+    $("clearOpenAiOverrideBtn").onclick = () => {
+      clearStoredOpenAiOverride();
+      if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = "";
+      setBanner($("settingsBanner"), "ok", "Removed saved OpenAI key override.");
+    };
+  }
 
   $("createApiKeyBtn").onclick = async () => {
     clearBanner($("apiKeyBanner"));

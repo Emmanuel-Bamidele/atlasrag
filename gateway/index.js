@@ -603,7 +603,21 @@ function normalizeMemoryPolicy(value, fallback = DEFAULT_MEMORY_POLICY) {
 
 function resolveRequestedMemoryPolicy(input, fallback = DEFAULT_MEMORY_POLICY) {
   if (!input || typeof input !== "object") return fallback;
-  return normalizeMemoryPolicy(input.policy ?? input.mode, fallback);
+  const rawPolicy = Object.prototype.hasOwnProperty.call(input, "policy")
+    ? input.policy
+    : undefined;
+  const rawMode = Object.prototype.hasOwnProperty.call(input, "mode")
+    ? input.mode
+    : undefined;
+  const candidate = rawPolicy ?? rawMode;
+  if (Array.isArray(candidate)) {
+    const first = candidate.find((value) => typeof value === "string" || typeof value === "number");
+    return normalizeMemoryPolicy(first, fallback);
+  }
+  if (typeof candidate !== "string" && typeof candidate !== "number") {
+    return fallback;
+  }
+  return normalizeMemoryPolicy(candidate, fallback);
 }
 
 function getMemoryPolicy(memory, fallback = DEFAULT_MEMORY_POLICY) {
@@ -995,6 +1009,24 @@ function requireRole(required) {
 
 function requireAdmin(req, res, next) {
   return requireRole("admin")(req, res, next);
+}
+
+function resolveOpenAiApiKeyOverride(req) {
+  const raw = req?.header("x-openai-api-key");
+  if (raw === undefined || raw === null) return "";
+  const clean = String(raw).trim();
+  if (!clean) return "";
+  if (clean.length > 4096) {
+    throw new Error("x-openai-api-key header is too long");
+  }
+  return clean;
+}
+
+function assertNoOpenAiApiKeyOverride(req, endpointLabel) {
+  const override = resolveOpenAiApiKeyOverride(req);
+  if (!override) return;
+  const endpoint = endpointLabel || "this endpoint";
+  throw new Error(`${endpoint} does not support X-OpenAI-API-Key because the work runs asynchronously after the request ends`);
 }
 
 function resolveCollection(req, options = {}) {
@@ -2657,7 +2689,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   const texts = chunks.map(c => c.text);
   const embedStart = Date.now();
-  const { vectors, usage } = await embedTexts(texts);
+  const { vectors, usage } = await embedTexts(texts, { apiKey: options?.apiKey });
   recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
     tenantId,
@@ -2850,7 +2882,7 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -2858,7 +2890,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     source: telemetry?.source || "search_query"
   });
   const policyConfig = resolveMemoryPolicyConfig(policy);
-  const { vectors: [qvec], usage } = await embedTexts([query]);
+  const { vectors: [qvec], usage } = await embedTexts([query], { apiKey });
   recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
   const cleanDocIds = Array.isArray(docIds) ? docIds : [];
@@ -2875,7 +2907,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     until,
     warmSampleSize: Math.max(topK, Number.isFinite(policyConfig.retrievalWarmSampleK) ? policyConfig.retrievalWarmSampleK : 0),
     docIds: cleanDocIds,
-    policy: policyConfig
+    policy: policyConfig.policy
   });
   if (policyConfig.retrievalColdProbeEpsilon <= 0 && (retrievalSet.coldCandidates || 0) !== 0) {
     throw new Error("retrieval invariant violated: cold candidates present with cold probe disabled");
@@ -3109,7 +3141,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -3128,6 +3160,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
     policy,
+    apiKey,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -3204,6 +3237,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
 
   const injectedMemoryIds = new Set();
   const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
+    apiKey,
     answerLength,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
@@ -3308,7 +3342,7 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   }
 
   const texts = chunks.map(c => c.text);
-  const { vectors, usage } = await embedTexts(texts);
+  const { vectors, usage } = await embedTexts(texts, { apiKey: options?.apiKey });
   const parsed = parseNamespacedDocId(namespaceId);
   recordEmbeddingUsage(parsed?.tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
@@ -3411,6 +3445,7 @@ async function memoryWriteCore(req) {
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
   const nowMs = Date.now();
   const initialValueScore = resolveInitialValueScore(policy);
+  const openAiApiKey = resolveOpenAiApiKeyOverride(req);
 
   const metadataWithTokens = buildStoredMemoryMetadata(metadata, text, policy);
   const memory = await upsertMemoryItem({
@@ -3440,6 +3475,7 @@ async function memoryWriteCore(req) {
   });
 
   const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text, {
+    apiKey: openAiApiKey,
     telemetry: buildTelemetryContext({
       requestId: req.requestId,
       tenantId,
@@ -4976,6 +5012,9 @@ app.get("/llms.txt", (req, res) => {
     "",
     "## Suggested usage",
     "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
+    "- If working on a local computer with this repo, prefer the atlasrag CLI: run `atlasrag doctor`, then `atlasrag onboard` if not configured.",
+    "- On the local CLI path, `atlasrag onboard` creates the first admin and first service token and stores them in local CLI config.",
+    "- Use `--collection` explicitly on write/search/ask when scope matters. `atlasrag write --folder ./name` uses the folder name as the default collection.",
     "- For memory/ask APIs, policy can be set to amvl, ttl, or lru; the default is amvl.",
     "- For /v1/ask, use answerLength (auto|short|medium|long) to control response depth.",
     "- Use llms.txt for quick discovery of docs and MCP entrypoints."
@@ -5734,6 +5773,7 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
@@ -5743,7 +5783,10 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
       cleanDocId,
       text,
       { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
-      { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_legacy" }) }
+      {
+        apiKey: openAiApiKey,
+        telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_legacy" })
+      }
     );
     res.json({ ok: true, docId: cleanDocId, collection, tenantId, chunksIndexed, truncated });
   } catch (e) {
@@ -5768,10 +5811,12 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
   let principalId = null;
   let agentId = null;
   let tags = [];
+  let openAiApiKey = "";
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
+    openAiApiKey = resolveOpenAiApiKeyOverride(req);
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
   } catch (e) {
@@ -5794,7 +5839,10 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
           cleanDocId,
           text,
           { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
-          { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_v1" }) }
+          {
+            apiKey: openAiApiKey,
+            telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_v1" })
+          }
         );
         return {
           status: 200,
@@ -5830,6 +5878,7 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
@@ -5840,7 +5889,10 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
       cleanDocId,
       fetched.text,
       { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
-      { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_legacy" }) }
+      {
+        apiKey: openAiApiKey,
+        telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_legacy" })
+      }
     );
 
     res.json({
@@ -5877,10 +5929,12 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
   let principalId = null;
   let agentId = null;
   let tags = [];
+  let openAiApiKey = "";
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
+    openAiApiKey = resolveOpenAiApiKeyOverride(req);
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
   } catch (e) {
@@ -5904,7 +5958,10 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
           cleanDocId,
           fetched.text,
           { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
-          { telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_v1" }) }
+          {
+            apiKey: openAiApiKey,
+            telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_v1" })
+          }
         );
 
         return {
@@ -5956,6 +6013,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
 
     const result = await answerQuestion({
       tenantId,
@@ -5967,6 +6025,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6010,6 +6069,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -6020,6 +6080,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6133,6 +6194,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
 
     const results = await searchChunks({
       tenantId,
@@ -6141,6 +6203,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
+      apiKey: openAiApiKey,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
@@ -6184,6 +6247,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
     const results = await searchChunks({
       tenantId,
       collection,
@@ -6191,6 +6255,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
+      apiKey: openAiApiKey,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
@@ -6322,6 +6387,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
 
     const results = await searchChunks({
       tenantId,
@@ -6337,6 +6403,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       since: sinceTime,
       until: untilTime,
       policy,
+      apiKey: openAiApiKey,
       telemetry: telemetryContext
     });
 
@@ -6426,6 +6493,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
 
     const results = await searchChunks({
       tenantId,
@@ -6441,6 +6509,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       since: sinceTime,
       until: untilTime,
       policy,
+      apiKey: openAiApiKey,
       telemetry: telemetryContext
     });
 
@@ -6584,6 +6653,7 @@ const memoryReflectLegacy = async (req, res) => {
   let collection = null;
   let principalId = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/memory/reflect");
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
@@ -6650,6 +6720,7 @@ const memoryReflectV1 = async (req, res) => {
   let collection = null;
   let principalId = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/v1/memory/reflect");
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
@@ -6742,6 +6813,7 @@ const memoryCleanupLegacy = async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/memory/compact");
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);
@@ -6786,6 +6858,7 @@ const memoryCleanupV1 = async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/v1/memory/compact");
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);

@@ -132,8 +132,50 @@
   font-family: var(--mono);
 }
 
-.footer{
+.footer-area{
   margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.footer-status{
+  width: 100%;
+  max-width: 920px;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.footer{
   color: var(--muted);
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  text-align: center;
+}
+
+.footer-line{
+  max-width: 72ch;
+}
+
+.footer a{
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+.footer a:hover{
+  text-decoration: underline;
+}
+
+@media (max-width: 760px){
+  .footer-area{
+    gap: 10px;
+  }
+
+  .footer-status{
+    justify-content: flex-start;
+  }
 }

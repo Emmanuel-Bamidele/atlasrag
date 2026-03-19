@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root{
   --page-max-width: 1400px;
@@ -21,6 +21,7 @@
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --sans: "Work Sans", "Space Grotesk", system-ui, -apple-system, sans-serif;
   --display: "Space Grotesk", "Work Sans", system-ui, -apple-system, sans-serif;
+  --display-alt: "Syne", "Space Grotesk", system-ui, -apple-system, sans-serif;
 }
 
 *{ box-sizing:border-box; }
@@ -139,17 +140,54 @@ body.light-theme .bg-orb.orb-b{
   padding-right: 56px;
 }
 
+.brand{
+  flex: 1 1 100%;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
 .brand h1{
   margin:0;
   font-family:var(--display);
   font-size: 28px;
   letter-spacing:-0.3px;
 }
+
+.brand-name{
+  line-height: 1;
+}
+
 .brand p{
   margin:8px 0 0;
   color:var(--muted);
   font-size: 14px;
   line-height:1.5;
+}
+
+.brand-tagline{
+  margin-top: 10px;
+  max-width: none;
+  font-family: var(--display-alt);
+  font-size: clamp(24px, 3.2vw, 38px);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-summary{
+  margin-top: 12px;
+  max-width: 58ch;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .theme-toggle{
@@ -276,6 +314,15 @@ body.light-theme .theme-toggle:hover{
   overflow:hidden;
 }
 
+.shell.shell-docs-mode{
+  overflow: visible;
+}
+
+.shell.shell-docs-mode .nav{
+  border-top-left-radius: calc(var(--radius) - 1px);
+  border-top-right-radius: calc(var(--radius) - 1px);
+}
+
 body.light-theme .shell{
   background: #ffffff;
   border-color: rgba(26,54,70,0.2);
@@ -345,38 +392,12 @@ body.light-theme .play-card,
 body.light-theme .details,
 body.light-theme .doc-block,
 body.light-theme .doc-outline,
-body.light-theme .product-hero,
-body.light-theme .product-positioning,
-body.light-theme .product-stage-body,
-body.light-theme .product-runtime,
-body.light-theme .product-lane,
-body.light-theme .product-arch,
 body.light-theme .amv-header,
 body.light-theme .amv-meta-item,
 body.light-theme .amv-paper .details.section{
   background: #ffffff;
   border-color: rgba(26,54,70,0.16);
   box-shadow: none;
-}
-
-body.light-theme .product-arch{
-  --svg-bg: #ffffff;
-  --svg-outer: #ffffff;
-  --svg-outer-stroke: #aac0cd;
-  --svg-outer-2: #ffffff;
-  --svg-outer-2-stroke: #a2bac8;
-  --svg-panel: #ffffff;
-  --svg-panel-stroke: #0e9e94;
-  --svg-panel-dark: #f8fbfd;
-  --svg-panel-dark-stroke: #a2bac8;
-  --svg-center: #ffffff;
-  --svg-center-stroke: #c98223;
-  --svg-label: #123243;
-  --svg-small: #2d4a59;
-  --svg-tiny: #446675;
-  --svg-flow: #0e9e94;
-  --svg-soft: #6f8a99;
-  --svg-tag-text: #1d3b49;
 }
 
 body.light-theme .card::after{
@@ -403,8 +424,7 @@ body.light-theme .doc-tab,
 body.light-theme .stat-tab,
 body.light-theme .doc-outline-links a,
 body.light-theme .doc-backtop a,
-body.light-theme .stat-tab.active,
-body.light-theme .product-chip{
+body.light-theme .stat-tab.active{
   background: #f4f8fb;
   border-color: rgba(26,54,70,0.18);
   color: var(--text);
@@ -435,11 +455,6 @@ body.light-theme .docs-article h3,
 body.light-theme .docs-article h4,
 body.light-theme .lead,
 body.light-theme .preview,
-body.light-theme .product-intro,
-body.light-theme .product-intro-sub,
-body.light-theme .product-stage-body p,
-body.light-theme .product-lane h4,
-body.light-theme .product-lane p,
 body.light-theme .doc-card p,
 body.light-theme .amv-subtitle,
 body.light-theme .amv-meta-value,
@@ -463,9 +478,6 @@ body.light-theme .hint .mono{
   color: #1f3a48;
 }
 
-body.light-theme .product-kicker,
-body.light-theme .product-stage-index,
-body.light-theme .product-arch-title,
 body.light-theme .amv-kicker{
   color: #b06e17;
 }
@@ -482,6 +494,25 @@ body.light-theme .table tr:hover{
 }
 
 @media (max-width: 760px){
+  .topbar{
+    padding-right: 48px;
+  }
+
+  .brand h1{
+    font-size: 24px;
+  }
+
+  .brand-tagline{
+    max-width: 15ch;
+    white-space: normal;
+    font-size: clamp(22px, 7vw, 32px);
+  }
+
+  .brand-summary{
+    max-width: 34ch;
+    font-size: 12px;
+  }
+
   .status{
     justify-content: flex-start;
     gap: 8px;

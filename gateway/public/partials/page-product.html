@@ -1,272 +1,137 @@
         <!-- PAGE: PRODUCT -->
         <section class="page active" id="pageProduct" role="tabpanel">
           <article class="docs-article product-page">
-            <section class="product-hero">
-              <div class="product-hero-layout">
-                <div class="product-hero-main">
-                  <p class="product-kicker">Production Memory Platform</p>
-                  <h2>AtlasRAG turns retrieval into durable, governed memory for AI agents.</h2>
-                  <p class="product-intro">
-                    AtlasRAG combines a high-speed C++ vector store with a secure Node gateway so teams can ingest knowledge,
-                    retrieve context, and continuously improve memory quality in production without building custom control loops.
-                  </p>
-                  <p class="product-intro product-intro-sub">
-                    This gives product teams a stable memory foundation for customer assistants, internal copilots, and workflow agents,
-                    with strong tenant boundaries, operational controls, and measurable runtime behavior.
-                  </p>
-                  <section class="product-arch" aria-label="AtlasRAG full architecture map">
-                    <p class="product-arch-title">Full stack placement</p>
-                    <div class="product-arch-scroll">
-                      <svg class="product-arch-svg" viewBox="0 0 1400 940" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="productArchTitle productArchDesc">
-                        <title id="productArchTitle">AtlasRAG full architecture diagram</title>
-                        <desc id="productArchDesc">End users connect to builder-owned agent apps. Apps call AtlasRAG ingest, run, serve, observe, and improve layers, then return responses to end users.</desc>
-                        <defs>
-                          <style>
-                            .bg { fill: var(--svg-bg, #0b1a1f); }
-                            .outer { fill: var(--svg-outer, #132a2f); stroke: var(--svg-outer-stroke, #3b5962); stroke-width:1.4; }
-                            .outer2 { fill: var(--svg-outer-2, #0f2429); stroke: var(--svg-outer-2-stroke, #2d4b54); stroke-width:1.4; }
-                            .panel { fill: var(--svg-panel, #16333a); stroke: var(--svg-panel-stroke, #3dd5c8); stroke-width:1.7; }
-                            .panel-dark { fill: var(--svg-panel-dark, #10252b); stroke: var(--svg-panel-dark-stroke, #3a5963); stroke-width:1.4; }
-                            .center { fill: var(--svg-center, #193b41); stroke: var(--svg-center-stroke, #f6c356); stroke-width:2.2; }
-                            .label { fill: var(--svg-label, #e8f2f2); font-family:"Space Grotesk", "Work Sans", Arial, sans-serif; font-size:20px; font-weight:600; }
-                            .small { fill: var(--svg-small, #cde6e3); font-family:"Work Sans", Arial, sans-serif; font-size:15px; }
-                            .tiny { fill: var(--svg-tiny, #9fb6b6); font-family:"Work Sans", Arial, sans-serif; font-size:14px; }
-                            .flow { stroke: var(--svg-flow, #3dd5c8); stroke-width:2.2; fill:none; marker-end:url(#arrow); }
-                            .soft { stroke: var(--svg-soft, #6f9198); stroke-width:1.8; fill:none; marker-end:url(#arrowSoft); }
-                            .tag-text { fill: var(--svg-tag-text, #d8f3ef); font-family:"Work Sans", Arial, sans-serif; font-size:12px; font-weight:600; }
-                          </style>
-                          <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
-                            <path d="M0,0 L0,6 L6,3 z" fill="var(--svg-flow, #3dd5c8)"/>
-                          </marker>
-                          <marker id="arrowSoft" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
-                            <path d="M0,0 L0,6 L6,3 z" fill="var(--svg-soft, #6f9198)"/>
-                          </marker>
-                        </defs>
-                        <rect class="bg" width="1400" height="940" rx="20"/>
-                        <rect class="outer2" x="80" y="40" width="1240" height="98" rx="24"/>
-                        <text class="label" x="120" y="80">End Users (outside AtlasRAG)</text>
-                        <text class="tiny" x="120" y="108">Web app users | mobile users | Slack/Teams users</text>
-                        <rect class="outer" x="80" y="160" width="1240" height="160" rx="24"/>
-                        <text class="label" x="120" y="198">Builder-owned App / Agent Layer (outside AtlasRAG)</text>
-                        <text class="tiny" x="120" y="232">Chatbot UI, customer copilots, support assistants, internal knowledge portals, specs workbenches, whitepaper systems</text>
-                        <text class="tiny" x="120" y="258">Agent runtime/orchestrator (LangChain or custom code), internal agentic search, retrieval QA surfaces, multi-agent workflows</text>
-                        <text class="tiny" x="120" y="284">Approval chains, tool routing, domain actions, compliance workflows, and business automation pipelines</text>
-                        <rect class="outer2" x="80" y="420" width="1240" height="510" rx="24"/>
-                        <text class="label" x="120" y="458">AtlasRAG Platform Layer</text>
-                        <text class="tiny" x="120" y="486">Gateway APIs: /v1/ask | /v1/search | /v1/memory/* | /v1/feedback</text>
-                        <rect class="panel" x="140" y="610" width="280" height="160" rx="18"/>
-                        <text class="label" x="180" y="642">INGEST</text>
-                        <text class="small" x="180" y="672">- Docs / URLs</text>
-                        <text class="small" x="180" y="700">- SDK / API writes</text>
-                        <text class="small" x="180" y="728">- Tenant + ACL policy</text>
-                        <rect class="center" x="560" y="610" width="360" height="150" rx="24"/>
-                        <text class="label" x="705" y="642">RUN</text>
-                        <text class="small" x="600" y="672">AtlasRAG Gateway</text>
-                        <text class="small" x="600" y="700">C++ vector core</text>
-                        <text class="small" x="600" y="728">Postgres memory store</text>
-                        <rect class="panel" x="1000" y="610" width="280" height="160" rx="18"/>
-                        <text class="label" x="1040" y="642">SERVE</text>
-                        <text class="small" x="1040" y="672">- Search</text>
-                        <text class="small" x="1040" y="700">- Ask</text>
-                        <text class="small" x="1040" y="728">- Memory recall</text>
-                        <text class="small" x="1040" y="756">- Job status</text>
-                        <rect class="panel-dark" x="1000" y="495" width="280" height="80" rx="16"/>
-                        <text class="label" x="1040" y="525">OBSERVE</text>
-                        <text class="tiny" x="1040" y="549">Telemetry | Metrics | Traces/Logs</text>
-                        <rect class="panel-dark" x="560" y="810" width="360" height="84" rx="16"/>
-                        <text class="label" x="695" y="840">IMPROVE</text>
-                        <text class="tiny" x="740" y="863" text-anchor="middle">
-                          <tspan x="740" dy="0">AMV-L | TTL sweep</tspan>
-                          <tspan x="740" dy="18">reflection + feedback jobs</tspan>
-                        </text>
-                        <path class="flow" d="M420 686 L560 686"/>
-                        <path class="flow" d="M920 686 L1000 686"/>
-                        <path class="soft" d="M740 610 L740 525 L1000 525"/>
-                        <path class="soft" d="M1140 610 L1140 585"/>
-                        <path class="soft" d="M740 810 L740 796 L948 796 L948 588 L1140 588"/>
-                        <path class="flow" d="M740 810 L740 760"/>
-                        <path class="flow" d="M664 328 L664 414"/>
-                        <path class="flow" d="M742 414 L742 328"/>
-                        <text class="tag-text" x="680" y="354">calls</text>
-                        <text class="tag-text" x="760" y="404">responses</text>
-                        <path class="soft" d="M700 138 L700 160"/>
-                        <path class="soft" d="M730 160 L730 138"/>
-                      </svg>
-                    </div>
-                    <div class="product-arch-mobile" aria-label="AtlasRAG architecture summary for mobile">
-                      <article class="product-arch-layer">
-                        <h4>End Users (outside AtlasRAG)</h4>
-                        <p>Web app users, mobile users, and Slack/Teams users.</p>
-                      </article>
-                      <article class="product-arch-layer">
-                        <h4>Builder-owned App / Agent Layer (outside AtlasRAG)</h4>
-                        <p>Chatbot UI, customer copilots, support assistants, knowledge portals, and workflow systems.</p>
-                        <p>Agent runtime/orchestrator (LangChain or custom code), retrieval QA surfaces, and multi-agent workflows.</p>
-                        <p>Approval chains, tool routing, domain actions, compliance workflows, and business automation pipelines.</p>
-                      </article>
-                      <article class="product-arch-layer product-arch-layer-platform">
-                        <h4>AtlasRAG Platform Layer</h4>
-                        <p class="product-arch-mobile-api">Gateway APIs: /v1/ask | /v1/search | /v1/memory/* | /v1/feedback</p>
-                        <div class="product-arch-mobile-grid">
-                          <div class="product-arch-mobile-card">
-                            <h5>INGEST</h5>
-                            <p>Docs / URLs, SDK/API writes, tenant + ACL policy.</p>
-                          </div>
-                          <div class="product-arch-mobile-card">
-                            <h5>RUN</h5>
-                            <p>AtlasRAG Gateway, C++ vector core, Postgres memory store.</p>
-                          </div>
-                          <div class="product-arch-mobile-card">
-                            <h5>SERVE</h5>
-                            <p>Search, ask, memory recall, and job status.</p>
-                          </div>
-                          <div class="product-arch-mobile-card">
-                            <h5>OBSERVE</h5>
-                            <p>Telemetry, metrics, traces, and logs.</p>
-                          </div>
-                          <div class="product-arch-mobile-card">
-                            <h5>IMPROVE</h5>
-                            <p>AMV-L, TTL sweep, reflection, and feedback jobs.</p>
-                          </div>
-                        </div>
-                      </article>
-                    </div>
-                  </section>
-                  <div class="product-chip-row">
-                    <span class="product-chip">C++ vector core</span>
-                    <span class="product-chip">Node gateway APIs</span>
-                    <span class="product-chip">Tenant + collection isolation</span>
-                    <span class="product-chip">AMV-L lifecycle automation</span>
+            <section class="product-showcase">
+              <div class="product-showcase-copy">
+                <p class="product-showcase-kicker">Product</p>
+                <h2>AtlasRAG gives AI apps a governed memory layer.</h2>
+                <p class="product-showcase-lead">
+                  Put retrieval, memory retention, access control, and feedback loops behind one backend surface
+                  instead of spreading them across your app.
+                </p>
+                <div class="product-showcase-actions">
+                  <a class="btn" href="#doc-setup-modes">See setup paths</a>
+                  <a class="btn secondary" href="#doc-api-ref">API reference</a>
+                </div>
+                <div class="product-showcase-notes" aria-label="AtlasRAG product highlights">
+                  <span class="product-showcase-note">Self-hosted</span>
+                  <span class="product-showcase-note">Tenant-aware</span>
+                  <span class="product-showcase-note">Policy-driven recall</span>
+                </div>
+              </div>
+
+              <div class="product-showcase-stage" aria-hidden="true">
+                <div class="product-stage-shell">
+                  <div class="product-stage-header">
+                    <p class="product-card-eyebrow">Runtime loop</p>
+                    <h3>One backend surface for memory.</h3>
+                    <p>Keep your app in front and move ingest, recall, governance, and improvement behind a single platform.</p>
+                  </div>
+                  <div class="product-stage-grid">
+                    <article class="product-stage-block">
+                      <span class="product-stage-label">Ingest</span>
+                      <strong>Docs and memory writes</strong>
+                      <p>Index docs, URLs, and runtime memories.</p>
+                    </article>
+                    <article class="product-stage-block">
+                      <span class="product-stage-label">Recall</span>
+                      <strong>Search and ask</strong>
+                      <p>Retrieve through one policy-aware path.</p>
+                    </article>
+                    <article class="product-stage-block">
+                      <span class="product-stage-label">Govern</span>
+                      <strong>Tenant and access rules</strong>
+                      <p>Apply tenancy, visibility, and auth controls.</p>
+                    </article>
+                    <article class="product-stage-block">
+                      <span class="product-stage-label">Improve</span>
+                      <strong>Feedback and lifecycle</strong>
+                      <p>Keep memory quality moving over time.</p>
+                    </article>
+                  </div>
+                  <div class="product-stage-footer">
+                    <span>Your app stays in front.</span>
+                    <span>AtlasRAG handles the memory layer behind it.</span>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section class="product-positioning">
-              <h3>What AtlasRAG solves for client programs</h3>
-              <div class="product-lanes">
-                <article class="product-lane">
-                  <h4>Answer drift over time</h4>
-                  <p>Durable memory and recall controls keep agent outputs grounded in approved, reusable context.</p>
+            <section class="product-belt" aria-label="AtlasRAG use cases">
+              <div class="product-belt-track">
+                <span>Customer support copilots</span>
+                <span>Internal knowledge agents</span>
+                <span>Workflow assistants</span>
+                <span>Research copilots</span>
+                <span>Operations agents</span>
+                <span>Specs and documentation systems</span>
+              </div>
+            </section>
+
+            <section class="product-story" aria-label="What AtlasRAG changes">
+              <div class="product-story-copy">
+                <p class="product-card-eyebrow">What shifts</p>
+                <h3>Move memory out of app glue and into infrastructure.</h3>
+                <p>
+                  Teams stop stitching together retrieval logic, ACL rules, expiry behavior, and quality loops
+                  in five different places. AtlasRAG centralizes the memory layer so product code can stay focused
+                  on the actual experience.
+                </p>
+                <ul class="product-story-list">
+                  <li>Keep your frontend, backend, and agent orchestration where they already belong.</li>
+                  <li>Use one governed path for writes, search, ask, and memory recall.</li>
+                  <li>Push setup, auth, API, and policy details into Documentation instead of bloating this tab.</li>
+                </ul>
+              </div>
+              <div class="product-story-panels">
+                <article class="product-story-panel">
+                  <span class="product-panel-label">Best fit</span>
+                  <p>Customer assistants, internal copilots, research agents, and controlled automation where memory quality matters after day one.</p>
                 </article>
-                <article class="product-lane">
-                  <h4>Governance and isolation pressure</h4>
-                  <p>Tenant boundaries, visibility modes, ACLs, and role checks make data access explicit and auditable.</p>
-                </article>
-                <article class="product-lane">
-                  <h4>Cost growth from unmanaged memory</h4>
-                  <p>AMV-L lifecycle policies and TTL sweeps help bound memory growth and reduce unnecessary token use.</p>
-                </article>
-                <article class="product-lane">
-                  <h4>Opaque production behavior</h4>
-                  <p>Gateway telemetry, metrics, and job status endpoints create observability for operators and stakeholders.</p>
+                <article class="product-story-panel">
+                  <span class="product-panel-label">Built in</span>
+                  <p>Tenant scoping, service-token auth, retrieval policies, and lifecycle controls are already part of the platform surface.</p>
                 </article>
               </div>
             </section>
 
-            <section class="product-journey" aria-label="AtlasRAG capabilities">
-              <article class="product-stage">
-                <div class="product-stage-index">01</div>
-                <div class="product-stage-body">
-                  <h3>Unified ingest, search, and answer APIs</h3>
-                  <p>
-                    AtlasRAG provides one operational surface for ingestion, retrieval, and answer generation, so implementation
-                    teams can ship memory-backed experiences without stitching multiple services together.
-                  </p>
-                  <ul class="product-points">
-                    <li><span class="mono">/v1/docs</span> and <span class="mono">/v1/docs/url</span> for indexing.</li>
-                    <li><span class="mono">/v1/search</span> and <span class="mono">/v1/ask</span> for retrieval and answer workflows.</li>
-                    <li>Requests are scoped by tenant and collection to prevent cross-environment leakage.</li>
-                    <li>Idempotency keys on write operations reduce duplicate ingestion risk in distributed clients.</li>
-                  </ul>
-                </div>
-              </article>
-
-              <article class="product-stage">
-                <div class="product-stage-index">02</div>
-                <div class="product-stage-body">
-                  <h3>Durable memory model, not just transient context</h3>
-                  <p>
-                    Beyond chunks, AtlasRAG stores typed memory objects so agents can preserve and reuse knowledge with explicit
-                    meaning, provenance, and lifecycle controls.
-                  </p>
-                  <ul class="product-points">
-                    <li>Six memory types: artifact, semantic, procedural, episodic, conversation, and summary.</li>
-                    <li><span class="mono">/v1/memory/write</span>, <span class="mono">/v1/memory/recall</span>, and <span class="mono">/v1/memory/reflect</span>.</li>
-                    <li>Memory scoring signals from <span class="mono">/v1/feedback</span> and <span class="mono">/v1/memory/event</span>.</li>
-                    <li>Async reflection jobs generate derived knowledge while preserving links to source artifacts.</li>
-                  </ul>
-                </div>
-              </article>
-
-              <article class="product-stage">
-                <div class="product-stage-index">03</div>
-                <div class="product-stage-body">
-                  <h3>Enterprise governance and access control</h3>
-                  <p>
-                    Security and governance are built into the request path and data model, so client deployments can enforce
-                    policy without custom wrappers.
-                  </p>
-                  <ul class="product-points">
-                    <li>JWT and service-token auth with role-based endpoint controls.</li>
-                    <li>Visibility modes: <span class="mono">tenant</span>, <span class="mono">private</span>, and <span class="mono">acl</span>.</li>
-                    <li>SSO support for Google, Azure, and Okta with tenant-level auth mode controls.</li>
-                    <li>Principal-aware recall constraints protect private and ACL-scoped memory access.</li>
-                  </ul>
-                </div>
-              </article>
-
-              <article class="product-stage">
-                <div class="product-stage-index">04</div>
-                <div class="product-stage-body">
-                  <h3>AMV-L keeps memory quality high over time</h3>
-                  <p>
-                    AtlasRAG applies Adaptive Memory Value + Lifecycle (AMV-L) to evaluate memory utility continuously and automate
-                    retention decisions based on measured behavior.
-                  </p>
-                  <ul class="product-points">
-                    <li>Lifecycle actions promote, compact, retain, or delete by policy thresholds.</li>
-                    <li>TTL sweep remains the hard retention boundary for expired memory.</li>
-                    <li>Async job processing keeps reflection and lifecycle operations non-blocking.</li>
-                    <li>Value decay and redundancy sweeps reduce stale or duplicate memories in long-running deployments.</li>
-                  </ul>
-                </div>
-              </article>
-
-              <article class="product-stage">
-                <div class="product-stage-index">05</div>
-                <div class="product-stage-body">
-                  <h3>Operationally ready for developer teams</h3>
-                  <p>
-                    Integration and operations are designed for real delivery teams, from pilots through production scale-up.
-                  </p>
-                  <ul class="product-points">
-                    <li>OpenAPI schema, Swagger UI, and official Node SDK for integration.</li>
-                    <li>Idempotency support for write/index/reflect endpoints and idempotent job reruns.</li>
-                    <li>Metrics, telemetry, and structured request logs for production visibility.</li>
-                    <li>Admin endpoints support service tokens, usage reporting, and tenant policy management.</li>
-                  </ul>
-                </div>
-              </article>
-            </section>
-
-            <section class="product-runtime">
-              <h3>Runtime architecture</h3>
-              <div class="product-lanes">
-                <article class="product-lane">
-                  <h4>Gateway API Layer</h4>
-                  <p>Handles auth, tenancy, ACL policy, idempotency, ingestion, retrieval, ask, and memory endpoints.</p>
+            <section class="product-trajectory" aria-label="How AtlasRAG fits into products">
+              <div class="product-flow-head">
+                <p class="product-card-eyebrow">How it fits</p>
+                <h3>Keep your app. Add AtlasRAG behind it.</h3>
+                <p>AtlasRAG becomes the memory layer behind your existing product instead of replacing your product with a new one.</p>
+              </div>
+              <div class="product-trajectory-grid">
+                <article class="product-trajectory-step">
+                  <span class="product-flow-number">01</span>
+                  <h4>Connect sources</h4>
+                  <p>Index docs and URLs, or write memory directly from your app, workers, and automations.</p>
                 </article>
-                <article class="product-lane">
-                  <h4>Persistent Data Plane</h4>
-                  <p>C++ TCP vector index stores embeddings while Postgres stores chunk text, memory items, links, and jobs.</p>
+                <article class="product-trajectory-step">
+                  <span class="product-flow-number">02</span>
+                  <h4>Retrieve with policy</h4>
+                  <p>Search, ask, and recall through one platform while choosing TTL, LRU, or AMVL for the workload.</p>
                 </article>
-                <article class="product-lane">
-                  <h4>Lifecycle & Telemetry Plane</h4>
-                  <p>Scheduled jobs run TTL, AMV-L lifecycle tasks, and telemetry snapshots for ongoing optimization.</p>
+                <article class="product-trajectory-step">
+                  <span class="product-flow-number">03</span>
+                  <h4>Govern and improve</h4>
+                  <p>Apply tenant controls, enforce access rules, and keep memory quality moving in the right direction over time.</p>
                 </article>
               </div>
             </section>
 
+            <section class="product-doc-bridge">
+              <div class="product-doc-bridge-copy">
+                <p class="product-card-eyebrow">Detailed docs live elsewhere</p>
+                <h3>The Product tab sells the shape. Documentation holds the details.</h3>
+                <p>Setup flows, auth, service tokens, API endpoints, memory policies, and integration examples all live in Documentation so this tab can stay focused.</p>
+              </div>
+              <div class="product-doc-bridge-links">
+                <a class="product-doc-link" href="#doc-setup-modes">Setup paths</a>
+                <a class="product-doc-link" href="#doc-auth">Auth + service tokens</a>
+                <a class="product-doc-link" href="#doc-api-ref">API reference</a>
+                <a class="product-doc-link" href="#amv-amvl">Memory policies</a>
+              </div>
+            </section>
           </article>
         </section>

@@ -1,0 +1,15 @@
+{
+  "name": "atlasrag-cli",
+  "version": "0.1.0",
+  "description": "AtlasRAG local CLI for onboarding, operations, and API workflows",
+  "type": "commonjs",
+  "bin": {
+    "atlasrag": "bin/atlasrag.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test:cli": "node cli/tests/cli_helpers.test.js"
+  }
+}
