@@ -11,7 +11,7 @@ services:
     volumes:
       - vector_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6379; echo PING >&3; read -r line <&3; [ \"$line\" = \"PONG\" ]'"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6379; echo PING >&3; read -r line <&3; [ \"$$line\" = \"PONG\" ]'"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -25,7 +25,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/stunnel/vector-server.conf:/etc/stunnel/stunnel.conf:ro
-      - ./deploy/certs:/etc/stunnel/certs:ro
+      # Backward-compatible default keeps existing deployments working.
+      # Set STUNNEL_CERTS_DIR to an external server-only path for production.
+      - ${STUNNEL_CERTS_DIR:-./deploy/certs}:/etc/stunnel/certs:ro
     depends_on:
       - redis
 
@@ -37,7 +39,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/stunnel/vector-client.conf:/etc/stunnel/stunnel.conf:ro
-      - ./deploy/certs:/etc/stunnel/certs:ro
+      - ${STUNNEL_CERTS_DIR:-./deploy/certs}:/etc/stunnel/certs:ro
     depends_on:
       - vector-tls-server
 
