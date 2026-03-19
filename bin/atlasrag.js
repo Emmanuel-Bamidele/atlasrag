@@ -241,6 +241,7 @@ async function probeGatewayHealthInContainer(composeCtx) {
     "      const healthy = payload && (payload.ok === true || (payload.data && payload.data.status === 'ok'));",
     "      if (res.ok && healthy) {",
     "        process.stdout.write(JSON.stringify({ routePath, payload }));",
+    "        process.exit(0);",
     "        return;",
     "      }",
     "    } catch {}",
