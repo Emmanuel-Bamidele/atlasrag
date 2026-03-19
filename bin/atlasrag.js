@@ -18,6 +18,7 @@ const {
   maskSecret,
   mergeEnvText,
   parseCliArgs,
+  normalizeTcpPort,
   randomPassword,
   randomSecret,
   readConfig,
@@ -299,13 +300,22 @@ async function resolvePromptValue({
   defaultValue = "",
   secret = false,
   required = false,
-  allowEmpty = false
+  allowEmpty = false,
+  transform = null
 }) {
+  const finalizeValue = (rawValue) => {
+    const text = String(rawValue ?? "");
+    if (!text && required && !allowEmpty) {
+      throw new Error(`${prompt} is required.`);
+    }
+    return transform ? transform(text, prompt) : text;
+  };
+
   for (const name of names) {
     const value = getFlag(parsed, name);
     if (value !== undefined && value !== true) {
       const text = String(value);
-      if (text || allowEmpty) return text;
+      if (text || allowEmpty) return finalizeValue(text);
     }
   }
 
@@ -313,16 +323,19 @@ async function resolvePromptValue({
     if (required && !defaultValue && !allowEmpty) {
       throw new Error(`Missing required flag: --${names[0]}`);
     }
-    return defaultValue;
+    return finalizeValue(defaultValue);
   }
 
-  const answer = secret
-    ? await askHidden(prompt)
-    : await askVisible(prompt, defaultValue);
-  if (!answer && required && !allowEmpty) {
-    throw new Error(`${prompt} is required.`);
+  while (true) {
+    const answer = secret
+      ? await askHidden(prompt)
+      : await askVisible(prompt, defaultValue);
+    try {
+      return finalizeValue(answer);
+    } catch (err) {
+      console.error(String(err.message || err));
+    }
   }
-  return answer;
 }
 
 function ensureFileExists(filePath, label) {
@@ -443,7 +456,8 @@ async function handleOnboard(parsed) {
     names: ["gateway-port"],
     prompt: "Gateway port",
     defaultValue: "3000",
-    required: true
+    required: true,
+    transform: normalizeTcpPort
   });
   const adminUsername = await resolvePromptValue({
     parsed,
@@ -511,7 +525,8 @@ async function handleOnboard(parsed) {
       names: ["pg-port"],
       prompt: "Postgres port",
       defaultValue: "5432",
-      required: true
+      required: true,
+      transform: normalizeTcpPort
     });
     const pgDatabase = await resolvePromptValue({
       parsed,

@@ -200,6 +200,18 @@ function resolveBaseUrl(port) {
   return `http://localhost:${String(port || "3000").trim() || "3000"}`;
 }
 
+function normalizeTcpPort(value, label = "Port") {
+  const text = String(value ?? "").trim();
+  if (!/^\d{1,5}$/.test(text)) {
+    throw new Error(`${label} must be a number between 1 and 65535.`);
+  }
+  const port = Number.parseInt(text, 10);
+  if (port < 1 || port > 65535) {
+    throw new Error(`${label} must be a number between 1 and 65535.`);
+  }
+  return String(port);
+}
+
 function defaultCollectionFromFolder(folderPath) {
   return path.basename(path.resolve(String(folderPath || "").trim()));
 }
@@ -302,6 +314,7 @@ module.exports = {
   maskSecret,
   mergeEnvText,
   normalizeCommandName,
+  normalizeTcpPort,
   parseCliArgs,
   randomPassword,
   randomSecret,

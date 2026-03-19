@@ -22,8 +22,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./gateway/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
-    ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    # keep internal by default so local onboarding does not collide with an
+    # existing host Postgres; uncomment only if you need direct host access.
+    # ports:
+    #   - "${POSTGRES_HOST_PORT:-5432}:5432"
 
   gateway:
     build:

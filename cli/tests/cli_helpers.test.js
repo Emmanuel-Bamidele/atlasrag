@@ -10,6 +10,7 @@ const {
   isIngestibleTextPath,
   isProbablyTextBuffer,
   mergeEnvText,
+  normalizeTcpPort,
   parseCliArgs,
   resolveBaseUrl,
   safeDocIdFromPath
@@ -97,12 +98,20 @@ function testFolderHelpers() {
   assert.equal(isProbablyTextBuffer(Buffer.from([0, 1, 2, 3])), false);
 }
 
+function testNormalizeTcpPort() {
+  assert.equal(normalizeTcpPort("3000"), "3000");
+  assert.equal(normalizeTcpPort(" 5432 ", "Gateway port"), "5432");
+  assert.throws(() => normalizeTcpPort("atlasrag status", "Gateway port"), /Gateway port must be a number between 1 and 65535/);
+  assert.throws(() => normalizeTcpPort("70000"), /Port must be a number between 1 and 65535/);
+}
+
 function main() {
   testParseCliArgs();
   testMergeEnvText();
   testDetectProjectRoot();
   testCreateOnboardConfig();
   testFolderHelpers();
+  testNormalizeTcpPort();
   console.log("cli helper tests passed");
 }
 
