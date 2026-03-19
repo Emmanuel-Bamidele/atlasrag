@@ -19,7 +19,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		EFA2A0B82F3D543100AF71DF /* mini_redis */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mini_redis; sourceTree = BUILT_PRODUCTS_DIR; };
+		EFA2A0B82F3D543100AF71DF /* atlasrag */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = atlasrag; sourceTree = BUILT_PRODUCTS_DIR; };
 		EFA2A3A12F3D7A4B00AF71DF /* Dockerfile.redis */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile.redis; sourceTree = "<group>"; };
 		EFA2A3A32F3D7A7100AF71DF /* Dockerfile.node */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile.node; sourceTree = "<group>"; };
 		EFA2A3A42F3D7A8E00AF71DF /* docker-compose.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "docker-compose.yml"; sourceTree = "<group>"; };
@@ -27,22 +27,22 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "mini_redis" folder in "mini_redis" target */ = {
+		EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "atlasrag" folder in "atlasrag" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				src/main.cpp,
 			);
-			target = EFA2A0B72F3D543100AF71DF /* mini_redis */;
+			target = EFA2A0B72F3D543100AF71DF /* atlasrag */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		EFA2A0BA2F3D543100AF71DF /* mini_redis */ = {
+		EFA2A0BA2F3D543100AF71DF /* atlasrag */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "mini_redis" folder in "mini_redis" target */,
+				EFA2A0D22F3D6C9B00AF71DF /* Exceptions for "atlasrag" folder in "atlasrag" target */,
 			);
-			path = mini_redis;
+			path = atlasrag;
 			sourceTree = "<group>";
 		};
 		EFA2A0D32F3D723C00AF71DF /* gateway */ = {
@@ -69,7 +69,7 @@
 				EFA2A3A42F3D7A8E00AF71DF /* docker-compose.yml */,
 				EFA2A3A32F3D7A7100AF71DF /* Dockerfile.node */,
 				EFA2A3A12F3D7A4B00AF71DF /* Dockerfile.redis */,
-				EFA2A0BA2F3D543100AF71DF /* mini_redis */,
+				EFA2A0BA2F3D543100AF71DF /* atlasrag */,
 				EFA2A0B92F3D543100AF71DF /* Products */,
 				EFA2A0D32F3D723C00AF71DF /* gateway */,
 				EFA2ABCB2F3D990F00AF71DF /* .env */,
@@ -79,7 +79,7 @@
 		EFA2A0B92F3D543100AF71DF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EFA2A0B82F3D543100AF71DF /* mini_redis */,
+				EFA2A0B82F3D543100AF71DF /* atlasrag */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,9 +87,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EFA2A0B72F3D543100AF71DF /* mini_redis */ = {
+		EFA2A0B72F3D543100AF71DF /* atlasrag */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EFA2A0BF2F3D543100AF71DF /* Build configuration list for PBXNativeTarget "mini_redis" */;
+			buildConfigurationList = EFA2A0BF2F3D543100AF71DF /* Build configuration list for PBXNativeTarget "atlasrag" */;
 			buildPhases = (
 				EFA2A0B42F3D543100AF71DF /* Sources */,
 				EFA2A0B52F3D543100AF71DF /* Frameworks */,
@@ -100,14 +100,14 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				EFA2A0BA2F3D543100AF71DF /* mini_redis */,
+				EFA2A0BA2F3D543100AF71DF /* atlasrag */,
 				EFA2A0D32F3D723C00AF71DF /* gateway */,
 			);
-			name = mini_redis;
+			name = atlasrag;
 			packageProductDependencies = (
 			);
-			productName = mini_redis;
-			productReference = EFA2A0B82F3D543100AF71DF /* mini_redis */;
+			productName = atlasrag;
+			productReference = EFA2A0B82F3D543100AF71DF /* atlasrag */;
 			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
@@ -124,7 +124,7 @@
 					};
 				};
 			};
-			buildConfigurationList = EFA2A0B32F3D543100AF71DF /* Build configuration list for PBXProject "mini_redis" */;
+			buildConfigurationList = EFA2A0B32F3D543100AF71DF /* Build configuration list for PBXProject "atlasrag" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -138,7 +138,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EFA2A0B72F3D543100AF71DF /* mini_redis */,
+				EFA2A0B72F3D543100AF71DF /* atlasrag */,
 			);
 		};
 /* End PBXProject section */
@@ -292,7 +292,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		EFA2A0B32F3D543100AF71DF /* Build configuration list for PBXProject "mini_redis" */ = {
+		EFA2A0B32F3D543100AF71DF /* Build configuration list for PBXProject "atlasrag" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EFA2A0BD2F3D543100AF71DF /* Debug */,
@@ -301,7 +301,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EFA2A0BF2F3D543100AF71DF /* Build configuration list for PBXNativeTarget "mini_redis" */ = {
+		EFA2A0BF2F3D543100AF71DF /* Build configuration list for PBXNativeTarget "atlasrag" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EFA2A0C02F3D543100AF71DF /* Debug */,

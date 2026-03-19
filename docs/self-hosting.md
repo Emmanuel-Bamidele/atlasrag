@@ -26,7 +26,7 @@ AtlasRAG has three core runtime pieces:
 
 - `gateway/`
   Node.js API layer, auth, docs UI, jobs, and RAG orchestration
-- `mini_redis/`
+- `atlasrag/`
   the vector store used for embedding storage and retrieval
 - Postgres
   persistent state for users, tenants, tokens, jobs, chunks, and memory metadata

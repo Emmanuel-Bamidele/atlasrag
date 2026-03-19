@@ -4,12 +4,13 @@ AtlasRAG is a self-hosted memory and retrieval platform for AI agents. It combin
 
 Current public scope: single-node self-hosted deployment. You run it in your own environment and bring your own model provider credentials.
 
-## What Is In This Repo
+## Main Surfaces
 
-- `mini_redis/`: C++ vector server used for embedding storage and similarity search.
 - `gateway/`: Node.js/Express gateway, auth, APIs, public docs UI, and background jobs.
+- `atlasrag/`: C++ vector server used for embedding storage and similarity search.
 - `sdk/node/`: small Node SDK for API consumers.
-- `experiments/`: experiment harness and telemetry analysis for AMV-L vs TTL vs LRU.
+- `docs/`: setup, deployment, and agent integration guides.
+- `scripts/install.sh` and `scripts/install.ps1`: CLI installer entrypoints for local setup.
 - `docker-compose.yml`: local/self-hosted stack.
 - `docker-compose.external-postgres.yml`: self-hosted stack that uses your existing Postgres.
 - `docker-compose.prod.yml`: production-oriented stack with proxy/TLS wiring.
@@ -55,7 +56,7 @@ If you are not sure which path to use, choose based on the kind of deployment an
 
 ### AtlasRAG CLI (recommended)
 
-This repo now ships an AtlasRAG CLI for onboarding, stack operations, and basic API usage.
+AtlasRAG ships with a CLI for onboarding, stack operations, and basic API usage.
 
 Install from a local checkout:
 
@@ -346,8 +347,6 @@ npm run test:integration
 npm run test:e2e
 ```
 
-The main CI workflow is defined in `.github/workflows/gateway-ci.yml`.
-
 ## Bring Your Own Postgres And Env
 
 AtlasRAG does not require a bundled Postgres container in production. If your stack already has Postgres and secret management, point the gateway at your existing values:
@@ -363,7 +362,7 @@ AtlasRAG does not require a bundled Postgres container in production. If your st
 
 The stock `docker-compose.yml` is optimized for the bundled `postgres` service. If you want external Postgres, use the official `docker-compose.external-postgres.yml` path below or your own runtime wiring for the gateway.
 
-The repo now includes an official external-Postgres path:
+AtlasRAG includes an official external-Postgres path:
 
 ```bash
 cp .env.external-postgres.example .env.external-postgres
@@ -388,14 +387,13 @@ Before using it for any real deployment:
 
 The production compose file now supports an external cert directory for the internal `stunnel` hop. If `STUNNEL_CERTS_DIR` is unset, it falls back to `./deploy/certs` for backward compatibility with existing deployments.
 
-## SDK And Experiments
+## SDK And Guides
 
 - Node SDK: [`sdk/node/README.md`](sdk/node/README.md)
-- Experiment suite: [`experiments/README.md`](experiments/README.md)
+- Guides index: [`docs/README.md`](docs/README.md)
 
 ## Project Docs
 
-- Guides index: [`docs/README.md`](docs/README.md)
 - Self-hosting guide: [`docs/self-hosting.md`](docs/self-hosting.md)
 - Bring your own Postgres: [`docs/bring-your-own-postgres.md`](docs/bring-your-own-postgres.md)
 - Agent integration guide: [`docs/agents.md`](docs/agents.md)
