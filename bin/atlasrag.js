@@ -41,7 +41,12 @@ Usage:
   atlasrag logs [--service gateway] [--tail 200]
   atlasrag doctor [--json]
   atlasrag bootstrap [--username USER] [--password PASS] [--tenant TENANT]
-  atlasrag write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--json]
+  atlasrag collections list [--json]
+  atlasrag collections delete --collection NAME [--yes] [--json]
+  atlasrag docs list [--collection NAME] [--json]
+  atlasrag docs delete --doc-id ID [--collection NAME] [--yes] [--json]
+  atlasrag docs replace --doc-id ID [--text TEXT | --file PATH | --url URL] [--collection NAME] [--yes] [--json]
+  atlasrag write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--replace] [--sync] [--yes] [--json]
   atlasrag search --q QUERY [--k 5] [--collection NAME] [--json]
   atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--json]
   atlasrag config show [--show-secrets]
@@ -54,6 +59,9 @@ Common flags:
   --openai-key KEY             Send request-scoped X-OpenAI-API-Key
   --tenant TENANT              Override tenant scope
   --collection NAME            Override collection scope; folder writes use folder name if omitted
+  --replace                    Replace matching docs before re-indexing
+  --sync                       Reconcile a folder collection to exactly match local files
+  --yes                        Skip destructive action confirmation prompts
   --json                       Print JSON output where supported
 
 Onboarding flags:
@@ -111,6 +119,12 @@ function getFlag(parsed, ...names) {
     if (Object.prototype.hasOwnProperty.call(parsed.flags, name)) return parsed.flags[name];
   }
   return undefined;
+}
+
+function normalizeSubcommand(parsed, allowed = []) {
+  const raw = String(parsed.subcommand || "").trim().toLowerCase();
+  if (allowed.includes(raw)) return raw;
+  return "";
 }
 
 function ensureNodeVersion() {
@@ -562,7 +576,7 @@ function resolveClientConfig(parsed) {
   };
 }
 
-function buildClient(parsed) {
+function buildClient(parsed, options = {}) {
   const cfg = resolveClientConfig(parsed);
   if (!cfg.apiKey && !cfg.token) {
     throw new Error(`No AtlasRAG credential is configured. Run \`atlasrag onboard\` first or set ${"`ATLASRAG_API_KEY`"} / ${"`ATLASRAG_TOKEN`"}.`);
@@ -573,8 +587,58 @@ function buildClient(parsed) {
     token: cfg.apiKey ? null : cfg.token,
     openAiApiKey: cfg.openAiApiKey || null,
     tenantId: cfg.tenantId || null,
-    collection: cfg.collection || null
+    collection: options.ignoreCollection ? null : (cfg.collection || null)
   });
+}
+
+async function ensureConfirmedAction(parsed, question, defaultYes = false) {
+  if (boolFromFlag(getFlag(parsed, "yes"), false)) return;
+  if (!process.stdin.isTTY) {
+    throw new Error(`${question} Re-run with --yes to continue non-interactively.`);
+  }
+  const approved = await confirm(question, defaultYes);
+  if (!approved) {
+    throw new Error("Cancelled.");
+  }
+}
+
+function resolveRequestedCollection(parsed, fallback = "default") {
+  const value = String(getFlag(parsed, "collection") || "").trim();
+  return value || fallback;
+}
+
+function buildWriteParams(parsed, overrides = {}) {
+  const params = {
+    collection: getFlag(parsed, "collection"),
+    tenantId: getFlag(parsed, "tenant"),
+    policy: getFlag(parsed, "policy"),
+    expiresAt: getFlag(parsed, "expires-at"),
+    visibility: getFlag(parsed, "visibility"),
+    acl: parseListFlag(getFlag(parsed, "acl")),
+    agentId: getFlag(parsed, "agent-id"),
+    tags: parseListFlag(getFlag(parsed, "tags")),
+    idempotencyKey: `atlasrag-cli-${Date.now()}-${randomSecret(6)}`
+  };
+  return { ...params, ...overrides };
+}
+
+async function deleteDocumentForUpdate(client, docId, params = {}) {
+  try {
+    await client.deleteDoc(docId, params);
+  } catch (err) {
+    if (err?.status === 404) return;
+    throw err;
+  }
+}
+
+async function indexDocumentInput(client, docId, text, url, params = {}) {
+  return url
+    ? client.indexUrl(docId, url, params)
+    : client.indexText(docId, text, params);
+}
+
+function formatCollectionCount(value) {
+  return Number.isFinite(value) ? String(value) : "0";
 }
 
 async function handleOnboard(parsed) {
@@ -1074,8 +1138,202 @@ function collectFolderDocuments(folderPath) {
   return { rootDir, accepted, skipped };
 }
 
+function extractDocs(payload) {
+  const data = payload?.data || payload;
+  return Array.isArray(data?.docs) ? data.docs : [];
+}
+
+function extractCollections(payload) {
+  const data = payload?.data || payload;
+  return Array.isArray(data?.collections) ? data.collections : [];
+}
+
+async function handleCollections(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "delete"]);
+  if (subcommand === "list") {
+    await handleCollectionsList(parsed);
+    return;
+  }
+  if (subcommand === "delete") {
+    await handleCollectionsDelete(parsed);
+    return;
+  }
+  throw new Error("collections requires a subcommand: list or delete.");
+}
+
+async function handleCollectionsList(parsed) {
+  const client = buildClient(parsed, { ignoreCollection: true });
+  const payload = await client.listCollections({ tenantId: getFlag(parsed, "tenant") });
+  const collections = extractCollections(payload);
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  if (!collections.length) {
+    console.log("No collections.");
+    return;
+  }
+
+  console.log("Collections:");
+  console.log("");
+  collections.forEach((item, index) => {
+    console.log(`${index + 1}. ${item.collection}  docs=${formatCollectionCount(item.totalDocs)}`);
+  });
+}
+
+async function handleCollectionsDelete(parsed) {
+  const client = buildClient(parsed, { ignoreCollection: true });
+  const collection = resolveRequestedCollection(parsed, "");
+  if (!collection) {
+    throw new Error("collections delete requires --collection NAME.");
+  }
+
+  await ensureConfirmedAction(
+    parsed,
+    `Delete collection "${collection}" and all documents inside it?`,
+    false
+  );
+
+  const payload = await client.deleteCollection(collection, {
+    tenantId: getFlag(parsed, "tenant")
+  });
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const data = payload?.data || payload;
+  printSummary("Collection deleted.", [
+    `collection: ${collection}`,
+    `deletedDocs: ${data.deletedDocs ?? 0}`,
+    `deletedMemoryItems: ${data.deletedMemoryItems ?? 0}`
+  ]);
+}
+
+async function handleDocs(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "delete", "replace"]);
+  if (subcommand === "list") {
+    await handleDocsList(parsed);
+    return;
+  }
+  if (subcommand === "delete") {
+    await handleDocsDelete(parsed);
+    return;
+  }
+  if (subcommand === "replace") {
+    await handleDocsReplace(parsed);
+    return;
+  }
+  throw new Error("docs requires a subcommand: list, delete, or replace.");
+}
+
+async function handleDocsList(parsed) {
+  const client = buildClient(parsed);
+  const payload = await client.listDocs({
+    collection: getFlag(parsed, "collection"),
+    tenantId: getFlag(parsed, "tenant")
+  });
+  const docs = extractDocs(payload);
+  const effectiveCollection = payload?.meta?.collection || client.collection || "default";
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  if (!docs.length) {
+    console.log(`No docs in collection ${effectiveCollection}.`);
+    return;
+  }
+
+  console.log(`Docs in collection ${effectiveCollection}:`);
+  console.log("");
+  docs.forEach((item, index) => {
+    console.log(`${index + 1}. ${item.docId}  chunks=${item.chunks ?? 0}`);
+  });
+}
+
+async function handleDocsDelete(parsed) {
+  const client = buildClient(parsed);
+  const docId = String(getFlag(parsed, "doc-id") || getFlag(parsed, "docId") || "").trim();
+  if (!docId) {
+    throw new Error("docs delete requires --doc-id ID.");
+  }
+  const collection = resolveRequestedCollection(parsed, client.collection || "default");
+
+  await ensureConfirmedAction(
+    parsed,
+    `Delete doc "${docId}" from collection "${collection}"?`,
+    false
+  );
+
+  const payload = await client.deleteDoc(docId, {
+    collection,
+    tenantId: getFlag(parsed, "tenant")
+  });
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  printSummary("Document deleted.", [
+    `docId: ${docId}`,
+    `collection: ${collection}`
+  ]);
+}
+
+async function handleDocsReplace(parsed) {
+  const client = buildClient(parsed);
+  const docId = String(getFlag(parsed, "doc-id") || getFlag(parsed, "docId") || "").trim();
+  if (!docId) {
+    throw new Error("docs replace requires --doc-id ID.");
+  }
+  const url = String(getFlag(parsed, "url") || "").trim();
+  const text = getTextInput(parsed).trim();
+  if (url && text) {
+    throw new Error("docs replace accepts either --url or text input, not both.");
+  }
+  if (!url && !text) {
+    throw new Error("docs replace requires --text, --file, --url, or piped stdin.");
+  }
+
+  const collection = resolveRequestedCollection(parsed, client.collection || "default");
+  await ensureConfirmedAction(
+    parsed,
+    `Replace doc "${docId}" in collection "${collection}"?`,
+    false
+  );
+
+  await deleteDocumentForUpdate(client, docId, {
+    collection,
+    tenantId: getFlag(parsed, "tenant")
+  });
+
+  const payload = await indexDocumentInput(client, docId, text, url, buildWriteParams(parsed, {
+    collection
+  }));
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const data = payload?.data || payload;
+  printSummary("Document replaced.", [
+    `docId: ${data.docId || docId}`,
+    `chunksIndexed: ${data.chunksIndexed ?? "unknown"}`,
+    `collection: ${resolveEffectiveCollection(client, payload)}`
+  ]);
+}
+
 async function handleWrite(parsed) {
   const client = buildClient(parsed);
+  const replaceExisting = boolFromFlag(getFlag(parsed, "replace"), false);
+  const syncFolder = boolFromFlag(getFlag(parsed, "sync"), false);
   const folder = String(getFlag(parsed, "folder") || "").trim();
   if (folder) {
     const docId = String(getFlag(parsed, "doc-id") || getFlag(parsed, "docId") || "").trim();
@@ -1092,9 +1350,10 @@ async function handleWrite(parsed) {
     }
 
     const collection = String(getFlag(parsed, "collection") || defaultCollectionFromFolder(rootDir)).trim();
+    const tenantId = getFlag(parsed, "tenant");
     const commonParams = {
       collection,
-      tenantId: getFlag(parsed, "tenant"),
+      tenantId,
       policy: getFlag(parsed, "policy"),
       expiresAt: getFlag(parsed, "expires-at"),
       visibility: getFlag(parsed, "visibility"),
@@ -1102,9 +1361,31 @@ async function handleWrite(parsed) {
       agentId: getFlag(parsed, "agent-id"),
       tags: parseListFlag(getFlag(parsed, "tags"))
     };
+    const replaced = [];
+    const pruned = [];
+
+    if (syncFolder) {
+      await ensureConfirmedAction(
+        parsed,
+        `Sync collection "${collection}" to match folder "${rootDir}"? This may delete docs that are not present in the folder.`,
+        false
+      );
+      const existingPayload = await client.listDocs({ collection, tenantId });
+      const existingDocs = extractDocs(existingPayload);
+      const desiredDocIds = new Set(accepted.map((item) => item.docId));
+      for (const item of existingDocs) {
+        if (desiredDocIds.has(item.docId)) continue;
+        await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
+        pruned.push(item.docId);
+      }
+    }
 
     const indexed = [];
     for (const item of accepted) {
+      if (replaceExisting || syncFolder) {
+        await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
+        replaced.push(item.docId);
+      }
       const payload = await client.indexText(item.docId, item.text, {
         ...commonParams,
         idempotencyKey: `atlasrag-cli-${Date.now()}-${randomSecret(6)}`
@@ -1123,7 +1404,9 @@ async function handleWrite(parsed) {
         folder: rootDir,
         collection,
         indexed,
-        skipped
+        skipped,
+        replaced: Array.from(new Set(replaced)),
+        pruned
       }, null, 2));
       return;
     }
@@ -1132,6 +1415,8 @@ async function handleWrite(parsed) {
       `folder: ${rootDir}`,
       `collection: ${collection}`,
       `indexed: ${indexed.length}`,
+      `replaced: ${Array.from(new Set(replaced)).length}`,
+      `pruned: ${pruned.length}`,
       `skipped: ${skipped.length}`
     ]);
     if (skipped.length) {
@@ -1160,21 +1445,13 @@ async function handleWrite(parsed) {
     throw new Error("write requires --text, --file, --url, or piped stdin.");
   }
 
-  const params = {
-    collection: getFlag(parsed, "collection"),
-    tenantId: getFlag(parsed, "tenant"),
-    policy: getFlag(parsed, "policy"),
-    expiresAt: getFlag(parsed, "expires-at"),
-    visibility: getFlag(parsed, "visibility"),
-    acl: parseListFlag(getFlag(parsed, "acl")),
-    agentId: getFlag(parsed, "agent-id"),
-    tags: parseListFlag(getFlag(parsed, "tags")),
-    idempotencyKey: `atlasrag-cli-${Date.now()}-${randomSecret(6)}`
-  };
+  const collection = getFlag(parsed, "collection");
+  const tenantId = getFlag(parsed, "tenant");
+  if (replaceExisting) {
+    await deleteDocumentForUpdate(client, docId, { collection, tenantId });
+  }
 
-  const payload = url
-    ? await client.indexUrl(docId, url, params)
-    : await client.indexText(docId, text, params);
+  const payload = await indexDocumentInput(client, docId, text, url, buildWriteParams(parsed));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -1185,6 +1462,7 @@ async function handleWrite(parsed) {
   printSummary("Write complete.", [
     `docId: ${data.docId || docId}`,
     `chunksIndexed: ${data.chunksIndexed ?? "unknown"}`,
+    `replaced: ${replaceExisting ? "yes" : "no"}`,
     `collection: ${resolveEffectiveCollection(client, payload)}`
   ]);
 }
@@ -1308,6 +1586,12 @@ async function main() {
       return;
     case "bootstrap":
       await handleBootstrap(parsed);
+      return;
+    case "collections":
+      await handleCollections(parsed);
+      return;
+    case "docs":
+      await handleDocs(parsed);
       return;
     case "write":
       await handleWrite(parsed);

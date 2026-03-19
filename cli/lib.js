@@ -50,7 +50,10 @@ const BOOLEAN_FLAGS = new Set([
   "force",
   "json",
   "non-interactive",
-  "show-secrets"
+  "replace",
+  "show-secrets",
+  "sync",
+  "yes"
 ]);
 
 function parseCliArgs(argv) {

@@ -34,6 +34,9 @@ function testParseCliArgs() {
     "welcome",
     "--text=hello world",
     "--json",
+    "--replace",
+    "--sync",
+    "--yes",
     "ignored-positional"
   ]);
 
@@ -41,6 +44,9 @@ function testParseCliArgs() {
   assert.equal(parsed.flags["doc-id"], "welcome");
   assert.equal(parsed.flags.text, "hello world");
   assert.equal(parsed.flags.json, true);
+  assert.equal(parsed.flags.replace, true);
+  assert.equal(parsed.flags.sync, true);
+  assert.equal(parsed.flags.yes, true);
   assert.deepEqual(parsed.positionals, ["write", "ignored-positional"]);
 }
 

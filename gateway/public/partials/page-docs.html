@@ -983,7 +983,7 @@ while (true) {
                         <a href="#doc-cli-build">Build on top after setup</a>
                         <a href="#doc-cli-remote">Use the CLI against an online deployment</a>
                         <a href="#doc-cli-commands">Runtime commands</a>
-                        <a href="#doc-cli-write-search-ask">Write, search, ask</a>
+                        <a href="#doc-cli-write-search-ask">Write, manage, search, ask</a>
                         <a href="#doc-cli-config">Config and overrides</a>
                         <a href="#doc-cli-examples">End-to-end examples</a>
                         <a href="#doc-cli-troubleshoot">Troubleshooting</a>
@@ -1126,7 +1126,7 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                 <div class="doc-block">
                   <div class="doc-label">Finish setup if the stack is already running</div>
                   <p>If Docker services are already up but the CLI has not saved the base URL and service token yet, finish setup on the running stack with:</p>
-                  <pre class="doc-code">atlasrag bootstrap --username bami --tenant default</pre>
+                  <pre class="doc-code">atlasrag bootstrap --username your-username --tenant default</pre>
                   <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> commands.</p>
                 </div>
               </div>
@@ -1314,7 +1314,7 @@ atlasrag ask \
                       <tr>
                         <td><span class="mono">atlasrag bootstrap</span></td>
                         <td>Runs bootstrap again on an already running stack</td>
-                        <td><span class="mono">atlasrag bootstrap --username admin --tenant default</span></td>
+                        <td><span class="mono">atlasrag bootstrap --username your-username --tenant default</span></td>
                       </tr>
                       <tr>
                         <td><span class="mono">atlasrag config show</span></td>
@@ -1324,13 +1324,68 @@ atlasrag ask \
                     </tbody>
                   </table>
                 </div>
+                <div class="doc-block">
+                  <div class="doc-label">Content management commands</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Command</th>
+                        <th>What it does</th>
+                        <th>Example</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="mono">atlasrag collections list</span></td>
+                        <td>Lists collections visible to the current token</td>
+                        <td><span class="mono">atlasrag collections list</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag collections delete</span></td>
+                        <td>Deletes a whole collection and all docs inside it</td>
+                        <td><span class="mono">atlasrag collections delete --collection support --yes</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag docs list</span></td>
+                        <td>Lists docs in a collection</td>
+                        <td><span class="mono">atlasrag docs list --collection support</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag docs delete</span></td>
+                        <td>Deletes one doc and its vectors</td>
+                        <td><span class="mono">atlasrag docs delete --doc-id handbook --collection support --yes</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag docs replace</span></td>
+                        <td>Deletes and re-indexes one doc under the same doc ID</td>
+                        <td><span class="mono">atlasrag docs replace --doc-id handbook --file ./support/handbook.md --collection support --yes</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag write --replace</span></td>
+                        <td>Single-doc update flow using the normal write command</td>
+                        <td><span class="mono">atlasrag write --doc-id handbook --file ./support/handbook.md --collection support --replace --yes</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag write --folder --sync</span></td>
+                        <td>Reconciles a collection to exactly match a local folder</td>
+                        <td><span class="mono">atlasrag write --folder ./support --sync --yes</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="hint"><span class="mono">collections delete</span> requires an admin-capable credential. <span class="mono">docs delete</span>, <span class="mono">docs replace</span>, and <span class="mono">write</span> require an indexer-capable credential.</p>
+                </div>
               </div>
             </details>
 
             <details class="details section" id="doc-cli-write-search-ask">
-              <summary>Write, search, and ask</summary>
+              <summary>Write, manage, search, and ask</summary>
               <div class="section-body">
                 <p>The CLI can act like a small API client once onboarding is complete. It uses the saved base URL and service token unless you override them with flags or env vars.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Inspect collections and docs</div>
+                  <pre class="doc-code">atlasrag collections list
+atlasrag docs list --collection customer-support</pre>
+                </div>
                 <div class="doc-block">
                   <div class="doc-label">Write text directly</div>
                   <pre class="doc-code">atlasrag write \
@@ -1363,6 +1418,33 @@ atlasrag ask \
 # The folder name becomes the collection:
 atlasrag search --q "refund policy" --collection customer-support --k 5</pre>
                   <p class="hint">Folder ingest accepts text-like files and skips unsupported or binary files. If you want a different collection name, add <span class="mono">--collection support-v2</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Replace a doc after the source content changes</div>
+                  <pre class="doc-code">atlasrag docs replace \
+  --doc-id handbook \
+  --collection customer-support \
+  --file ./customer-support/handbook.md \
+  --yes
+
+# Equivalent update path with the normal write command
+atlasrag write \
+  --doc-id handbook \
+  --collection customer-support \
+  --file ./customer-support/handbook.md \
+  --replace \
+  --yes</pre>
+                  <p class="hint">Use this when the same logical document changed and you want the existing <span class="mono">docId</span> to stay stable.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Sync a folder-backed collection after files are added, edited, or removed</div>
+                  <pre class="doc-code">atlasrag write --folder ./customer-support --sync --yes</pre>
+                  <p class="hint"><span class="mono">--sync</span> makes the collection match the folder exactly. It replaces matching docs and deletes docs that no longer exist in that folder.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Delete docs or collections</div>
+                  <pre class="doc-code">atlasrag docs delete --doc-id handbook --collection customer-support --yes
+atlasrag collections delete --collection customer-support --yes</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Search examples</div>
@@ -1441,18 +1523,31 @@ atlasrag search --q "policies" --collection compliance --json</pre>
                 <div class="doc-block">
                   <div class="doc-label">Example 3: folder ingest</div>
                   <pre class="doc-code">atlasrag write --folder ./customer-support
+atlasrag write --folder ./customer-support --sync --yes
 atlasrag search --q "refund policy" --collection customer-support --k 5
 atlasrag ask --question "What is the refund policy?" --collection customer-support</pre>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Example 4: inspect and debug</div>
+                  <div class="doc-label">Example 4: update one doc after the file changes</div>
+                  <pre class="doc-code">atlasrag docs replace \
+  --doc-id handbook \
+  --collection customer-support \
+  --file ./customer-support/handbook.md \
+  --yes
+
+atlasrag ask \
+  --question "Summarize the handbook." \
+  --collection customer-support</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Example 5: inspect and debug</div>
                   <pre class="doc-code">atlasrag status --json
 atlasrag logs --service gateway
 atlasrag doctor --json
 atlasrag config show</pre>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Example 5: remote live deployment</div>
+                  <div class="doc-label">Example 6: remote live deployment</div>
                   <pre class="doc-code">export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
 export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
@@ -1471,9 +1566,10 @@ atlasrag ask --question "What does the CLI test document say?" --collection cli-
                     <li><strong><span class="mono">atlasrag</span> not found:</strong> open a new terminal or add <span class="mono">~/.atlasrag/bin</span> to PATH manually.</li>
                     <li><strong>Docker missing:</strong> install Docker and make sure <span class="mono">docker compose version</span> works in the same shell.</li>
                     <li><strong>No saved config:</strong> run <span class="mono">atlasrag onboard</span> first or pass <span class="mono">--base-url</span> and <span class="mono">--api-key</span> explicitly.</li>
-                    <li><strong>Stack is up but setup is not saved yet:</strong> run <span class="mono">atlasrag bootstrap --username YOUR_ADMIN --tenant default</span> to finish setup on the running stack.</li>
+                    <li><strong>Stack is up but setup is not saved yet:</strong> run <span class="mono">atlasrag bootstrap --username your-username --tenant default</span> to finish setup on the running stack.</li>
                     <li><strong>Gateway health timeout:</strong> run <span class="mono">atlasrag logs --service gateway</span> and check the written env file.</li>
                     <li><strong>Need a fresh token:</strong> use <span class="mono">atlasrag bootstrap</span> against the running stack.</li>
+                    <li><strong>Need to update a changed file cleanly:</strong> use <span class="mono">atlasrag docs replace</span> or <span class="mono">atlasrag write --replace</span> instead of writing a shorter replacement over the old doc without cleanup.</li>
                   </ul>
                 </div>
               </div>

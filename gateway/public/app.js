@@ -867,9 +867,42 @@ function activateDocPanel(groupId, panelName){
   return true;
 }
 
+function syncDocPanelsToTarget(target){
+  if (!target) return false;
+
+  const activations = [];
+  let current = target;
+
+  while (current){
+    const panel = current.closest(".doc-panel[data-doc-panel]");
+    if (!panel) break;
+
+    const panelWrap = panel.parentElement;
+    if (panelWrap && panelWrap.matches(".doc-panels[data-doc-panels]")) {
+      activations.push([panelWrap.dataset.docPanels, panel.dataset.docPanel]);
+    }
+
+    current = panelWrap ? panelWrap.closest(".doc-panel[data-doc-panel]") : null;
+  }
+
+  if (!activations.length) return false;
+
+  activations.reverse().forEach(([groupId, panelName]) => {
+    activateDocPanel(groupId, panelName);
+  });
+  return true;
+}
+
 function syncDocsPanelFromHash(rawHash){
-  const clean = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim()).toLowerCase();
+  const targetId = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim());
+  const clean = targetId.toLowerCase();
   if (!clean) return;
+
+  const target = document.getElementById(targetId) || document.getElementById(clean);
+  if (target && syncDocPanelsToTarget(target)) {
+    return;
+  }
+
   if (clean.startsWith("amv-")) {
     activateDocPanel("docs", "amv");
     return;

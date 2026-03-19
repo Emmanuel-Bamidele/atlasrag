@@ -126,6 +126,10 @@ class AtlasRAGClient {
     return this.request("/v1/docs", { query: params });
   }
 
+  async listCollections(params = {}) {
+    return this.request("/v1/collections", { query: params });
+  }
+
   async indexText(docId, text, params = {}) {
     const { idempotencyKey, ...body } = params || {};
     return this.request("/v1/docs", {
@@ -146,6 +150,13 @@ class AtlasRAGClient {
 
   async deleteDoc(docId, params = {}) {
     return this.request(`/v1/docs/${encodeURIComponent(docId)}`, {
+      method: "DELETE",
+      query: params
+    });
+  }
+
+  async deleteCollection(collection, params = {}) {
+    return this.request(`/v1/collections/${encodeURIComponent(collection)}`, {
       method: "DELETE",
       query: params
     });

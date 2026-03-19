@@ -115,7 +115,7 @@ During onboarding, the CLI also:
 If the Docker stack is already up but setup has not finished yet, complete setup on that running stack with:
 
 ```bash
-atlasrag bootstrap --username bami --tenant default
+atlasrag bootstrap --username your-username --tenant default
 ```
 
 Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
@@ -139,6 +139,39 @@ You can also ingest a whole folder of acceptable text files. If you omit `--coll
 atlasrag write --folder ./customer-support
 atlasrag search --q "refund policy" --collection customer-support --k 5
 ```
+
+You can also inspect, update, and clean up indexed content from the CLI:
+
+```bash
+atlasrag collections list
+atlasrag docs list --collection customer-support
+
+# Replace one document after the source file changes
+atlasrag docs replace \
+  --doc-id handbook \
+  --collection customer-support \
+  --file ./customer-support/handbook.md \
+  --yes
+
+# Equivalent single-doc update flow
+atlasrag write \
+  --doc-id handbook \
+  --collection customer-support \
+  --file ./customer-support/handbook.md \
+  --replace \
+  --yes
+
+# Reconcile a folder-backed collection to match local files exactly
+atlasrag write --folder ./customer-support --sync --yes
+
+# Delete one doc
+atlasrag docs delete --doc-id handbook --collection customer-support --yes
+
+# Delete an entire collection (admin-capable token required)
+atlasrag collections delete --collection customer-support --yes
+```
+
+Use `docs replace` or `write --replace` when the content behind a single `docId` has changed. Use `write --folder --sync` when the local folder should become the source of truth for the whole collection, including deleting docs that are no longer present in that folder. There is not a separate collection-rename command; collection maintenance is done by listing, replacing, syncing, and deleting docs.
 
 If you are wiring your own app, backend, worker, or agent on the same machine, export the saved values into your runtime env:
 

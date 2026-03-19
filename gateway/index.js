@@ -5654,15 +5654,24 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
     collection = normalizeCollection(req.params.collection);
     req.collection = collection;
     const docs = await listDocsForTenant(tenantId, collection, null, []);
+    let deletedVectors = 0;
+    let failedVectors = 0;
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
-      await deleteDoc(namespaced);
+      const cleanup = await deleteVectorsForDoc(namespaced, { strict: true });
+      deletedVectors += cleanup.deleted;
+      failedVectors += cleanup.failed;
       if (collection === DEFAULT_COLLECTION) {
         const legacy = `${tenantId}::${doc.docId}`;
         if (legacy !== namespaced) {
-          await deleteDoc(legacy);
+          const legacyCleanup = await deleteVectorsForDoc(legacy, { strict: true });
+          deletedVectors += legacyCleanup.deleted;
+          failedVectors += legacyCleanup.failed;
         }
       }
+    }
+    if (failedVectors > 0) {
+      throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
     await recordAudit(req, tenantId, {
@@ -5671,6 +5680,7 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
       targetId: collection,
       metadata: {
         deletedDocs: docs.length,
+        deletedVectors,
         deletedMemoryItems
       }
     });
@@ -5678,9 +5688,10 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
       ok: true,
       collection,
       deletedDocs: docs.length,
+      deletedVectors,
       deletedMemoryItems,
       tenantId,
-      note: "Deleted chunk text and memory items; vector deletion is a next improvement."
+      note: "Deleted document text, vectors, and memory items."
     });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e), tenantId, collection });
@@ -5695,15 +5706,24 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
     collection = normalizeCollection(req.params.collection);
     req.collection = collection;
     const docs = await listDocsForTenant(tenantId, collection, null, []);
+    let deletedVectors = 0;
+    let failedVectors = 0;
     for (const doc of docs) {
       const namespaced = namespaceDocId(tenantId, collection, doc.docId);
-      await deleteDoc(namespaced);
+      const cleanup = await deleteVectorsForDoc(namespaced, { strict: true });
+      deletedVectors += cleanup.deleted;
+      failedVectors += cleanup.failed;
       if (collection === DEFAULT_COLLECTION) {
         const legacy = `${tenantId}::${doc.docId}`;
         if (legacy !== namespaced) {
-          await deleteDoc(legacy);
+          const legacyCleanup = await deleteVectorsForDoc(legacy, { strict: true });
+          deletedVectors += legacyCleanup.deleted;
+          failedVectors += legacyCleanup.failed;
         }
       }
+    }
+    if (failedVectors > 0) {
+      throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
     await recordAudit(req, tenantId, {
@@ -5712,14 +5732,16 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
       targetId: collection,
       metadata: {
         deletedDocs: docs.length,
+        deletedVectors,
         deletedMemoryItems
       }
     });
     sendOk(res, {
       collection,
       deletedDocs: docs.length,
+      deletedVectors,
       deletedMemoryItems,
-      note: "Deleted chunk text and memory items; vector deletion is a next improvement."
+      note: "Deleted document text, vectors, and memory items."
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "COLLECTION_DELETE_FAILED", tenantId, collection);
@@ -6103,9 +6125,8 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
 
 // DELETE /docs/:docId
-// - remove text rows from Postgres
-// - NOTE: vectors remain unless you also track chunk IDs.
-// For MVP, we just delete text. Next iteration we can also delete vectors.
+// - remove chunk text from Postgres
+// - remove vectors from the vector store
 app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) => {
   const docId = String(req.params.docId || "").trim();
   if (!docId) return res.status(400).json({ error: "docId required" });
@@ -6115,12 +6136,21 @@ app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) 
   const tenantId = resolveTenantId(req);
   const collection = resolveCollection(req);
   const namespaced = namespaceDocId(tenantId, collection, docId);
-  await deleteDoc(namespaced);
+  let deletedVectors = 0;
+  let failedVectors = 0;
+  const cleanup = await deleteVectorsForDoc(namespaced, { strict: true });
+  deletedVectors += cleanup.deleted;
+  failedVectors += cleanup.failed;
   if (collection === DEFAULT_COLLECTION) {
     const legacy = `${tenantId}::${docId}`;
     if (legacy !== namespaced) {
-      await deleteDoc(legacy);
+      const legacyCleanup = await deleteVectorsForDoc(legacy, { strict: true });
+      deletedVectors += legacyCleanup.deleted;
+      failedVectors += legacyCleanup.failed;
     }
+  }
+  if (failedVectors > 0) {
+    return res.status(400).json({ error: `Failed to delete ${failedVectors} vectors`, tenantId, collection });
   }
   await recordAudit(req, tenantId, {
     action: "doc.deleted",
@@ -6128,7 +6158,8 @@ app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) 
     targetId: docId,
     metadata: {
       collection,
-      namespaceId: namespaced
+      namespaceId: namespaced,
+      deletedVectors
     }
   });
   res.json({
@@ -6136,7 +6167,8 @@ app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) 
     docId,
     collection,
     tenantId,
-    note: "Deleted chunk text; vector deletion is a next improvement."
+    deletedVectors,
+    note: "Deleted chunk text and vectors."
   });
 });
 
@@ -6153,12 +6185,21 @@ app.delete("/v1/docs/:docId", requireJwt, requireRole("indexer"), async (req, re
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     const namespaced = namespaceDocId(tenantId, collection, docId);
-    await deleteDoc(namespaced);
+    let deletedVectors = 0;
+    let failedVectors = 0;
+    const cleanup = await deleteVectorsForDoc(namespaced, { strict: true });
+    deletedVectors += cleanup.deleted;
+    failedVectors += cleanup.failed;
     if (collection === DEFAULT_COLLECTION) {
       const legacy = `${tenantId}::${docId}`;
       if (legacy !== namespaced) {
-        await deleteDoc(legacy);
+        const legacyCleanup = await deleteVectorsForDoc(legacy, { strict: true });
+        deletedVectors += legacyCleanup.deleted;
+        failedVectors += legacyCleanup.failed;
       }
+    }
+    if (failedVectors > 0) {
+      throw new Error(`Failed to delete ${failedVectors} vectors`);
     }
     await recordAudit(req, tenantId, {
       action: "doc.deleted",
@@ -6166,12 +6207,14 @@ app.delete("/v1/docs/:docId", requireJwt, requireRole("indexer"), async (req, re
       targetId: docId,
       metadata: {
         collection,
-        namespaceId: namespaced
+        namespaceId: namespaced,
+        deletedVectors
       }
     });
     sendOk(res, {
       docId,
-      note: "Deleted chunk text; vector deletion is a next improvement."
+      deletedVectors,
+      note: "Deleted chunk text and vectors."
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "DELETE_FAILED", tenantId, collection);
