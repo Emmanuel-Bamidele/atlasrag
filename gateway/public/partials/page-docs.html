@@ -1114,6 +1114,12 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                     <li>A saved base URL, usually <span class="mono">http://localhost:3000</span></li>
                   </ul>
                 </div>
+                <div class="doc-block">
+                  <div class="doc-label">Finish setup if the stack is already running</div>
+                  <p>If Docker services are already up but the CLI has not saved the base URL and service token yet, finish setup on the running stack with:</p>
+                  <pre class="doc-code">atlasrag bootstrap --username bami --tenant default</pre>
+                  <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> commands.</p>
+                </div>
               </div>
             </details>
 
@@ -1374,6 +1380,7 @@ atlasrag ask --question "What does the CLI test document say?" --collection cli-
                     <li><strong><span class="mono">atlasrag</span> not found:</strong> open a new terminal or add <span class="mono">~/.atlasrag/bin</span> to PATH manually.</li>
                     <li><strong>Docker missing:</strong> install Docker and make sure <span class="mono">docker compose version</span> works in the same shell.</li>
                     <li><strong>No saved config:</strong> run <span class="mono">atlasrag onboard</span> first or pass <span class="mono">--base-url</span> and <span class="mono">--api-key</span> explicitly.</li>
+                    <li><strong>Stack is up but setup is not saved yet:</strong> run <span class="mono">atlasrag bootstrap --username YOUR_ADMIN --tenant default</span> to finish setup on the running stack.</li>
                     <li><strong>Gateway health timeout:</strong> run <span class="mono">atlasrag logs --service gateway</span> and check the written env file.</li>
                     <li><strong>Need a fresh token:</strong> use <span class="mono">atlasrag bootstrap</span> against the running stack.</li>
                   </ul>

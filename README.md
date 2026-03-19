@@ -112,6 +112,14 @@ During onboarding, the CLI also:
 - creates the first admin and the first service token
 - saves the base URL and service token in `~/.atlasrag/config.json`
 
+If the Docker stack is already up but setup has not finished yet, complete setup on that running stack with:
+
+```bash
+atlasrag bootstrap --username bami --tenant default
+```
+
+Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
+
 If you are using AtlasRAG from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
 
 After onboarding, you can run:
