@@ -138,6 +138,18 @@ atlasrag config show --show-secrets
 
 Do not commit those values to git.
 
+If AtlasRAG is already deployed online behind nginx or another public proxy, use the CLI as a remote client instead of onboarding locally:
+
+```bash
+export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
+atlasrag search --q "remote test" --collection cli-smoke --k 3
+atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+```
+
+In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, and `ask` are the main commands for testing a live deployment.
+
 Use the CLI when you want the fastest path from install to a working local deployment. Use the manual Docker steps below if you want to see and control each setup step explicitly.
 
 ### 1. Configure Environment (manual path)

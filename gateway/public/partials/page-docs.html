@@ -976,6 +976,7 @@ while (true) {
                         <a href="#doc-cli-overview">What the CLI covers</a>
                         <a href="#doc-cli-install">Install the CLI</a>
                         <a href="#doc-cli-onboard">Onboard a local deployment</a>
+                        <a href="#doc-cli-remote">Use the CLI against an online deployment</a>
                         <a href="#doc-cli-commands">Runtime commands</a>
                         <a href="#doc-cli-write-search-ask">Write, search, ask</a>
                         <a href="#doc-cli-config">Config and overrides</a>
@@ -1111,6 +1112,59 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                     <li>A first service token saved for CLI and app use</li>
                     <li>A saved base URL, usually <span class="mono">http://localhost:3000</span></li>
                   </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-cli-remote">
+              <summary>Use the CLI against an online deployment</summary>
+              <div class="section-body">
+                <p>
+                  If AtlasRAG is already deployed behind nginx or another public reverse proxy,
+                  use the CLI as a remote API client. In this mode, you do <strong>not</strong> run
+                  <span class="mono">atlasrag onboard</span> from the client machine unless that machine is also the self-hosted AtlasRAG server.
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">What is different on the remote path</div>
+                  <ul>
+                    <li><strong>Needed on the client:</strong> the CLI, a public base URL, and a service token</li>
+                    <li><strong>Not needed on the client:</strong> Docker, Compose, local bootstrap, or local Postgres</li>
+                    <li><strong>Main remote commands:</strong> <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span></li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">1. Verify the live deployment</div>
+                  <pre class="doc-code">curl -fsS https://YOUR_DOMAIN/v1/health</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">2. Export the live runtime values on your own machine</div>
+                  <pre class="doc-code">export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                  <p class="hint">If you want AtlasRAG to use your own OpenAI key for supported sync requests, also export <span class="mono">OPENAI_API_KEY</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">3. Smoke test the live deployment from the CLI</div>
+                  <pre class="doc-code">atlasrag write \
+  --doc-id cli-test \
+  --collection cli-smoke \
+  --text "AtlasRAG CLI remote test."
+
+atlasrag search \
+  --q "remote test" \
+  --collection cli-smoke \
+  --k 3
+
+atlasrag ask \
+  --question "What does the CLI test document say?" \
+  --collection cli-smoke</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">How you get the service token</div>
+                  <p>Use an existing AtlasRAG service token for the target tenant. If the deployment already exists, either ask the admin for a tenant-scoped token or have the admin create one with <span class="mono">POST /v1/admin/service-tokens</span>. If you are the operator, the initial token also comes from the bootstrap step on the server.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Important rule</div>
+                  <p>Think of the CLI in remote mode as a thin client for the live API. Use <span class="mono">onboard</span>, <span class="mono">start</span>, <span class="mono">stop</span>, and <span class="mono">logs</span> for local self-hosted control. Use <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> to test or use a live deployment.</p>
                 </div>
               </div>
             </details>
@@ -1298,6 +1352,14 @@ atlasrag ask --question "What is the refund policy?" --collection customer-suppo
 atlasrag logs --service gateway
 atlasrag doctor --json
 atlasrag config show</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Example 5: remote live deployment</div>
+                  <pre class="doc-code">export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
+atlasrag search --q "remote test" --collection cli-smoke --k 3
+atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke</pre>
                 </div>
               </div>
             </details>

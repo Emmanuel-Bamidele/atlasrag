@@ -61,6 +61,24 @@ ATLASRAG_COLLECTION=default
 ATLASRAG_AGENT_ID=agent:planner
 ```
 
+## CLI Against A Live Deployment
+
+If AtlasRAG is already online and you want to test it from your own machine with the CLI:
+
+```bash
+export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
+atlasrag search --q "remote test" --collection cli-smoke --k 3
+atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+```
+
+Important distinction:
+
+- `atlasrag onboard` is for local self-hosted setup
+- `atlasrag write`, `atlasrag search`, and `atlasrag ask` are the normal commands for testing or using an already deployed AtlasRAG service
+- Docker is not required on the client machine for this remote path
+
 ## Bootstrap Once
 
 If the instance has not been bootstrapped yet:
