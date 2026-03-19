@@ -200,6 +200,34 @@ function resolveBaseUrl(port) {
   return `http://localhost:${String(port || "3000").trim() || "3000"}`;
 }
 
+function buildBaseUrlCandidates(baseUrl) {
+  const raw = String(baseUrl || "").trim();
+  if (!raw) return [];
+  try {
+    const primary = new URL(raw);
+    const candidates = [primary.toString().replace(/\/+$/u, "")];
+    if (primary.hostname === "localhost") {
+      const ipv4 = new URL(primary.toString());
+      ipv4.hostname = "127.0.0.1";
+      candidates.push(ipv4.toString().replace(/\/+$/u, ""));
+    }
+    return [...new Set(candidates)];
+  } catch {
+    return [raw.replace(/\/+$/u, "")];
+  }
+}
+
+function preferredBaseUrl(baseUrl) {
+  const candidates = buildBaseUrlCandidates(baseUrl);
+  return candidates.find((value) => {
+    try {
+      return new URL(value).hostname === "127.0.0.1";
+    } catch {
+      return false;
+    }
+  }) || candidates[0] || String(baseUrl || "").trim();
+}
+
 function normalizeTcpPort(value, label = "Port") {
   const text = String(value ?? "").trim();
   if (!/^\d{1,5}$/.test(text)) {
@@ -303,6 +331,7 @@ module.exports = {
   CONFIG_FILE,
   backupFileIfExists,
   boolFromFlag,
+  buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
   defaultCollectionFromFolder,
@@ -316,6 +345,7 @@ module.exports = {
   normalizeCommandName,
   normalizeTcpPort,
   parseCliArgs,
+  preferredBaseUrl,
   randomPassword,
   randomSecret,
   readConfig,

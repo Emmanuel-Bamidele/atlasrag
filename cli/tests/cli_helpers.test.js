@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 
 const {
+  buildBaseUrlCandidates,
   createOnboardConfig,
   defaultCollectionFromFolder,
   detectProjectRoot,
@@ -12,6 +13,7 @@ const {
   mergeEnvText,
   normalizeTcpPort,
   parseCliArgs,
+  preferredBaseUrl,
   resolveBaseUrl,
   safeDocIdFromPath
 } = require("../lib");
@@ -105,6 +107,18 @@ function testNormalizeTcpPort() {
   assert.throws(() => normalizeTcpPort("70000"), /Port must be a number between 1 and 65535/);
 }
 
+function testBaseUrlHelpers() {
+  assert.deepEqual(buildBaseUrlCandidates("http://localhost:3000"), [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]);
+  assert.deepEqual(buildBaseUrlCandidates("https://atlasrag.com"), [
+    "https://atlasrag.com"
+  ]);
+  assert.equal(preferredBaseUrl("http://localhost:3000"), "http://127.0.0.1:3000");
+  assert.equal(preferredBaseUrl("https://atlasrag.com"), "https://atlasrag.com");
+}
+
 function main() {
   testParseCliArgs();
   testMergeEnvText();
@@ -112,6 +126,7 @@ function main() {
   testCreateOnboardConfig();
   testFolderHelpers();
   testNormalizeTcpPort();
+  testBaseUrlHelpers();
   console.log("cli helper tests passed");
 }
 

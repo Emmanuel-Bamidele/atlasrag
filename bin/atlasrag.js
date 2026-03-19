@@ -10,6 +10,7 @@ const {
   CONFIG_FILE,
   backupFileIfExists,
   boolFromFlag,
+  buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
   defaultCollectionFromFolder,
@@ -19,6 +20,7 @@ const {
   mergeEnvText,
   parseCliArgs,
   normalizeTcpPort,
+  preferredBaseUrl,
   randomPassword,
   randomSecret,
   readConfig,
@@ -204,22 +206,96 @@ function isHealthyPayload(payload) {
   return false;
 }
 
+function describeHealth(payload) {
+  return payload?.tcp || payload?.data?.tcp || payload?.data?.status || "ok";
+}
+
+async function probeHostHealth(baseUrl) {
+  let lastError = "Gateway did not become healthy.";
+  for (const candidateBaseUrl of buildBaseUrlCandidates(baseUrl)) {
+    for (const routePath of ["/health", "/v1/health"]) {
+      try {
+        const payload = await fetchJson(new URL(routePath, candidateBaseUrl).toString());
+        if (isHealthyPayload(payload)) {
+          return { baseUrl: candidateBaseUrl, routePath, payload };
+        }
+        lastError = `${candidateBaseUrl}${routePath}: gateway responded without a healthy payload.`;
+      } catch (err) {
+        lastError = `${candidateBaseUrl}${routePath}: ${String(err.message || err)}`;
+      }
+    }
+  }
+  throw new Error(lastError);
+}
+
+async function probeGatewayHealthInContainer(composeCtx) {
+  const script = [
+    `const routes = ${JSON.stringify(["/health", "/v1/health"])};`,
+    "(async () => {",
+    "  for (const routePath of routes) {",
+    "    try {",
+    "      const res = await fetch(`http://127.0.0.1:3000${routePath}`);",
+    "      const text = await res.text();",
+    "      let payload = null;",
+    "      try { payload = text ? JSON.parse(text) : null; } catch {}",
+    "      const healthy = payload && (payload.ok === true || (payload.data && payload.data.status === 'ok'));",
+    "      if (res.ok && healthy) {",
+    "        process.stdout.write(JSON.stringify({ routePath, payload }));",
+    "        return;",
+    "      }",
+    "    } catch {}",
+    "  }",
+    "  throw new Error('Gateway did not return a healthy payload from inside the container.');",
+    "})().catch((err) => {",
+    "  console.error(String((err && err.message) || err));",
+    "  process.exit(1);",
+    "});"
+  ].join("\n");
+
+  const result = await runCompose(composeCtx, ["exec", "-T", "gateway", "node", "-e", script]);
+  const payload = parseJsonFromStdout(result.stdout);
+  if (!isHealthyPayload(payload?.payload)) {
+    throw new Error("Gateway did not return a healthy payload from inside the container.");
+  }
+  return payload;
+}
+
 async function waitForHealth(baseUrl, timeoutMs = 180000) {
   const deadline = Date.now() + timeoutMs;
-  const candidates = ["/health", "/v1/health"];
   let lastError = "Gateway did not become healthy.";
   while (Date.now() < deadline) {
-    for (const routePath of candidates) {
-      try {
-        const payload = await fetchJson(new URL(routePath, baseUrl).toString());
-        if (isHealthyPayload(payload)) return payload;
-        lastError = `Gateway responded without healthy payload on ${routePath}.`;
-      } catch (err) {
-        lastError = `${routePath}: ${String(err.message || err)}`;
-      }
+    try {
+      return (await probeHostHealth(baseUrl)).payload;
+    } catch (err) {
+      lastError = String(err.message || err);
     }
     await sleep(2500);
   }
+  throw new Error(`Timed out waiting for ${baseUrl} health routes: ${lastError}`);
+}
+
+async function waitForGatewayReady(composeCtx, baseUrl, timeoutMs = 180000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "Gateway did not become healthy.";
+
+  while (Date.now() < deadline) {
+    try {
+      const hostHealth = await probeHostHealth(baseUrl);
+      return { source: "host", ...hostHealth };
+    } catch (err) {
+      lastError = `host probe failed: ${String(err.message || err)}`;
+    }
+
+    try {
+      const containerHealth = await probeGatewayHealthInContainer(composeCtx);
+      return { source: "container", ...containerHealth };
+    } catch (err) {
+      lastError = `${lastError}; container probe failed: ${String(err.message || err)}`;
+    }
+
+    await sleep(2500);
+  }
+
   throw new Error(`Timed out waiting for ${baseUrl} health routes: ${lastError}`);
 }
 
@@ -474,7 +550,15 @@ function resolveClientConfig(parsed) {
     || saved.collection
     || ""
   ).trim();
-  return { baseUrl, apiKey, token, openAiApiKey, tenantId, collection };
+  return {
+    baseUrl,
+    clientBaseUrl: preferredBaseUrl(baseUrl),
+    apiKey,
+    token,
+    openAiApiKey,
+    tenantId,
+    collection
+  };
 }
 
 function buildClient(parsed) {
@@ -483,7 +567,7 @@ function buildClient(parsed) {
     throw new Error(`No AtlasRAG credential is configured. Run \`atlasrag onboard\` first or set ${"`ATLASRAG_API_KEY`"} / ${"`ATLASRAG_TOKEN`"}.`);
   }
   return new AtlasRAGClient({
-    baseUrl: cfg.baseUrl,
+    baseUrl: cfg.clientBaseUrl,
     apiKey: cfg.apiKey || null,
     token: cfg.apiKey ? null : cfg.token,
     openAiApiKey: cfg.openAiApiKey || null,
@@ -636,8 +720,11 @@ async function handleOnboard(parsed) {
   console.log("Starting AtlasRAG services...");
   await runCompose(composeCtx, ["up", "-d", "--build"], { capture: false });
 
-  console.log(`Waiting for ${baseUrl}/health ...`);
-  await waitForHealth(baseUrl);
+  console.log(`Waiting for AtlasRAG gateway readiness (${baseUrl}/health) ...`);
+  const readiness = await waitForGatewayReady(composeCtx, baseUrl);
+  if (readiness.source === "container") {
+    console.log("Gateway responded inside Docker. Continuing with bootstrap while host routing settles.");
+  }
 
   console.log("Bootstrapping the first admin and service token...");
   const { payload, serviceToken } = await runBootstrapWithRetries(composeCtx, {
@@ -658,8 +745,18 @@ async function handleOnboard(parsed) {
     openAiApiKey
   }));
 
+  let hostHealthSettled = readiness.source === "host";
+  if (!hostHealthSettled) {
+    try {
+      await waitForHealth(baseUrl, 15000);
+      hostHealthSettled = true;
+    } catch {
+      hostHealthSettled = false;
+    }
+  }
+
   console.log("");
-  printSummary("AtlasRAG is ready.", [
+  const summaryRows = [
     `App URL: ${baseUrl}`,
     `Docs URL: ${baseUrl}/docs`,
     `Admin username: ${adminUsername}`,
@@ -669,7 +766,11 @@ async function handleOnboard(parsed) {
     "Next: atlasrag status",
     "Try: atlasrag write --doc-id welcome --text \"AtlasRAG stores memory for agents.\"",
     "Then: atlasrag ask --question \"What does AtlasRAG store?\""
-  ]);
+  ];
+  if (!hostHealthSettled) {
+    summaryRows.push(`Host health is still settling at ${baseUrl}; retry \`atlasrag status\` in a few seconds if needed.`);
+  }
+  printSummary("AtlasRAG is ready.", summaryRows);
 }
 
 function resolveComposeFromSaved(parsed) {
@@ -692,7 +793,7 @@ async function handleStart(parsed) {
   const saved = readConfig();
   const baseUrl = saved.baseUrl || resolveBaseUrl("3000");
   try {
-    await waitForHealth(baseUrl, 120000);
+    await waitForGatewayReady(ctx, baseUrl, 120000);
   } catch {
     // Leave status to the user if startup is still settling.
   }
@@ -719,7 +820,7 @@ async function handleStatus(parsed) {
   let healthError = "";
   if (saved.baseUrl) {
     try {
-      health = await fetchJson(new URL("/health", saved.baseUrl).toString());
+      health = (await probeHostHealth(saved.baseUrl)).payload;
     } catch (err) {
       healthError = String(err.message || err);
     }
@@ -740,8 +841,8 @@ async function handleStatus(parsed) {
 
   console.log(`Project root: ${ctx.projectRoot}`);
   console.log(`Base URL: ${saved.baseUrl || "(not saved)"}`);
-  if (health?.ok === true) {
-    console.log(`Health: healthy (${health.tcp || "gateway to TCP OK"})`);
+  if (isHealthyPayload(health)) {
+    console.log(`Health: healthy (${describeHealth(health)})`);
   } else if (healthError) {
     console.log(`Health: unavailable (${healthError})`);
   } else {
@@ -863,8 +964,8 @@ async function handleDoctor(parsed) {
 
   if (saved.baseUrl) {
     try {
-      const health = await fetchJson(new URL("/health", saved.baseUrl).toString());
-      record("Gateway health", health?.ok === true, health?.tcp || "ok");
+      const health = (await probeHostHealth(saved.baseUrl)).payload;
+      record("Gateway health", isHealthyPayload(health), describeHealth(health));
     } catch (err) {
       record("Gateway health", false, String(err.message || err));
     }
