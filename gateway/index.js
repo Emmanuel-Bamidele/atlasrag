@@ -96,7 +96,7 @@ const {
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, "public");
-const UI_TEMPLATE_CANDIDATES = ["index.html", "index.swift"];
+const UI_TEMPLATE_CANDIDATES = ["index.html"];
 const UI_PARTIALS_DIR = path.join(PUBLIC_DIR, "partials");
 
 function resolveUiTemplatePath() {
