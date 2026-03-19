@@ -198,20 +198,70 @@ async function fetchJson(url) {
   return payload;
 }
 
+function isHealthyPayload(payload) {
+  if (payload?.ok === true) return true;
+  if (payload?.data?.status === "ok") return true;
+  return false;
+}
+
 async function waitForHealth(baseUrl, timeoutMs = 180000) {
   const deadline = Date.now() + timeoutMs;
+  const candidates = ["/health", "/v1/health"];
   let lastError = "Gateway did not become healthy.";
   while (Date.now() < deadline) {
-    try {
-      const payload = await fetchJson(new URL("/health", baseUrl).toString());
-      if (payload?.ok === true) return payload;
-      lastError = "Gateway responded without ok=true.";
-    } catch (err) {
-      lastError = String(err.message || err);
+    for (const routePath of candidates) {
+      try {
+        const payload = await fetchJson(new URL(routePath, baseUrl).toString());
+        if (isHealthyPayload(payload)) return payload;
+        lastError = `Gateway responded without healthy payload on ${routePath}.`;
+      } catch (err) {
+        lastError = `${routePath}: ${String(err.message || err)}`;
+      }
     }
     await sleep(2500);
   }
-  throw new Error(`Timed out waiting for ${baseUrl}/health: ${lastError}`);
+  throw new Error(`Timed out waiting for ${baseUrl} health routes: ${lastError}`);
+}
+
+async function runBootstrapWithRetries(composeCtx, options = {}) {
+  const attempts = Number.isFinite(options.attempts) && options.attempts > 0 ? options.attempts : 5;
+  const retryDelayMs = Number.isFinite(options.retryDelayMs) && options.retryDelayMs > 0 ? options.retryDelayMs : 2500;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const bootstrap = await runCompose(composeCtx, [
+        "exec",
+        "-T",
+        "gateway",
+        "node",
+        "scripts/bootstrap_instance.js",
+        "--username",
+        options.adminUsername,
+        "--password",
+        options.adminPassword,
+        "--tenant",
+        options.tenantId,
+        "--service-token-name",
+        `${options.tenantId}-bootstrap`,
+        "--json"
+      ]);
+
+      const payload = parseJsonFromStdout(bootstrap.stdout);
+      const serviceToken = String(payload?.serviceToken?.token || "").trim();
+      if (!serviceToken) {
+        throw new Error("Bootstrap finished without returning a service token.");
+      }
+      return { payload, serviceToken };
+    } catch (err) {
+      lastError = err;
+      if (attempt >= attempts) break;
+      console.log(`Bootstrap attempt ${attempt}/${attempts} failed; retrying in ${Math.round(retryDelayMs / 1000)}s...`);
+      await sleep(retryDelayMs);
+    }
+  }
+
+  throw lastError || new Error("Bootstrap failed.");
 }
 
 function askVisible(prompt, defaultValue = "") {
@@ -590,27 +640,11 @@ async function handleOnboard(parsed) {
   await waitForHealth(baseUrl);
 
   console.log("Bootstrapping the first admin and service token...");
-  const bootstrap = await runCompose(composeCtx, [
-    "exec",
-    "-T",
-    "gateway",
-    "node",
-    "scripts/bootstrap_instance.js",
-    "--username",
+  const { payload, serviceToken } = await runBootstrapWithRetries(composeCtx, {
     adminUsername,
-    "--password",
     adminPassword,
-    "--tenant",
-    tenantId,
-    "--service-token-name",
-    `${tenantId}-bootstrap`,
-    "--json"
-  ]);
-  const payload = parseJsonFromStdout(bootstrap.stdout);
-  const serviceToken = String(payload?.serviceToken?.token || "").trim();
-  if (!serviceToken) {
-    throw new Error("Bootstrap finished without returning a service token.");
-  }
+    tenantId
+  });
 
   writeConfig(createOnboardConfig({
     projectRoot,

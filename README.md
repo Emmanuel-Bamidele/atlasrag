@@ -92,11 +92,17 @@ atlasrag onboard
 
 The wizard prompts for:
 
+- gateway port
 - admin username
 - admin password
 - OpenAI API key
 - tenant id
 - optional external Postgres values if you choose the BYO Postgres path
+
+For the normal first-run path, you can usually press `Enter` at:
+
+- `Gateway port [3000]:` to keep `3000`
+- `Tenant id [default]:` to keep `default`
 
 During onboarding, the CLI also:
 

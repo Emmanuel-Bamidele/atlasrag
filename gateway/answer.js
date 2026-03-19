@@ -100,13 +100,18 @@ function sanitizeChunkText(text) {
 function sanitizeChunks(chunks) {
   if (!PROMPT_GUARD) return chunks;
   const out = [];
+  const short = [];
   for (const c of chunks) {
     const cleaned = sanitizeChunkText(c.text);
+    if (!cleaned) continue;
+    const next = { ...c, text: cleaned };
     if (cleaned.length >= MIN_SOURCE_CHARS) {
-      out.push({ ...c, text: cleaned });
+      out.push(next);
+      continue;
     }
+    short.push(next);
   }
-  return out;
+  return out.length ? out : short;
 }
 
 function fallbackFromChunks(chunks) {
@@ -300,4 +305,10 @@ async function generateAnswer(question, chunks, options = {}) {
   return { answer, citations, usage, answerLength: effectiveAnswerLength };
 }
 
-module.exports = { generateAnswer };
+module.exports = {
+  generateAnswer,
+  __testHooks: {
+    sanitizeChunkText,
+    sanitizeChunks
+  }
+};
