@@ -70,6 +70,10 @@ atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre
                   <p class="hint">If you self-host manually instead of using the CLI, the same first token comes from <span class="mono">scripts/bootstrap_instance.js</span>. If someone else runs AtlasRAG for you, ask that admin for <span class="mono">ATLASRAG_BASE_URL</span> and a tenant-scoped service token.</p>
                 </div>
                 <div class="doc-block">
+                  <div class="doc-label">Open source repository</div>
+                  <p>AtlasRAG is open source. The source code, installer scripts, Docker files, and docs source are available in the <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">Use AtlasRAG on this same computer</div>
                   <p>You do not need to copy the token anywhere just to use the CLI locally. After onboarding, the CLI reads the saved config and sends the saved service token automatically.</p>
                   <pre class="doc-code">atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
@@ -1013,6 +1017,10 @@ while (true) {
                 <div class="doc-block">
                   <div class="doc-label">What it saves</div>
                   <p>After onboarding, the CLI stores local config in <span class="mono">~/.atlasrag/config.json</span>. That file includes the project root, base URL, tenant id, and the saved service token so later CLI commands can work without repeating flags every time.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Repository and source code</div>
+                  <p>AtlasRAG is open source. If you want to inspect the implementation, fork it, or follow the installer and deployment files directly, use the <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Default behavior</div>
