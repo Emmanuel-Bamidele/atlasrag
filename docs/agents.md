@@ -79,6 +79,7 @@ Important distinction:
 - `atlasrag onboard` is for local self-hosted setup
 - `atlasrag write`, `atlasrag search`, `atlasrag ask`, and `atlasrag boolean_ask` are the normal commands for testing or using an already deployed AtlasRAG service
 - Docker is not required on the client machine for this remote path
+- service tokens are scoped to the AtlasRAG deployment that minted them; a token from one self-hosted or shared deployment will not authenticate against a different deployment
 
 ## Bootstrap Once
 

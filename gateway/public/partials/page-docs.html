@@ -1100,6 +1100,7 @@ while (true) {
                 <div class="doc-block">
                   <div class="doc-label">Default behavior</div>
                   <p>The default path uses the bundled Postgres service from <span class="mono">docker-compose.yml</span>. If you already manage your own Postgres, use <span class="mono">atlasrag onboard --external-postgres</span> and the CLI will write <span class="mono">.env.external-postgres</span> and use <span class="mono">docker-compose.external-postgres.yml</span> instead.</p>
+                  <p class="hint">That choice only changes which Postgres database this self-hosted AtlasRAG instance uses. It does not turn the instance into a shared AtlasRAG deployment, and its service tokens still belong only to that self-hosted instance.</p>
                 </div>
               </div>
             </details>
@@ -1362,6 +1363,7 @@ atlasrag boolean_ask \
                 <div class="doc-block">
                   <div class="doc-label">How you get the service token</div>
                   <p>Use an existing AtlasRAG service token for the target tenant. If the deployment already exists, either ask the admin for a tenant-scoped token or have the admin create one with <span class="mono">POST /v1/admin/service-tokens</span>. If you are the operator, the initial token also comes from the bootstrap step on the server.</p>
+                  <p class="hint">Service tokens are deployment-scoped. A token created by your local self-hosted AtlasRAG instance will not work against a different shared or hosted AtlasRAG deployment, and vice versa.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Important rule</div>

@@ -33,6 +33,8 @@ AtlasRAG has three core runtime pieces:
 
 In local Compose, the repo starts all of these for you.
 
+The bundled Postgres path and the external-Postgres path are both still self-hosted AtlasRAG deployments. That choice only changes which database this AtlasRAG instance uses.
+
 ## Recommended Auth Model
 
 Use AtlasRAG like this:
@@ -40,6 +42,8 @@ Use AtlasRAG like this:
 - humans use username/password or SSO for admin actions and the browser UI
 - apps, backends, workers, and agents use a service token
 - if a caller wants AtlasRAG to use its own OpenAI key while still using this AtlasRAG deployment, it can send `X-OpenAI-API-Key` on supported sync requests
+
+Service tokens created by this deployment are valid only for this deployment. They are not interchangeable with tokens from a different AtlasRAG instance, whether that other instance is local, remote, shared, or managed elsewhere.
 
 That means your normal machine runtime should keep:
 

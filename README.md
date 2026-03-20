@@ -129,6 +129,8 @@ During onboarding, the CLI also:
 - creates the first admin and the first service token
 - updates `~/.atlasrag/config.json` with the saved service token
 
+The default bundled Postgres path and the `--external-postgres` path are both self-hosted AtlasRAG deployments. That choice only changes which Postgres database this AtlasRAG instance uses. It does not make the instance part of another AtlasRAG deployment or platform.
+
 If the Docker stack is already up but setup has not finished yet, complete setup on that running stack with:
 
 ```bash
@@ -220,6 +222,8 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
 ```
 
 In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
+
+Service tokens are scoped to the AtlasRAG deployment that minted them. A token from your local self-hosted instance will not work against a different AtlasRAG deployment, and a token from a shared or hosted deployment will not work against your separate local instance unless that exact deployment issued it.
 
 Use the CLI when you want the fastest path from install to a working local deployment. Use the manual Docker steps below if you want to see and control each setup step explicitly.
 
