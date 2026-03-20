@@ -121,10 +121,11 @@ For the normal first-run path, you can usually press `Enter` at:
 During onboarding, the CLI also:
 
 - writes the local env file
+- saves the local project/base URL context in `~/.atlasrag/config.json`
 - starts the Docker stack
 - runs the bootstrap helper for you
 - creates the first admin and the first service token
-- saves the base URL and service token in `~/.atlasrag/config.json`
+- updates `~/.atlasrag/config.json` with the saved service token
 
 If the Docker stack is already up but setup has not finished yet, complete setup on that running stack with:
 
@@ -133,6 +134,8 @@ atlasrag bootstrap --username your-username --tenant default
 ```
 
 Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
+
+If onboarding stops early after the stack starts, `atlasrag doctor` will still show the saved base URL and will mark the API key as pending bootstrap instead of treating the local setup as completely unknown.
 
 If you are using AtlasRAG from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
 

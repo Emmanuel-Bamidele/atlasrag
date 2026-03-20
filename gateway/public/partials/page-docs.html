@@ -59,10 +59,10 @@ atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --colle
                   <div class="doc-label">What <span class="mono">atlasrag onboard</span> does</div>
                   <ol>
                     <li>Prompts for admin username, admin password, tenant id, and your OpenAI key.</li>
-                    <li>Writes the local env file and starts the AtlasRAG Docker stack.</li>
-                    <li>Runs the bootstrap helper in the background.</li>
+                    <li>Writes the local env file and stages the local CLI config.</li>
+                    <li>Starts the AtlasRAG Docker stack and runs the bootstrap helper.</li>
                     <li>Creates the first admin user and the first service token.</li>
-                    <li>Saves the base URL and service token in <span class="mono">~/.atlasrag/config.json</span> for later CLI use.</li>
+                    <li>Updates <span class="mono">~/.atlasrag/config.json</span> with the saved base URL and service token for later CLI use.</li>
                   </ol>
                 </div>
                 <div class="doc-block">
@@ -1156,7 +1156,7 @@ atlasrag uninstall</pre>
               <div class="section-body">
                 <p>
                   Onboarding is the command that turns an installed CLI into a working local AtlasRAG deployment.
-                  It writes the env file, starts Docker, waits for health, runs the bootstrap helper, and saves the first service token for later CLI commands.
+                  It writes the env file, stages the local CLI config, starts Docker, runs the bootstrap helper, and then verifies readiness before printing the final ready summary.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Bundled Postgres (default)</div>
@@ -1206,9 +1206,9 @@ atlasrag uninstall</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Finish setup if the stack is already running</div>
-                  <p>If Docker services are already up but the CLI has not saved the base URL and service token yet, finish setup on the running stack with:</p>
+                  <p>If Docker services are already up but the saved config still shows onboarding as incomplete, finish setup on the running stack with:</p>
                   <pre class="doc-code">atlasrag bootstrap --username your-username --tenant default</pre>
-                  <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, <span class="mono">ask</span>, and <span class="mono">boolean_ask</span> commands.</p>
+                  <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, <span class="mono">ask</span>, and <span class="mono">boolean_ask</span> commands. <span class="mono">atlasrag doctor</span> now reports this as a pending bootstrap state instead of just showing a missing config.</p>
                 </div>
               </div>
             </details>
@@ -1224,7 +1224,7 @@ atlasrag uninstall</pre>
                   <div class="doc-label">1. Confirm setup is complete</div>
                   <pre class="doc-code">atlasrag status
 atlasrag config show --show-secrets</pre>
-                  <p class="hint">If the Docker stack is already up but the saved base URL and token are still missing, finish setup on that running stack with <span class="mono">atlasrag bootstrap --username YOUR_ADMIN --tenant default</span>.</p>
+                  <p class="hint">If the Docker stack is already up but the saved token is still missing, finish setup on that running stack with <span class="mono">atlasrag bootstrap --username YOUR_ADMIN --tenant default</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">2. Put the saved runtime values into your app env</div>
