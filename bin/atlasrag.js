@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const readline = require("readline");
 const { spawn, spawnSync } = require("child_process");
@@ -9,8 +10,12 @@ const { AtlasRAGClient } = require("../sdk/node/src/client");
 const {
   PACKAGE_ROOT,
   CONFIG_FILE,
+  CONFIG_DIR,
   backupFileIfExists,
   boolFromFlag,
+  buildInstallBinDir,
+  buildInstallRepoDir,
+  buildShellPathLine,
   buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
@@ -25,9 +30,12 @@ const {
   randomPassword,
   randomSecret,
   readConfig,
+  removePathEntry,
+  resolveInstallHome,
   resolveBaseUrl,
   resolveProjectRoot,
   safeDocIdFromPath,
+  stripManagedShellPath,
   writeConfig
 } = require("../cli/lib");
 
@@ -37,6 +45,7 @@ function printHelp() {
 Usage:
   atlasrag onboard [--external-postgres] [--project-root PATH] [--force]
   atlasrag update [--project-root PATH]
+  atlasrag uninstall [--yes]
   atlasrag start [--build]
   atlasrag stop [--down]
   atlasrag status [--json]
@@ -910,6 +919,185 @@ function looksLikeAtlasragCheckout(projectRoot) {
     && fs.existsSync(path.join(projectRoot, "gateway"));
 }
 
+function isSameOrChildPath(parentPath, childPath) {
+  const parent = path.resolve(String(parentPath || ""));
+  const child = path.resolve(String(childPath || ""));
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function writeTextFile(filePath, text) {
+  fs.writeFileSync(filePath, text ? `${String(text).replace(/\s+$/u, "")}\n` : "", "utf8");
+}
+
+function removeIfExists(targetPath) {
+  if (!fs.existsSync(targetPath)) return false;
+  fs.rmSync(targetPath, { recursive: true, force: true });
+  return true;
+}
+
+function removeDirectoryIfEmpty(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return false;
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) return false;
+    if (fs.readdirSync(dirPath).length > 0) return false;
+    fs.rmdirSync(dirPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveWindowsShellBin() {
+  const candidates = [
+    "powershell",
+    "pwsh",
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  ];
+  for (const candidate of candidates) {
+    const result = spawnSync(candidate, ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"], {
+      encoding: "utf8"
+    });
+    if (result.status === 0) return candidate;
+    if (result.error && result.error.code === "ENOENT") continue;
+  }
+  return null;
+}
+
+function resolveUninstallPlan() {
+  const installHome = resolveInstallHome(process.env);
+  const binDir = buildInstallBinDir(installHome);
+  const defaultRepoDir = buildInstallRepoDir(installHome);
+  const packageRoot = path.resolve(PACKAGE_ROOT);
+  const repoDir = looksLikeAtlasragCheckout(packageRoot) && isSameOrChildPath(installHome, packageRoot)
+    ? packageRoot
+    : (looksLikeAtlasragCheckout(defaultRepoDir) ? defaultRepoDir : "");
+  return {
+    installHome,
+    binDir,
+    repoDir,
+    wrappers: [
+      path.join(binDir, "atlasrag"),
+      path.join(binDir, "atlasrag.ps1"),
+      path.join(binDir, "atlasrag.cmd")
+    ],
+    configFile: CONFIG_FILE,
+    configDir: CONFIG_DIR,
+    shellRcFiles: [
+      path.join(os.homedir(), ".zshrc"),
+      path.join(os.homedir(), ".bashrc"),
+      path.join(os.homedir(), ".profile")
+    ]
+  };
+}
+
+function removePosixPathEntries(plan) {
+  const touched = [];
+  for (const rcFile of plan.shellRcFiles) {
+    if (!fs.existsSync(rcFile)) continue;
+    const before = fs.readFileSync(rcFile, "utf8");
+    const after = stripManagedShellPath(before, plan.binDir);
+    if (after === before) continue;
+    writeTextFile(rcFile, after);
+    touched.push(rcFile);
+  }
+  return touched;
+}
+
+async function removeWindowsPathEntry(binDir) {
+  const shellBin = resolveWindowsShellBin();
+  if (!shellBin) {
+    return {
+      ok: false,
+      detail: "PowerShell not found; remove the AtlasRAG bin directory from the user PATH manually."
+    };
+  }
+
+  const script = `
+$target = ${JSON.stringify(path.resolve(binDir))};
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User");
+if ($null -eq $userPath) { exit 0 }
+$parts = $userPath -split ";" | Where-Object { $_ };
+$normalizedTarget = $target.Trim().TrimEnd("\\").ToLowerInvariant();
+$kept = @();
+foreach ($part in $parts) {
+  $normalizedPart = $part.Trim().TrimEnd("\\").ToLowerInvariant();
+  if ($normalizedPart -ne $normalizedTarget) {
+    $kept += $part.Trim();
+  }
+}
+[Environment]::SetEnvironmentVariable("Path", ($kept -join ";"), "User");
+`;
+
+  await runCommand(shellBin, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    capture: true
+  });
+  return {
+    ok: true,
+    detail: `Removed ${binDir} from the user PATH. Open a new terminal for the change to take effect.`
+  };
+}
+
+function schedulePosixCleanup(plan) {
+  if (!plan.repoDir) return false;
+  const srcDir = path.dirname(plan.repoDir);
+  const shellBin = fs.existsSync("/bin/sh") ? "/bin/sh" : "sh";
+  const script = [
+    "sleep 1",
+    "rm -rf -- \"$1\"",
+    "rmdir \"$2\" 2>/dev/null || true",
+    "rmdir \"$3\" 2>/dev/null || true",
+    "rmdir \"$4\" 2>/dev/null || true"
+  ].join("\n");
+  const child = spawn(shellBin, ["-c", script, "atlasrag-uninstall", plan.repoDir, srcDir, plan.binDir, plan.installHome], {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+  return true;
+}
+
+function scheduleWindowsCleanup(plan) {
+  if (!plan.repoDir) return false;
+  const shellBin = resolveWindowsShellBin();
+  if (!shellBin) return false;
+  const script = `
+$repoDir = ${JSON.stringify(path.resolve(plan.repoDir))};
+$srcDir = ${JSON.stringify(path.dirname(plan.repoDir))};
+$binDir = ${JSON.stringify(path.resolve(plan.binDir))};
+$installHome = ${JSON.stringify(path.resolve(plan.installHome))};
+Start-Sleep -Seconds 2
+if (Test-Path $repoDir) {
+  Remove-Item -LiteralPath $repoDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+if (Test-Path $srcDir -PathType Container) {
+  $srcEntries = @(Get-ChildItem -LiteralPath $srcDir -Force -ErrorAction SilentlyContinue)
+  if ($srcEntries.Count -eq 0) {
+    Remove-Item -LiteralPath $srcDir -Force -ErrorAction SilentlyContinue
+  }
+}
+if (Test-Path $binDir -PathType Container) {
+  $binEntries = @(Get-ChildItem -LiteralPath $binDir -Force -ErrorAction SilentlyContinue)
+  if ($binEntries.Count -eq 0) {
+    Remove-Item -LiteralPath $binDir -Force -ErrorAction SilentlyContinue
+  }
+}
+if (Test-Path $installHome -PathType Container) {
+  $homeEntries = @(Get-ChildItem -LiteralPath $installHome -Force -ErrorAction SilentlyContinue)
+  if ($homeEntries.Count -eq 0) {
+    Remove-Item -LiteralPath $installHome -Force -ErrorAction SilentlyContinue
+  }
+}
+`;
+  const child = spawn(shellBin, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+  return true;
+}
+
 function resolveUpdateTargetRoot(parsed) {
   const explicitRoot = getFlag(parsed, "project-root");
   const projectRoot = explicitRoot
@@ -986,6 +1174,96 @@ async function handleUpdate(parsed) {
     summaryRows.push("If you self-host locally, run: atlasrag start --build");
   }
   printSummary("AtlasRAG update complete.", summaryRows);
+}
+
+async function handleUninstall(parsed) {
+  ensureNodeVersion();
+  const plan = resolveUninstallPlan();
+  const json = boolFromFlag(getFlag(parsed, "json"), false);
+  const targets = [
+    `wrappers in ${plan.binDir}`,
+    `saved config at ${plan.configFile}`,
+    "PATH updates created by the installer"
+  ];
+  if (plan.repoDir) {
+    targets.splice(1, 0, `managed checkout at ${plan.repoDir}`);
+  }
+
+  await ensureConfirmedAction(
+    parsed,
+    `Remove the AtlasRAG CLI install (${targets.join(", ")})?`,
+    false
+  );
+
+  const touchedShellFiles = process.platform === "win32"
+    ? []
+    : removePosixPathEntries(plan);
+  const pathUpdate = process.platform === "win32"
+    ? await removeWindowsPathEntry(plan.binDir)
+    : {
+        ok: true,
+        detail: touchedShellFiles.length
+          ? `Updated shell startup files: ${touchedShellFiles.join(", ")}`
+          : "No shell startup files needed changes."
+      };
+
+  const removedWrappers = plan.wrappers.filter((filePath) => removeIfExists(filePath));
+  const removedConfig = removeIfExists(plan.configFile);
+  if (removedConfig && plan.configDir !== plan.installHome) {
+    removeDirectoryIfEmpty(plan.configDir);
+  }
+
+  let deferredCleanup = false;
+  if (plan.repoDir) {
+    deferredCleanup = process.platform === "win32"
+      ? scheduleWindowsCleanup(plan)
+      : schedulePosixCleanup(plan);
+    if (!deferredCleanup) {
+      removeIfExists(plan.repoDir);
+      removeDirectoryIfEmpty(path.dirname(plan.repoDir));
+    }
+  }
+
+  if (!plan.repoDir || !deferredCleanup) {
+    removeDirectoryIfEmpty(plan.binDir);
+    removeDirectoryIfEmpty(plan.installHome);
+  }
+
+  const payload = {
+    installHome: plan.installHome,
+    removedWrappers,
+    removedConfig,
+    removedRepoDir: plan.repoDir || null,
+    deferredRepoCleanup: deferredCleanup,
+    path: pathUpdate
+  };
+
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const summaryRows = [
+    `install home: ${plan.installHome}`,
+    removedWrappers.length
+      ? `wrappers removed: ${removedWrappers.join(", ")}`
+      : "wrappers removed: none found",
+    removedConfig
+      ? `config removed: ${plan.configFile}`
+      : `config removed: none found at ${plan.configFile}`,
+    pathUpdate.detail
+  ];
+  if (plan.repoDir) {
+    summaryRows.push(
+      deferredCleanup
+        ? `repo checkout scheduled for removal after this command exits: ${plan.repoDir}`
+        : `repo checkout removed: ${plan.repoDir}`
+    );
+  } else {
+    summaryRows.push("repo checkout removed: no managed checkout found under the install home");
+  }
+  summaryRows.push("Open a new terminal before re-checking `atlasrag` on PATH.");
+  printSummary("AtlasRAG uninstall complete.", summaryRows);
 }
 
 async function handleStart(parsed) {
@@ -1766,6 +2044,9 @@ async function main() {
       return;
     case "update":
       await handleUpdate(parsed);
+      return;
+    case "uninstall":
+      await handleUninstall(parsed);
       return;
     case "start":
       await handleStart(parsed);

@@ -6,6 +6,9 @@ const path = require("path");
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const CONFIG_DIR = path.join(os.homedir(), ".atlasrag");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+const DEFAULT_INSTALL_HOME = path.join(os.homedir(), ".atlasrag");
+const SHELL_PATH_BLOCK_START = "# >>> atlasrag >>>";
+const SHELL_PATH_BLOCK_END = "# <<< atlasrag <<<";
 const INGESTIBLE_TEXT_EXTENSIONS = new Set([
   ".txt",
   ".md",
@@ -133,6 +136,68 @@ function readJson(filePath, fallback = null) {
 
 function readConfig() {
   return readJson(CONFIG_FILE, {}) || {};
+}
+
+function resolveInstallHome(env = process.env, homeDir = os.homedir()) {
+  const raw = env && typeof env.ATLASRAG_HOME === "string" ? env.ATLASRAG_HOME : "";
+  return path.resolve(raw || path.join(homeDir, ".atlasrag"));
+}
+
+function buildInstallBinDir(installHome = DEFAULT_INSTALL_HOME) {
+  return path.join(path.resolve(String(installHome || DEFAULT_INSTALL_HOME)), "bin");
+}
+
+function buildInstallRepoDir(installHome = DEFAULT_INSTALL_HOME) {
+  return path.join(path.resolve(String(installHome || DEFAULT_INSTALL_HOME)), "src", "atlasrag");
+}
+
+function buildShellPathLine(binDir) {
+  return `export PATH="${path.resolve(String(binDir || ""))}:$PATH"`;
+}
+
+function stripManagedShellPath(text, binDir) {
+  const targetLine = buildShellPathLine(binDir);
+  const inputLines = String(text || "").split(/\r?\n/);
+  const output = [];
+  let insideManagedBlock = false;
+
+  for (const line of inputLines) {
+    if (line === SHELL_PATH_BLOCK_START) {
+      insideManagedBlock = true;
+      continue;
+    }
+    if (line === SHELL_PATH_BLOCK_END) {
+      insideManagedBlock = false;
+      continue;
+    }
+    if (insideManagedBlock) continue;
+    if (line === targetLine) continue;
+    output.push(line);
+  }
+
+  while (output.length > 1 && output[output.length - 1] === "" && output[output.length - 2] === "") {
+    output.pop();
+  }
+
+  return output.join("\n");
+}
+
+function normalizePathForCompare(value, platform = process.platform) {
+  const trimmed = String(value || "")
+    .trim()
+    .replace(/[\\/]+$/g, "");
+  return platform === "win32" ? trimmed.toLowerCase() : trimmed;
+}
+
+function removePathEntry(pathValue, targetPath, platform = process.platform) {
+  const separator = platform === "win32" ? ";" : ":";
+  const target = normalizePathForCompare(targetPath, platform);
+  return String(pathValue || "")
+    .split(separator)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => normalizePathForCompare(part, platform) !== target)
+    .join(separator);
 }
 
 function ensureConfigDir() {
@@ -409,10 +474,16 @@ function createOnboardConfig({
 }
 
 module.exports = {
+  DEFAULT_INSTALL_HOME,
   PACKAGE_ROOT,
   CONFIG_DIR,
   CONFIG_FILE,
+  SHELL_PATH_BLOCK_END,
+  SHELL_PATH_BLOCK_START,
   backupFileIfExists,
+  buildInstallBinDir,
+  buildInstallRepoDir,
+  buildShellPathLine,
   boolFromFlag,
   buildBaseUrlCandidates,
   buildComposeContext,
@@ -430,6 +501,7 @@ module.exports = {
   mergeEnvText,
   normalizeExtractedText,
   normalizeCommandName,
+  normalizePathForCompare,
   normalizeTcpPort,
   parseCliArgs,
   preferredBaseUrl,
@@ -437,8 +509,11 @@ module.exports = {
   randomSecret,
   readConfig,
   readJson,
+  removePathEntry,
   resolveBaseUrl,
+  resolveInstallHome,
   resolveProjectRoot,
   safeDocIdFromPath,
+  stripManagedShellPath,
   writeConfig
 };

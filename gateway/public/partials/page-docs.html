@@ -1134,6 +1134,12 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <p class="hint">Those commands install the CLI from the current <span class="mono">main</span> branch. If you want to inspect the installer first, use the local-checkout path instead.</p>
                 </div>
                 <div class="doc-block">
+                  <div class="doc-label">Update or remove later</div>
+                  <pre class="doc-code">atlasrag update
+atlasrag uninstall</pre>
+                  <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, and the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists.</p>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">What the installer creates</div>
                   <ul>
                     <li>macOS/Linux wrapper: <span class="mono">~/.atlasrag/bin/atlasrag</span></li>
@@ -1411,6 +1417,11 @@ atlasrag boolean_ask \
                         <td><span class="mono">atlasrag bootstrap</span></td>
                         <td>Runs bootstrap again on an already running stack</td>
                         <td><span class="mono">atlasrag bootstrap --username your-username --tenant default</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag uninstall</span></td>
+                        <td>Removes the managed CLI install and PATH hook</td>
+                        <td><span class="mono">atlasrag uninstall --yes</span></td>
                       </tr>
                       <tr>
                         <td><span class="mono">atlasrag config show</span></td>

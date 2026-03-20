@@ -37,15 +37,24 @@ looks_like_repo() {
   [[ -f "$dir/bin/atlasrag.js" && -f "$dir/docker-compose.yml" && -d "$dir/gateway" ]]
 }
 
-append_path_once() {
+PATH_BLOCK_START="# >>> atlasrag >>>"
+PATH_BLOCK_END="# <<< atlasrag <<<"
+
+upsert_path_block() {
   local rc_file="$1"
   local line="$2"
   [[ -n "$rc_file" ]] || return 0
   mkdir -p "$(dirname "$rc_file")"
   touch "$rc_file"
-  if ! grep -Fqx "$line" "$rc_file"; then
-    printf '\n%s\n' "$line" >>"$rc_file"
-  fi
+  local filtered
+  filtered="$(mktemp)"
+  awk -v start="$PATH_BLOCK_START" -v end="$PATH_BLOCK_END" -v line="$line" '
+    $0 == start { skipping = 1; next }
+    skipping && $0 == end { skipping = 0; next }
+    !skipping && $0 != line { print }
+  ' "$rc_file" >"$filtered"
+  mv "$filtered" "$rc_file"
+  printf '\n%s\n%s\n%s\n' "$PATH_BLOCK_START" "$line" "$PATH_BLOCK_END" >>"$rc_file"
 }
 
 REPO_URL="${ATLASRAG_REPO_URL:-https://github.com/Emmanuel-Bamidele/atlasrag.git}"
@@ -143,14 +152,14 @@ PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
 if [[ "$UPDATE_PATH" -eq 1 ]]; then
   case "${SHELL##*/}" in
     zsh)
-      append_path_once "$HOME/.zshrc" "$PATH_LINE"
+      upsert_path_block "$HOME/.zshrc" "$PATH_LINE"
       ;;
     bash)
-      append_path_once "$HOME/.bashrc" "$PATH_LINE"
-      append_path_once "$HOME/.profile" "$PATH_LINE"
+      upsert_path_block "$HOME/.bashrc" "$PATH_LINE"
+      upsert_path_block "$HOME/.profile" "$PATH_LINE"
       ;;
     *)
-      append_path_once "$HOME/.profile" "$PATH_LINE"
+      upsert_path_block "$HOME/.profile" "$PATH_LINE"
       ;;
   esac
 fi

@@ -5,6 +5,9 @@ const path = require("path");
 
 const {
   buildBaseUrlCandidates,
+  buildInstallBinDir,
+  buildInstallRepoDir,
+  buildShellPathLine,
   createOnboardConfig,
   detectIngestibleFileType,
   defaultCollectionFromFolder,
@@ -13,11 +16,14 @@ const {
   isIngestibleTextPath,
   isProbablyTextBuffer,
   mergeEnvText,
+  removePathEntry,
   normalizeTcpPort,
   parseCliArgs,
   preferredBaseUrl,
+  resolveInstallHome,
   resolveBaseUrl,
-  safeDocIdFromPath
+  safeDocIdFromPath,
+  stripManagedShellPath
 } = require("../lib");
 
 async function withTempDir(fn) {
@@ -58,6 +64,15 @@ function testParseCliArgs() {
   ]);
   assert.equal(updateParsed.command, "update");
   assert.equal(updateParsed.flags["project-root"], "/tmp/atlasrag");
+
+  const uninstallParsed = parseCliArgs([
+    "uninstall",
+    "--yes",
+    "--json"
+  ]);
+  assert.equal(uninstallParsed.command, "uninstall");
+  assert.equal(uninstallParsed.flags.yes, true);
+  assert.equal(uninstallParsed.flags.json, true);
 
   const booleanAskParsed = parseCliArgs([
     "boolean_ask",
@@ -172,6 +187,43 @@ function testBaseUrlHelpers() {
   assert.equal(preferredBaseUrl("https://atlasrag.com"), "https://atlasrag.com");
 }
 
+function testInstallHelpers() {
+  const installHome = resolveInstallHome({ ATLASRAG_HOME: "/tmp/custom-atlasrag" }, "/Users/tester");
+  assert.equal(installHome, path.resolve("/tmp/custom-atlasrag"));
+  assert.equal(buildInstallBinDir(installHome), path.join(path.resolve("/tmp/custom-atlasrag"), "bin"));
+  assert.equal(buildInstallRepoDir(installHome), path.join(path.resolve("/tmp/custom-atlasrag"), "src", "atlasrag"));
+
+  const shellPathLine = buildShellPathLine("/tmp/custom-atlasrag/bin");
+  assert.equal(shellPathLine, `export PATH="${path.resolve("/tmp/custom-atlasrag/bin")}:$PATH"`);
+
+  const rcText = [
+    "export PATH=\"/usr/local/bin:$PATH\"",
+    "# >>> atlasrag >>>",
+    shellPathLine,
+    "# <<< atlasrag <<<",
+    "alias ll='ls -la'"
+  ].join("\n");
+  assert.equal(stripManagedShellPath(rcText, "/tmp/custom-atlasrag/bin"), [
+    "export PATH=\"/usr/local/bin:$PATH\"",
+    "alias ll='ls -la'"
+  ].join("\n"));
+
+  const legacyRcText = [
+    shellPathLine,
+    "export PATH=\"/usr/local/bin:$PATH\""
+  ].join("\n");
+  assert.equal(stripManagedShellPath(legacyRcText, "/tmp/custom-atlasrag/bin"), "export PATH=\"/usr/local/bin:$PATH\"");
+
+  assert.equal(
+    removePathEntry("/usr/local/bin:/tmp/custom-atlasrag/bin:/bin", "/tmp/custom-atlasrag/bin", "linux"),
+    "/usr/local/bin:/bin"
+  );
+  assert.equal(
+    removePathEntry("C:\\Windows;C:\\Users\\Test\\.atlasrag\\bin;C:\\Tools", "c:\\users\\test\\.atlasrag\\bin\\", "win32"),
+    "C:\\Windows;C:\\Tools"
+  );
+}
+
 async function main() {
   testParseCliArgs();
   testMergeEnvText();
@@ -181,6 +233,7 @@ async function main() {
   await testDocumentExtraction();
   testNormalizeTcpPort();
   testBaseUrlHelpers();
+  testInstallHelpers();
   console.log("cli helper tests passed");
 }
 

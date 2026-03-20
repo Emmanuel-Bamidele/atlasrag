@@ -90,6 +90,14 @@ Later, update an installed AtlasRAG CLI checkout with:
 atlasrag update
 ```
 
+To remove the managed CLI install later:
+
+```bash
+atlasrag uninstall
+```
+
+This removes the local wrapper, saved CLI config, installer PATH hook, and the managed checkout under `~/.atlasrag` when that checkout exists.
+
 Then run the onboarding wizard:
 
 ```bash
