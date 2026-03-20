@@ -90,6 +90,8 @@ Later, update an installed AtlasRAG CLI checkout with:
 atlasrag update
 ```
 
+For the managed install under `~/.atlasrag`, `atlasrag update` can recover from a force-pushed `origin/main` as long as the checkout is clean.
+
 To remove the managed CLI install later:
 
 ```bash

@@ -1137,6 +1137,7 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <div class="doc-label">Update or remove later</div>
                   <pre class="doc-code">atlasrag update
 atlasrag uninstall</pre>
+                  <p class="hint"><span class="mono">atlasrag update</span> updates the managed checkout under <span class="mono">~/.atlasrag</span>. If the remote <span class="mono">main</span> branch was force-pushed, the CLI can still recover as long as that managed checkout is clean.</p>
                   <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists, and for managed local self-hosted installs it also clears the local AtlasRAG Docker containers and volumes.</p>
                 </div>
                 <div class="doc-block">

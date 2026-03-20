@@ -1192,6 +1192,12 @@ function resolveUpdateTargetRoot(parsed) {
   return projectRoot;
 }
 
+function isManagedInstallCheckout(projectRoot) {
+  const installHome = resolveInstallHome(process.env);
+  const managedRepoDir = buildInstallRepoDir(installHome);
+  return path.resolve(projectRoot) === path.resolve(managedRepoDir);
+}
+
 async function ensureCleanGitWorktree(gitBin, projectRoot) {
   const result = await runCommand(gitBin, ["status", "--short"], { cwd: projectRoot });
   const lines = String(result.stdout || "")
@@ -1219,12 +1225,26 @@ async function fetchOriginMain(gitBin, projectRoot) {
   }
 }
 
+function isFastForwardOnlyPullFailure(err) {
+  const text = [
+    err?.message,
+    err?.stderr,
+    err?.stdout
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  return text.includes("not possible to fast-forward")
+    || text.includes("diverging branches can't be fast-forwarded");
+}
+
 async function handleUpdate(parsed) {
   ensureNodeVersion();
   const gitBin = ensureGitAvailable();
   const npmBin = ensureNpmAvailable();
   const projectRoot = resolveUpdateTargetRoot(parsed);
   const packageJsonPath = path.join(projectRoot, "package.json");
+  const managedCheckout = isManagedInstallCheckout(projectRoot);
 
   await ensureCleanGitWorktree(gitBin, projectRoot);
   const before = await readGitRevision(gitBin, projectRoot);
@@ -1232,7 +1252,17 @@ async function handleUpdate(parsed) {
   console.log(`Updating AtlasRAG in ${projectRoot}...`);
   await fetchOriginMain(gitBin, projectRoot);
   await runCommandEcho(gitBin, ["checkout", "main"], { cwd: projectRoot });
-  await runCommandEcho(gitBin, ["pull", "--ff-only", "origin", "main"], { cwd: projectRoot });
+  let resetApplied = false;
+  try {
+    await runCommandEcho(gitBin, ["pull", "--ff-only", "origin", "main"], { cwd: projectRoot });
+  } catch (err) {
+    if (!managedCheckout || !isFastForwardOnlyPullFailure(err)) {
+      throw err;
+    }
+    console.log("origin/main was force-updated; resetting the clean managed checkout to match the remote branch...");
+    await runCommandEcho(gitBin, ["reset", "--hard", "origin/main"], { cwd: projectRoot });
+    resetApplied = true;
+  }
 
   if (fs.existsSync(packageJsonPath)) {
     await runCommandEcho(npmBin, ["install"], {
@@ -1249,6 +1279,9 @@ async function handleUpdate(parsed) {
   ];
   if (before === after) {
     summaryRows.push("git: already up to date");
+  }
+  if (resetApplied) {
+    summaryRows.push("git: reset the clean managed checkout to origin/main after a force-pushed remote update");
   }
   if (fs.existsSync(path.join(projectRoot, "docker-compose.yml"))) {
     summaryRows.push("If you self-host locally, run: atlasrag start --build");
