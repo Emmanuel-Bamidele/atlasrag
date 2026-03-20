@@ -92,6 +92,11 @@ if ! "$NODE_BIN" -e 'process.exit(Number.parseInt(process.versions.node.split(".
   exit 1
 fi
 
+NPM_BIN="$(find_bin npm "$(dirname "$NODE_BIN")/npm" /usr/local/bin/npm /opt/homebrew/bin/npm)" || {
+  printf 'npm is required to install AtlasRAG CLI dependencies.\n' >&2
+  exit 1
+}
+
 GIT_BIN="$(find_bin git /usr/bin/git /usr/local/bin/git /opt/homebrew/bin/git)" || {
   printf 'git is required to install AtlasRAG from source.\n' >&2
   exit 1
@@ -119,6 +124,11 @@ else
     "$GIT_BIN" clone --depth=1 "$REPO_URL" "$REPO_DIR"
   fi
 fi
+
+(
+  cd "$REPO_DIR"
+  PATH="$(dirname "$NODE_BIN")${PATH:+:$PATH}" "$NPM_BIN" install
+)
 
 mkdir -p "$BIN_DIR"
 WRAPPER_PATH="$BIN_DIR/atlasrag"
@@ -158,6 +168,7 @@ If this is a new shell, make sure this path is available:
 
 Recommended next commands:
   atlasrag doctor
+  atlasrag update
   atlasrag onboard
   atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."
   atlasrag ask --question "What does AtlasRAG store?"

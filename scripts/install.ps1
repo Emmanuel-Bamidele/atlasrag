@@ -55,6 +55,18 @@ if ($LASTEXITCODE -ne 0) {
   throw "Node.js 18+ is required. Found: $(& $nodeBin -v)"
 }
 
+$nodeDir = Split-Path -Parent $nodeBin
+$npmBin = Resolve-Bin @(
+  "npm",
+  (Join-Path $nodeDir "npm.cmd"),
+  (Join-Path $nodeDir "npm"),
+  "$env:ProgramFiles\nodejs\npm.cmd",
+  "${env:ProgramFiles(x86)}\nodejs\npm.cmd"
+)
+if (-not $npmBin) {
+  throw "npm is required to install AtlasRAG CLI dependencies."
+}
+
 $gitBin = Resolve-Bin @(
   "git",
   "$env:ProgramFiles\Git\cmd\git.exe",
@@ -100,6 +112,17 @@ if ($RepoDir) {
   }
 }
 
+$previousPath = $env:Path
+try {
+  $env:Path = if ($previousPath) { "$nodeDir;$previousPath" } else { $nodeDir }
+  Push-Location $RepoDir
+  & $npmBin install
+  if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+} finally {
+  Pop-Location
+  $env:Path = $previousPath
+}
+
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $ps1Wrapper = Join-Path $binDir "atlasrag.ps1"
 $cmdWrapper = Join-Path $binDir "atlasrag.cmd"
@@ -142,6 +165,7 @@ Write-Host ""
 Write-Host "Open a new terminal if \`"atlasrag\`" is not available yet."
 Write-Host "Recommended next commands:"
 Write-Host "  atlasrag doctor"
+Write-Host "  atlasrag update"
 Write-Host "  atlasrag onboard"
 Write-Host '  atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."'
 Write-Host '  atlasrag ask --question "What does AtlasRAG store?"'

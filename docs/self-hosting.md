@@ -270,7 +270,7 @@ This removes:
 
 For a self-hosted upgrade:
 
-1. pull the new repo version
+1. update the installed checkout with `atlasrag update`, or pull the new repo version manually
 2. review changes to `.env.example`, `docker-compose.yml`, and `README.md`
 3. confirm your secrets and runtime env are still correct
 4. redeploy with:

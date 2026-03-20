@@ -7,6 +7,7 @@ const { spawn, spawnSync } = require("child_process");
 
 const { AtlasRAGClient } = require("../sdk/node/src/client");
 const {
+  PACKAGE_ROOT,
   CONFIG_FILE,
   backupFileIfExists,
   boolFromFlag,
@@ -35,6 +36,7 @@ function printHelp() {
 
 Usage:
   atlasrag onboard [--external-postgres] [--project-root PATH] [--force]
+  atlasrag update [--project-root PATH]
   atlasrag start [--build]
   atlasrag stop [--down]
   atlasrag status [--json]
@@ -86,13 +88,39 @@ const EXECUTABLE_CANDIDATES = {
     "/usr/local/bin/docker",
     "/opt/homebrew/bin/docker",
     "docker"
+  ].filter(Boolean),
+  git: [
+    process.env.ATLASRAG_GIT_BIN,
+    "/usr/bin/git",
+    "/usr/local/bin/git",
+    "/opt/homebrew/bin/git",
+    "git"
+  ].filter(Boolean),
+  npm: [
+    process.env.ATLASRAG_NPM_BIN,
+    path.join(path.dirname(process.execPath), process.platform === "win32" ? "npm.cmd" : "npm"),
+    "/usr/local/bin/npm",
+    "/opt/homebrew/bin/npm",
+    "npm"
   ].filter(Boolean)
 };
 
-function resolveExecutable(name, args = ["--version"]) {
+function buildEnvWithNodePath(baseEnv = process.env) {
+  const sep = process.platform === "win32" ? ";" : ":";
+  const nodeDir = path.dirname(process.execPath);
+  const env = { ...baseEnv };
+  const currentPath = String(env.PATH || "");
+  const parts = currentPath ? currentPath.split(sep).filter(Boolean) : [];
+  if (!parts.includes(nodeDir)) parts.unshift(nodeDir);
+  env.PATH = parts.join(sep);
+  return env;
+}
+
+function resolveExecutable(name, args = ["--version"], options = {}) {
   const candidates = EXECUTABLE_CANDIDATES[name] || [name];
+  const env = options.env || process.env;
   for (const candidate of candidates) {
-    const result = spawnSync(candidate, args, { encoding: "utf8" });
+    const result = spawnSync(candidate, args, { encoding: "utf8", env });
     if (result.status === 0) return candidate;
     if (result.error && result.error.code === "ENOENT") continue;
   }
@@ -143,6 +171,24 @@ function ensureDockerAvailable() {
   }
 }
 
+function ensureGitAvailable() {
+  const gitBin = resolveExecutable("git", ["--version"]);
+  if (!gitBin) {
+    throw new Error("git is required but was not found on PATH.");
+  }
+  return gitBin;
+}
+
+function ensureNpmAvailable() {
+  const npmBin = resolveExecutable("npm", ["--version"], {
+    env: buildEnvWithNodePath()
+  });
+  if (!npmBin) {
+    throw new Error("npm is required but was not found alongside the current Node.js installation.");
+  }
+  return npmBin;
+}
+
 function runCommand(command, args, options = {}) {
   const capture = options.capture !== false;
   return new Promise((resolve, reject) => {
@@ -182,6 +228,13 @@ function runCommand(command, args, options = {}) {
       reject(err);
     });
   });
+}
+
+async function runCommandEcho(command, args, options = {}) {
+  const result = await runCommand(command, args, { ...options, capture: true });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return result;
 }
 
 function buildComposeArgs(ctx) {
@@ -847,6 +900,90 @@ function resolveComposeFromSaved(parsed) {
   ensureFileExists(ctx.composeFile, "Compose file");
   ensureFileExists(ctx.envFile, "Env file");
   return { saved, ctx };
+}
+
+function looksLikeAtlasragCheckout(projectRoot) {
+  return fs.existsSync(path.join(projectRoot, "bin", "atlasrag.js"))
+    && fs.existsSync(path.join(projectRoot, "docker-compose.yml"))
+    && fs.existsSync(path.join(projectRoot, "gateway"));
+}
+
+function resolveUpdateTargetRoot(parsed) {
+  const explicitRoot = getFlag(parsed, "project-root");
+  const projectRoot = explicitRoot
+    ? path.resolve(String(explicitRoot))
+    : PACKAGE_ROOT;
+  if (!looksLikeAtlasragCheckout(projectRoot)) {
+    throw new Error(`Not an AtlasRAG checkout: ${projectRoot}`);
+  }
+  if (!fs.existsSync(path.join(projectRoot, ".git"))) {
+    throw new Error(`Git metadata not found at ${projectRoot}. AtlasRAG update requires a git checkout.`);
+  }
+  return projectRoot;
+}
+
+async function ensureCleanGitWorktree(gitBin, projectRoot) {
+  const result = await runCommand(gitBin, ["status", "--short"], { cwd: projectRoot });
+  const lines = String(result.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+  if (!lines.length) return;
+  const preview = lines.slice(0, 10).join("\n");
+  const suffix = lines.length > 10 ? `\n... and ${lines.length - 10} more` : "";
+  throw new Error(
+    `Update requires a clean git worktree at ${projectRoot}. Commit, stash, or discard local changes first.\n${preview}${suffix}`
+  );
+}
+
+async function readGitRevision(gitBin, projectRoot, ref = "HEAD") {
+  const result = await runCommand(gitBin, ["rev-parse", "--short", ref], { cwd: projectRoot });
+  return String(result.stdout || "").trim();
+}
+
+async function fetchOriginMain(gitBin, projectRoot) {
+  try {
+    await runCommandEcho(gitBin, ["fetch", "--depth=1", "origin", "main"], { cwd: projectRoot });
+  } catch {
+    await runCommandEcho(gitBin, ["fetch", "origin"], { cwd: projectRoot });
+  }
+}
+
+async function handleUpdate(parsed) {
+  ensureNodeVersion();
+  const gitBin = ensureGitAvailable();
+  const npmBin = ensureNpmAvailable();
+  const projectRoot = resolveUpdateTargetRoot(parsed);
+  const packageJsonPath = path.join(projectRoot, "package.json");
+
+  await ensureCleanGitWorktree(gitBin, projectRoot);
+  const before = await readGitRevision(gitBin, projectRoot);
+
+  console.log(`Updating AtlasRAG in ${projectRoot}...`);
+  await fetchOriginMain(gitBin, projectRoot);
+  await runCommandEcho(gitBin, ["checkout", "main"], { cwd: projectRoot });
+  await runCommandEcho(gitBin, ["pull", "--ff-only", "origin", "main"], { cwd: projectRoot });
+
+  if (fs.existsSync(packageJsonPath)) {
+    await runCommandEcho(npmBin, ["install"], {
+      cwd: projectRoot,
+      env: buildEnvWithNodePath()
+    });
+  }
+
+  const after = await readGitRevision(gitBin, projectRoot);
+  const summaryRows = [
+    `project root: ${projectRoot}`,
+    `before: ${before}`,
+    `after: ${after}`
+  ];
+  if (before === after) {
+    summaryRows.push("git: already up to date");
+  }
+  if (fs.existsSync(path.join(projectRoot, "docker-compose.yml"))) {
+    summaryRows.push("If you self-host locally, run: atlasrag start --build");
+  }
+  printSummary("AtlasRAG update complete.", summaryRows);
 }
 
 async function handleStart(parsed) {
@@ -1572,6 +1709,9 @@ async function main() {
       return;
     case "onboard":
       await handleOnboard(parsed);
+      return;
+    case "update":
+      await handleUpdate(parsed);
       return;
     case "start":
       await handleStart(parsed);

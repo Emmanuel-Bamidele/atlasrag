@@ -50,6 +50,14 @@ function testParseCliArgs() {
   assert.equal(parsed.flags.sync, true);
   assert.equal(parsed.flags.yes, true);
   assert.deepEqual(parsed.positionals, ["write", "ignored-positional"]);
+
+  const updateParsed = parseCliArgs([
+    "update",
+    "--project-root",
+    "/tmp/atlasrag"
+  ]);
+  assert.equal(updateParsed.command, "update");
+  assert.equal(updateParsed.flags["project-root"], "/tmp/atlasrag");
 }
 
 function testMergeEnvText() {

@@ -84,6 +84,12 @@ Or the one-line remote version:
 irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.ps1 | iex
 ```
 
+Later, update an installed AtlasRAG CLI checkout with:
+
+```bash
+atlasrag update
+```
+
 Then run the onboarding wizard:
 
 ```bash
