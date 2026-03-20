@@ -6,8 +6,10 @@ const path = require("path");
 const {
   buildBaseUrlCandidates,
   createOnboardConfig,
+  detectIngestibleFileType,
   defaultCollectionFromFolder,
   detectProjectRoot,
+  extractDocumentText,
   isIngestibleTextPath,
   isProbablyTextBuffer,
   mergeEnvText,
@@ -18,10 +20,10 @@ const {
   safeDocIdFromPath
 } = require("../lib");
 
-function withTempDir(fn) {
+async function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlasrag-cli-"));
   try {
-    fn(dir);
+    await fn(dir);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -63,7 +65,7 @@ function testMergeEnvText() {
 }
 
 function testDetectProjectRoot() {
-  withTempDir((dir) => {
+  return withTempDir(async (dir) => {
     const root = path.join(dir, "atlasrag");
     const nested = path.join(root, "gateway", "public");
     fs.mkdirSync(nested, { recursive: true });
@@ -101,9 +103,36 @@ function testFolderHelpers() {
   assert.equal(defaultCollectionFromFolder("/tmp/customer-support"), "customer-support");
   assert.equal(isIngestibleTextPath("/tmp/notes.md"), true);
   assert.equal(isIngestibleTextPath("/tmp/manual.pdf"), false);
+  assert.equal(detectIngestibleFileType("/tmp/manual.pdf"), "pdf");
+  assert.equal(detectIngestibleFileType("/tmp/report.docx"), "docx");
+  assert.equal(detectIngestibleFileType("/tmp/notes.md"), "text");
   assert.equal(safeDocIdFromPath("guides/intro file.md"), "guides__intro-file.md");
   assert.equal(isProbablyTextBuffer(Buffer.from("hello world", "utf8")), true);
   assert.equal(isProbablyTextBuffer(Buffer.from([0, 1, 2, 3])), false);
+}
+
+async function testDocumentExtraction() {
+  await withTempDir(async (dir) => {
+    const textPath = path.join(dir, "notes.md");
+    const pdfPath = path.join(dir, "manual.pdf");
+    const docxPath = path.join(dir, "resume.docx");
+
+    fs.writeFileSync(textPath, "Hello from AtlasRAG.\n", "utf8");
+    fs.writeFileSync(pdfPath, Buffer.from("%PDF-test", "utf8"));
+    fs.writeFileSync(docxPath, Buffer.from("PK-test", "utf8"));
+
+    assert.equal(await extractDocumentText(textPath), "Hello from AtlasRAG.\n");
+
+    const pdfText = await extractDocumentText(pdfPath, {
+      extractPdfText: async () => "PDF content\n\nwith spacing"
+    });
+    assert.equal(pdfText, "PDF content\n\nwith spacing");
+
+    const docxText = await extractDocumentText(docxPath, {
+      extractDocxText: async () => "DOCX content\r\n\r\nwith spacing"
+    });
+    assert.equal(docxText, "DOCX content\n\nwith spacing");
+  });
 }
 
 function testNormalizeTcpPort() {
@@ -125,15 +154,19 @@ function testBaseUrlHelpers() {
   assert.equal(preferredBaseUrl("https://atlasrag.com"), "https://atlasrag.com");
 }
 
-function main() {
+async function main() {
   testParseCliArgs();
   testMergeEnvText();
-  testDetectProjectRoot();
+  await testDetectProjectRoot();
   testCreateOnboardConfig();
   testFolderHelpers();
+  await testDocumentExtraction();
   testNormalizeTcpPort();
   testBaseUrlHelpers();
   console.log("cli helper tests passed");
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

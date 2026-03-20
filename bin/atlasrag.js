@@ -14,8 +14,8 @@ const {
   buildComposeContext,
   createOnboardConfig,
   defaultCollectionFromFolder,
-  isIngestibleTextPath,
-  isProbablyTextBuffer,
+  detectIngestibleFileType,
+  extractDocumentText,
   maskSecret,
   mergeEnvText,
   parseCliArgs,
@@ -1050,12 +1050,12 @@ async function handleDoctor(parsed) {
   }
 }
 
-function getTextInput(parsed) {
+async function getTextInput(parsed) {
   const direct = getFlag(parsed, "text");
   if (direct && direct !== true) return String(direct);
   const filePath = getFlag(parsed, "file");
   if (filePath && filePath !== true) {
-    return fs.readFileSync(path.resolve(String(filePath)), "utf8");
+    return extractDocumentText(path.resolve(String(filePath)));
   }
   if (!process.stdin.isTTY) {
     return fs.readFileSync(0, "utf8");
@@ -1095,7 +1095,7 @@ function walkFiles(rootDir) {
   return out;
 }
 
-function collectFolderDocuments(folderPath) {
+async function collectFolderDocuments(folderPath) {
   const rootDir = path.resolve(String(folderPath || "").trim());
   if (!fs.existsSync(rootDir)) {
     throw new Error(`Folder not found: ${rootDir}`);
@@ -1111,14 +1111,18 @@ function collectFolderDocuments(folderPath) {
 
   for (const absPath of files) {
     const relPath = path.relative(rootDir, absPath);
-    if (!isIngestibleTextPath(absPath)) {
+    const fileType = detectIngestibleFileType(absPath);
+    if (fileType === "unsupported") {
       skipped.push({ path: relPath, reason: "unsupported extension" });
       continue;
     }
 
-    const raw = fs.readFileSync(absPath);
-    if (!isProbablyTextBuffer(raw)) {
-      skipped.push({ path: relPath, reason: "binary or non-text content" });
+    let text = "";
+    try {
+      text = await extractDocumentText(absPath);
+    } catch (error) {
+      const detail = error && error.message ? error.message : "failed to extract text";
+      skipped.push({ path: relPath, reason: detail });
       continue;
     }
 
@@ -1131,7 +1135,7 @@ function collectFolderDocuments(folderPath) {
       absPath,
       relPath,
       docId,
-      text: raw.toString("utf8")
+      text
     });
   }
 
@@ -1293,7 +1297,7 @@ async function handleDocsReplace(parsed) {
     throw new Error("docs replace requires --doc-id ID.");
   }
   const url = String(getFlag(parsed, "url") || "").trim();
-  const text = getTextInput(parsed).trim();
+  const text = (await getTextInput(parsed)).trim();
   if (url && text) {
     throw new Error("docs replace accepts either --url or text input, not both.");
   }
@@ -1344,9 +1348,9 @@ async function handleWrite(parsed) {
       throw new Error("write --folder cannot be combined with --doc-id, --text, --file, --url, or piped stdin.");
     }
 
-    const { rootDir, accepted, skipped } = collectFolderDocuments(folder);
+    const { rootDir, accepted, skipped } = await collectFolderDocuments(folder);
     if (!accepted.length) {
-      throw new Error("No acceptable text files were found in the folder.");
+      throw new Error("No supported files were found in the folder. AtlasRAG CLI folder ingest accepts text, PDF, and DOCX files.");
     }
 
     const collection = String(getFlag(parsed, "collection") || defaultCollectionFromFolder(rootDir)).trim();
@@ -1437,7 +1441,7 @@ async function handleWrite(parsed) {
     throw new Error("write requires --doc-id, or use --folder PATH.");
   }
   const url = String(getFlag(parsed, "url") || "").trim();
-  const text = getTextInput(parsed).trim();
+  const text = (await getTextInput(parsed)).trim();
   if (url && text) {
     throw new Error("write accepts either --url or text input, not both.");
   }

@@ -43,6 +43,10 @@ const INGESTIBLE_TEXT_EXTENSIONS = new Set([
   ".bash",
   ".zsh"
 ]);
+const INGESTIBLE_BINARY_EXTENSIONS = new Set([
+  ".pdf",
+  ".docx"
+]);
 const BOOLEAN_FLAGS = new Set([
   "build",
   "down",
@@ -252,6 +256,14 @@ function isIngestibleTextPath(filePath) {
   return INGESTIBLE_TEXT_EXTENSIONS.has(ext);
 }
 
+function detectIngestibleFileType(filePath) {
+  const ext = path.extname(String(filePath || "")).toLowerCase();
+  if (INGESTIBLE_TEXT_EXTENSIONS.has(ext)) return "text";
+  if (ext === ".pdf") return "pdf";
+  if (ext === ".docx") return "docx";
+  return "unsupported";
+}
+
 function isProbablyTextBuffer(buffer) {
   if (!buffer || !buffer.length) return true;
   const sample = buffer.subarray(0, Math.min(buffer.length, 2048));
@@ -261,6 +273,74 @@ function isProbablyTextBuffer(buffer) {
     if (byte < 7 || (byte > 14 && byte < 32)) weird += 1;
   }
   return weird / sample.length < 0.15;
+}
+
+function normalizeExtractedText(value) {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function requireCliDependency(name) {
+  try {
+    return require(name);
+  } catch (error) {
+    if (error && error.code === "MODULE_NOT_FOUND") {
+      throw new Error(`Missing dependency "${name}". Run \`npm install\` in the AtlasRAG project root.`);
+    }
+    throw error;
+  }
+}
+
+async function extractPdfText(rawBuffer, filePath, options = {}) {
+  const extractPdf = options.extractPdfText || (async (buffer) => {
+    const pdfParse = requireCliDependency("pdf-parse");
+    const result = await pdfParse(buffer);
+    return result?.text || "";
+  });
+
+  try {
+    return normalizeExtractedText(await extractPdf(rawBuffer, { filePath }));
+  } catch (error) {
+    throw new Error(`Failed to extract PDF text from ${path.basename(filePath)}: ${error.message}`);
+  }
+}
+
+async function extractDocxText(rawBuffer, filePath, options = {}) {
+  const extractDocx = options.extractDocxText || (async (buffer) => {
+    const mammoth = requireCliDependency("mammoth");
+    const result = await mammoth.extractRawText({ buffer });
+    return result?.value || "";
+  });
+
+  try {
+    return normalizeExtractedText(await extractDocx(rawBuffer, { filePath }));
+  } catch (error) {
+    throw new Error(`Failed to extract DOCX text from ${path.basename(filePath)}: ${error.message}`);
+  }
+}
+
+async function extractDocumentText(filePath, options = {}) {
+  const absPath = path.resolve(String(filePath || "").trim());
+  const fileType = detectIngestibleFileType(absPath);
+  if (fileType === "unsupported") {
+    throw new Error(`Unsupported file type: ${path.extname(absPath) || "(no extension)"}`);
+  }
+
+  const raw = fs.readFileSync(absPath);
+  if (fileType === "text") {
+    if (!isProbablyTextBuffer(raw)) {
+      throw new Error(`Binary or non-text content is not supported for ${path.basename(absPath)}`);
+    }
+    return raw.toString("utf8");
+  }
+  if (fileType === "pdf") {
+    return extractPdfText(raw, absPath, options);
+  }
+  return extractDocxText(raw, absPath, options);
 }
 
 function safeDocIdFromPath(relativePath) {
@@ -338,13 +418,17 @@ module.exports = {
   buildComposeContext,
   createOnboardConfig,
   defaultCollectionFromFolder,
+  detectIngestibleFileType,
   detectProjectRoot,
+  extractDocumentText,
   formatEnvValue,
+  INGESTIBLE_BINARY_EXTENSIONS,
   INGESTIBLE_TEXT_EXTENSIONS,
   isIngestibleTextPath,
   isProbablyTextBuffer,
   maskSecret,
   mergeEnvText,
+  normalizeExtractedText,
   normalizeCommandName,
   normalizeTcpPort,
   parseCliArgs,

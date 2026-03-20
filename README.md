@@ -133,7 +133,7 @@ atlasrag logs
 atlasrag doctor
 ```
 
-You can also ingest a whole folder of acceptable text files. If you omit `--collection`, the folder name becomes the collection name:
+You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
 ```bash
 atlasrag write --folder ./customer-support

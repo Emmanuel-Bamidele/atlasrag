@@ -83,11 +83,11 @@ atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Ingest a folder and use the folder name as the collection</div>
-                  <p>If you point the CLI at a folder, it ingests the acceptable text files inside it. By default, the folder name becomes the collection name.</p>
+                  <p>If you point the CLI at a folder, it ingests supported files inside it. Plain text files are read directly, while <span class="mono">.pdf</span> and <span class="mono">.docx</span> files are extracted to text locally before indexing. By default, the folder name becomes the collection name.</p>
                   <pre class="doc-code">atlasrag write --folder ./customer-support
 atlasrag search --q "refund policy" --collection customer-support --k 5
 atlasrag ask --question "What is the refund policy?" --collection customer-support</pre>
-                  <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported or binary files are skipped.</p>
+                  <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported files are skipped. Legacy <span class="mono">.doc</span> files still need conversion to <span class="mono">.docx</span> first.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Use AtlasRAG in your app or script on this machine</div>
@@ -289,8 +289,8 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   All versioned routes live under <span class="mono">/v1</span>; legacy routes remain as aliases.
                 </p>
                 <p class="hint">
-                  File uploads are currently a Playground UI capability. Public ingest APIs expect <span class="mono">docId + text</span>
-                  JSON payloads; use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
+                  Public ingest APIs expect <span class="mono">docId + text</span>
+                  JSON payloads; the Playground UI and CLI can extract supported files like <span class="mono">.pdf</span> and <span class="mono">.docx</span> to text locally first. Use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
                 </p>
                 <p class="hint">
                   <span class="mono">X-OpenAI-API-Key</span> is supported on sync routes such as docs, search, ask, memory write, and memory recall.
