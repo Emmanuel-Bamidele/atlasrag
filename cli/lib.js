@@ -134,6 +134,34 @@ function readJson(filePath, fallback = null) {
   }
 }
 
+function parseEnvAssignments(text) {
+  const assignments = {};
+  const lines = String(text || "").split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = /^\s*([A-Z0-9_]+)\s*=(.*)$/i.exec(rawLine);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2] ?? "";
+    if (value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    } else {
+      value = value.replace(/\s+#.*$/u, "").trim();
+    }
+    assignments[key] = value;
+  }
+  return assignments;
+}
+
+function readEnvAssignments(filePath) {
+  try {
+    return parseEnvAssignments(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 function readConfig() {
   return readJson(CONFIG_FILE, {}) || {};
 }
@@ -504,10 +532,12 @@ module.exports = {
   normalizePathForCompare,
   normalizeTcpPort,
   parseCliArgs,
+  parseEnvAssignments,
   preferredBaseUrl,
   randomPassword,
   randomSecret,
   readConfig,
+  readEnvAssignments,
   readJson,
   removePathEntry,
   resolveBaseUrl,

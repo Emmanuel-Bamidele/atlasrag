@@ -14,16 +14,18 @@ const {
   detectProjectRoot,
   extractDocumentText,
   isIngestibleTextPath,
-  isProbablyTextBuffer,
-  mergeEnvText,
-  removePathEntry,
-  normalizeTcpPort,
-  parseCliArgs,
-  preferredBaseUrl,
-  resolveInstallHome,
-  resolveBaseUrl,
-  safeDocIdFromPath,
-  stripManagedShellPath
+    isProbablyTextBuffer,
+    mergeEnvText,
+    removePathEntry,
+    normalizeTcpPort,
+    parseCliArgs,
+    parseEnvAssignments,
+    preferredBaseUrl,
+    readEnvAssignments,
+    resolveInstallHome,
+    resolveBaseUrl,
+    safeDocIdFromPath,
+    stripManagedShellPath
 } = require("../lib");
 
 async function withTempDir(fn) {
@@ -95,6 +97,25 @@ function testMergeEnvText() {
   assert.match(merged, /^OPENAI_API_KEY=sk-test/m);
   assert.match(merged, /^JWT_SECRET=change_me/m);
   assert.match(merged, /^COOKIE_SECRET="cookie value"$/m);
+}
+
+function testEnvAssignmentHelpers() {
+  const parsed = parseEnvAssignments([
+    "# comment",
+    "POSTGRES_PASSWORD=secret-value",
+    "JWT_SECRET=\"quoted value\"",
+    "PUBLIC_BASE_URL=http://localhost:3000 # inline comment"
+  ].join("\n"));
+  assert.equal(parsed.POSTGRES_PASSWORD, "secret-value");
+  assert.equal(parsed.JWT_SECRET, "quoted value");
+  assert.equal(parsed.PUBLIC_BASE_URL, "http://localhost:3000");
+
+  return withTempDir(async (dir) => {
+    const envPath = path.join(dir, ".env");
+    fs.writeFileSync(envPath, "COOKIE_SECRET=cookie\n", "utf8");
+    const fileParsed = readEnvAssignments(envPath);
+    assert.equal(fileParsed.COOKIE_SECRET, "cookie");
+  });
 }
 
 function testDetectProjectRoot() {
@@ -227,6 +248,7 @@ function testInstallHelpers() {
 async function main() {
   testParseCliArgs();
   testMergeEnvText();
+  await testEnvAssignmentHelpers();
   await testDetectProjectRoot();
   testCreateOnboardConfig();
   testFolderHelpers();

@@ -30,6 +30,7 @@ const {
   randomPassword,
   randomSecret,
   readConfig,
+  readEnvAssignments,
   removePathEntry,
   resolveInstallHome,
   resolveBaseUrl,
@@ -712,6 +713,9 @@ async function handleOnboard(parsed) {
   const nonInteractive = boolFromFlag(getFlag(parsed, "non-interactive"), false);
   const externalPostgres = boolFromFlag(getFlag(parsed, "external-postgres"), false);
   const projectRoot = resolveProjectRoot(saved, getFlag(parsed, "project-root"));
+  const outputName = externalPostgres ? ".env.external-postgres" : ".env";
+  const existingEnvPath = path.join(projectRoot, outputName);
+  const existingEnv = readEnvAssignments(existingEnvPath);
   const gatewayPort = await resolvePromptValue({
     parsed,
     flags: { nonInteractive },
@@ -756,10 +760,11 @@ async function handleOnboard(parsed) {
     required: true
   });
 
-  const jwtSecret = randomSecret(32);
-  const cookieSecret = randomSecret(32);
+  const jwtSecret = existingEnv.JWT_SECRET || randomSecret(32);
+  const cookieSecret = existingEnv.COOKIE_SECRET || randomSecret(32);
   const baseUrl = resolveBaseUrl(gatewayPort);
   let envUpdates = {
+    ...existingEnv,
     OPENAI_API_KEY: openAiApiKey,
     JWT_SECRET: jwtSecret,
     COOKIE_SECRET: cookieSecret,
@@ -827,7 +832,7 @@ async function handleOnboard(parsed) {
   } else {
     envUpdates = {
       ...envUpdates,
-      POSTGRES_PASSWORD: randomPassword(24)
+      POSTGRES_PASSWORD: existingEnv.POSTGRES_PASSWORD || randomPassword(24)
     };
   }
 
@@ -966,6 +971,7 @@ function resolveWindowsShellBin() {
 }
 
 function resolveUninstallPlan() {
+  const saved = readConfig();
   const installHome = resolveInstallHome(process.env);
   const binDir = buildInstallBinDir(installHome);
   const defaultRepoDir = buildInstallRepoDir(installHome);
@@ -973,10 +979,21 @@ function resolveUninstallPlan() {
   const repoDir = looksLikeAtlasragCheckout(packageRoot) && isSameOrChildPath(installHome, packageRoot)
     ? packageRoot
     : (looksLikeAtlasragCheckout(defaultRepoDir) ? defaultRepoDir : "");
+  const useSavedPaths = repoDir
+    && saved.projectRoot
+    && path.resolve(String(saved.projectRoot)) === path.resolve(repoDir);
+  const composeCtx = repoDir
+    ? buildComposeContext(repoDir, {
+        composeFile: useSavedPaths ? (saved.composeFile || "docker-compose.yml") : "docker-compose.yml",
+        envFile: useSavedPaths ? (saved.envFile || ".env") : ".env"
+      })
+    : null;
   return {
+    saved,
     installHome,
     binDir,
     repoDir,
+    composeCtx,
     wrappers: [
       path.join(binDir, "atlasrag"),
       path.join(binDir, "atlasrag.ps1"),
@@ -1037,6 +1054,45 @@ foreach ($part in $parts) {
     ok: true,
     detail: `Removed ${binDir} from the user PATH. Open a new terminal for the change to take effect.`
   };
+}
+
+async function removeManagedDockerState(plan) {
+  if (!plan.composeCtx) {
+    return {
+      ok: true,
+      removed: false,
+      detail: "No managed local compose stack was detected."
+    };
+  }
+  if (!fs.existsSync(plan.composeCtx.composeFile) || !fs.existsSync(plan.composeCtx.envFile)) {
+    return {
+      ok: true,
+      removed: false,
+      detail: "No managed compose/env files were found for Docker cleanup."
+    };
+  }
+  const dockerBin = resolveExecutable("docker", ["--version"]);
+  if (!dockerBin) {
+    return {
+      ok: false,
+      removed: false,
+      detail: "Docker is not available; local AtlasRAG containers and volumes may still exist."
+    };
+  }
+  try {
+    await runCompose(plan.composeCtx, ["down", "-v"], { capture: false });
+    return {
+      ok: true,
+      removed: true,
+      detail: `Removed local AtlasRAG containers and volumes for ${plan.composeCtx.projectRoot}.`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      removed: false,
+      detail: `Could not remove local AtlasRAG Docker state automatically: ${String(error.message || error)}`
+    };
+  }
 }
 
 function schedulePosixCleanup(plan) {
@@ -1188,6 +1244,9 @@ async function handleUninstall(parsed) {
   if (plan.repoDir) {
     targets.splice(1, 0, `managed checkout at ${plan.repoDir}`);
   }
+  if (plan.composeCtx) {
+    targets.splice(plan.repoDir ? 2 : 1, 0, `local Docker containers and volumes for ${plan.composeCtx.projectRoot}`);
+  }
 
   await ensureConfirmedAction(
     parsed,
@@ -1206,6 +1265,7 @@ async function handleUninstall(parsed) {
           ? `Updated shell startup files: ${touchedShellFiles.join(", ")}`
           : "No shell startup files needed changes."
       };
+  const dockerCleanup = await removeManagedDockerState(plan);
 
   const removedWrappers = plan.wrappers.filter((filePath) => removeIfExists(filePath));
   const removedConfig = removeIfExists(plan.configFile);
@@ -1235,6 +1295,7 @@ async function handleUninstall(parsed) {
     removedConfig,
     removedRepoDir: plan.repoDir || null,
     deferredRepoCleanup: deferredCleanup,
+    dockerCleanup,
     path: pathUpdate
   };
 
@@ -1251,6 +1312,7 @@ async function handleUninstall(parsed) {
     removedConfig
       ? `config removed: ${plan.configFile}`
       : `config removed: none found at ${plan.configFile}`,
+    dockerCleanup.detail,
     pathUpdate.detail
   ];
   if (plan.repoDir) {

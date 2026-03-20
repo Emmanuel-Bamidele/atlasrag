@@ -96,7 +96,7 @@ To remove the managed CLI install later:
 atlasrag uninstall
 ```
 
-This removes the local wrapper, saved CLI config, installer PATH hook, and the managed checkout under `~/.atlasrag` when that checkout exists.
+This removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under `~/.atlasrag` when that checkout exists, and for managed local self-hosted installs it also runs `docker compose down -v` to clear the local AtlasRAG containers and volumes.
 
 Then run the onboarding wizard:
 

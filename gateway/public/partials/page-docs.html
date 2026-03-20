@@ -1137,7 +1137,7 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <div class="doc-label">Update or remove later</div>
                   <pre class="doc-code">atlasrag update
 atlasrag uninstall</pre>
-                  <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, and the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists.</p>
+                  <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists, and for managed local self-hosted installs it also clears the local AtlasRAG Docker containers and volumes.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What the installer creates</div>
@@ -1420,7 +1420,7 @@ atlasrag boolean_ask \
                       </tr>
                       <tr>
                         <td><span class="mono">atlasrag uninstall</span></td>
-                        <td>Removes the managed CLI install and PATH hook</td>
+                        <td>Removes the managed CLI install, PATH hook, and managed local Docker state</td>
                         <td><span class="mono">atlasrag uninstall --yes</span></td>
                       </tr>
                       <tr>
