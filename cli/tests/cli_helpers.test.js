@@ -150,7 +150,22 @@ function testCreateOnboardConfig() {
   assert.equal(config.adminUsername, "admin");
   assert.equal(config.apiKey, "atrg_secret");
   assert.equal(config.openAiApiKey, "sk-test");
+  assert.equal(config.onboardingPending, false);
   assert.ok(config.updatedAt);
+
+  const pending = createOnboardConfig({
+    projectRoot: "/tmp/atlasrag",
+    mode: "bundled-postgres",
+    envFile: ".env",
+    composeFile: "docker-compose.yml",
+    baseUrl: resolveBaseUrl("4100"),
+    tenantId: "default",
+    adminUsername: "admin",
+    apiKey: "",
+    openAiApiKey: "sk-test",
+    onboardingPending: true
+  });
+  assert.equal(pending.onboardingPending, true);
 }
 
 function testFolderHelpers() {

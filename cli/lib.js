@@ -484,7 +484,8 @@ function createOnboardConfig({
   tenantId,
   adminUsername,
   apiKey,
-  openAiApiKey
+  openAiApiKey,
+  onboardingPending = false
 }) {
   return {
     version: 1,
@@ -497,6 +498,7 @@ function createOnboardConfig({
     adminUsername,
     apiKey,
     openAiApiKey: openAiApiKey || "",
+    onboardingPending: Boolean(onboardingPending),
     updatedAt: new Date().toISOString()
   };
 }

@@ -850,20 +850,31 @@ async function handleOnboard(parsed) {
     console.log(`Backup created: ${path.relative(projectRoot, backupPath)}`);
   }
 
+  // Save the local project/base URL context before any startup step that can
+  // fail so users can resume with `atlasrag bootstrap` if onboarding stops.
+  writeConfig(createOnboardConfig({
+    projectRoot,
+    mode: externalPostgres ? "external-postgres" : "bundled-postgres",
+    envFile,
+    composeFile,
+    baseUrl,
+    tenantId,
+    adminUsername,
+    apiKey: saved.apiKey || "",
+    openAiApiKey,
+    onboardingPending: true
+  }));
+
   console.log("Starting AtlasRAG services...");
   await runCompose(composeCtx, ["up", "-d", "--build"], { capture: false });
-
-  console.log(`Waiting for AtlasRAG gateway readiness (${baseUrl}/health) ...`);
-  const readiness = await waitForGatewayReady(composeCtx, baseUrl);
-  if (readiness.source === "container") {
-    console.log("Gateway responded inside Docker. Continuing with bootstrap while host routing settles.");
-  }
 
   console.log("Bootstrapping the first admin and service token...");
   const { payload, serviceToken } = await runBootstrapWithRetries(composeCtx, {
     adminUsername,
     adminPassword,
-    tenantId
+    tenantId,
+    attempts: 60,
+    retryDelayMs: 2500
   });
 
   writeConfig(createOnboardConfig({
@@ -875,11 +886,24 @@ async function handleOnboard(parsed) {
     tenantId,
     adminUsername,
     apiKey: serviceToken,
-    openAiApiKey
+    openAiApiKey,
+    onboardingPending: false
   }));
 
-  let hostHealthSettled = readiness.source === "host";
-  if (!hostHealthSettled) {
+  let hostHealthSettled = false;
+  let readinessSource = "";
+  console.log(`Checking AtlasRAG gateway readiness (${baseUrl}/health) ...`);
+  try {
+    const readiness = await waitForGatewayReady(composeCtx, baseUrl, 30000);
+    readinessSource = readiness.source;
+    hostHealthSettled = readiness.source === "host";
+    if (readiness.source === "container") {
+      console.log("Gateway responded inside Docker. Host routing may still be settling.");
+    }
+  } catch {
+    hostHealthSettled = false;
+  }
+  if (!hostHealthSettled && readinessSource === "container") {
     try {
       await waitForHealth(baseUrl, 15000);
       hostHealthSettled = true;
@@ -1458,6 +1482,7 @@ async function handleBootstrap(parsed) {
     tenantId: payload?.tenant || tenant,
     baseUrl: payload?.baseUrl || saved.baseUrl || resolveBaseUrl("3000"),
     apiKey: payload?.serviceToken?.token || saved.apiKey || "",
+    onboardingPending: false,
     updatedAt: new Date().toISOString()
   };
   writeConfig(nextConfig);
@@ -1504,7 +1529,12 @@ async function handleDoctor(parsed) {
   record("Env file", fs.existsSync(envFile), envFile);
   record("CLI config", fs.existsSync(CONFIG_FILE), CONFIG_FILE);
   record("Saved base URL", Boolean(saved.baseUrl), saved.baseUrl || "not configured");
-  record("Saved API key", Boolean(saved.apiKey), saved.apiKey ? maskSecret(saved.apiKey) : "not configured");
+  const apiKeyDetail = saved.apiKey
+    ? maskSecret(saved.apiKey)
+    : (saved.onboardingPending
+        ? "pending bootstrap; rerun `atlasrag onboard` or `atlasrag bootstrap --username ... --tenant ...` if setup stopped early"
+        : "not configured");
+  record("Saved API key", Boolean(saved.apiKey), apiKeyDetail);
 
   if (saved.baseUrl) {
     try {
