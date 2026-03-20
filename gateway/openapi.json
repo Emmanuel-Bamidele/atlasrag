@@ -632,6 +632,125 @@
           }
         }
       },
+      "SupportingChunk": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "chunkId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "docId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "BooleanAskAnswer": {
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "invalid"
+        ],
+        "description": "Strict boolean response. invalid means the input was not a grounded true/false question for the provided sources."
+      },
+      "BooleanAskRequest": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "k": {
+            "type": "integer"
+          },
+          "docIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "BooleanAskResponseData": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "answer": {
+            "$ref": "#/components/schemas/BooleanAskAnswer"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chunkId": {
+                  "type": "string"
+                },
+                "docId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "collection": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "supportingChunks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportingChunk"
+            }
+          },
+          "chunksUsed": {
+            "type": "integer"
+          },
+          "k": {
+            "type": "integer"
+          }
+        }
+      },
       "MemoryType": {
         "type": "string",
         "enum": [
@@ -1998,6 +2117,54 @@
           }
         },
         "description": "Retrieve relevant chunks and generate a grounded answer with citations."
+      }
+    },
+    "/v1/boolean_ask": {
+      "post": {
+        "tags": [
+          "Ask"
+        ],
+        "summary": "Grounded true/false/invalid classification",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BooleanAskRequest"
+              },
+              "example": {
+                "question": "Is AtlasRAG designed for agent memory retrieval?",
+                "k": 4,
+                "policy": "amvl",
+                "collection": "default"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/BooleanAskResponseData"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve relevant chunks and return a grounded answer constrained to true, false, or invalid, including supporting chunks."
       }
     },
     "/v1/memory/write": {

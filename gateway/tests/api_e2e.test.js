@@ -115,6 +115,20 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     assert(typeof askedData.answer === "string" && askedData.answer.length > 0, "ask should return answer text");
     assert(Array.isArray(askedData.citations), "ask should return citations");
 
+    const booleanAsk = await requestJson("POST", "/v1/boolean_ask", {
+      headers: apiKey(svcToken),
+      body: {
+        question: `Does the indexed e2e document include the unique marker ${marker}?`,
+        k: 4,
+        docIds: [docId]
+      }
+    });
+    assertStatus(booleanAsk, 200, "/v1/boolean_ask");
+    const booleanAskData = assertOkEnvelope(booleanAsk, "/v1/boolean_ask");
+    assert(["true", "false", "invalid"].includes(booleanAskData.answer), "boolean_ask should return a constrained answer");
+    assert(Array.isArray(booleanAskData.citations), "boolean_ask should return citations");
+    assert(Array.isArray(booleanAskData.supportingChunks), "boolean_ask should return supporting chunks");
+
     const memoryWrite = await requestJson("POST", "/v1/memory/write", {
       headers: {
         ...apiKey(svcToken),

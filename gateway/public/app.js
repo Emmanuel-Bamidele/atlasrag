@@ -692,8 +692,9 @@ function buildDocConnectContent(baseUrl){
       "If you are operating on a local computer with this repo, prefer the atlasrag CLI over raw bootstrap commands.",
       "Run atlasrag doctor first. If AtlasRAG is not configured, run atlasrag onboard.",
       "On the local CLI path, atlasrag onboard creates the first admin and first service token and saves local config for later CLI use.",
-      "Use --collection explicitly on atlasrag write/search/ask when scope matters. atlasrag write --folder ./name uses the folder name as the default collection.",
+      "Use --collection explicitly on atlasrag write/search/ask/boolean_ask when scope matters. atlasrag write --folder ./name uses the folder name as the default collection.",
       "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
+      "Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
       "When answering, cite the endpoint path and required headers for each AtlasRAG API call."
     ].join("\n")
   };
@@ -1061,6 +1062,36 @@ function renderAnswer(data){
     </div>
   `;
   wrap.insertAdjacentHTML("beforeend", sourcesCard);
+
+  const supportingChunks = Array.isArray(data?.supportingChunks) ? data.supportingChunks : [];
+  if (supportingChunks.length) {
+    const chunksHtml = supportingChunks.map((chunk, idx) => {
+      const chips = [
+        `<span class="chip">Chunk ${idx + 1}</span>`
+      ];
+      if (chunk?.docId) chips.push(`<span class="chip">Doc <span class="mono">${escapeHtml(chunk.docId)}</span></span>`);
+      if (chunk?.collection) chips.push(`<span class="chip">Collection <span class="mono">${escapeHtml(chunk.collection)}</span></span>`);
+      if (chunk?.chunkId) chips.push(`<span class="chip">Id <span class="mono">${escapeHtml(chunk.chunkId)}</span></span>`);
+      if (typeof chunk?.score === "number") chips.push(`<span class="chip">Score <span class="mono">${escapeHtml(chunk.score.toFixed(4))}</span></span>`);
+      return `
+        <div class="source-item">
+          <div class="chips">${chips.join("")}</div>
+          <div class="preview">${escapeHtml(chunk?.text || "")}</div>
+        </div>
+      `;
+    }).join("");
+
+    const chunksCard = `
+      <div class="card reveal" style="animation-delay:100ms;">
+        <div class="cardhead">
+          <span class="chip">Supporting Chunks</span>
+          <span class="chip">${supportingChunks.length} total</span>
+        </div>
+        ${chunksHtml}
+      </div>
+    `;
+    wrap.insertAdjacentHTML("beforeend", chunksCard);
+  }
 }
 
 function renderStats(data){
@@ -2207,10 +2238,11 @@ window.addEventListener("DOMContentLoaded", () => {
     clearBanner($("askBanner"));
   };
 
-  $("askBtn").onclick = async () => {
+  async function submitAsk(mode = "ask") {
     clearBanner($("askBanner"));
     if (!requireKeyOrWarn($("askBanner"))) return;
 
+    const isBooleanAsk = mode === "boolean_ask";
     const question = $("askQ").value.trim();
     const k = parseInt($("askK").value || "5", 10);
     const scope = String($("askCollectionScope")?.value || "all").trim();
@@ -2223,7 +2255,9 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     $("askBtn").disabled = true;
-    $("askBtn").textContent = "Thinking...";
+    if ($("askBooleanAskBtn")) $("askBooleanAskBtn").disabled = true;
+    $("askBtn").textContent = isBooleanAsk ? "Generate answer" : "Thinking...";
+    if ($("askBooleanAskBtn")) $("askBooleanAskBtn").textContent = isBooleanAsk ? "Checking..." : "True / False only";
 
     try{
       const body = { question, k };
@@ -2232,12 +2266,12 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         body.collection = scope;
       }
-      if (answerLength){
+      if (!isBooleanAsk && answerLength){
         body.answerLength = answerLength;
       }
       body.policy = policy;
 
-      const res = await fetch("/ask", {
+      const res = await fetch(isBooleanAsk ? "/boolean_ask" : "/ask", {
         method:"POST",
         headers: apiHeaders(),
         body: JSON.stringify(body)
@@ -2248,19 +2282,30 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (res.ok && data.answer){
         const label = scope === "all" ? "all collections" : scope;
-        const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
-        setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}).`);
+        if (isBooleanAsk) {
+          setBanner($("askBanner"), "ok", `Boolean answer generated from "${label}" (${policy.toUpperCase()}).`);
+        } else {
+          const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
+          setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}).`);
+        }
         renderAnswer(data);
       }else{
-        setBanner($("askBanner"), "err", data.error || "Ask failed.");
+        setBanner($("askBanner"), "err", data.error || (isBooleanAsk ? "Boolean ask request failed." : "Ask failed."));
       }
     }catch(e){
       setBanner($("askBanner"), "err", "Error: " + e);
     }finally{
       $("askBtn").disabled = false;
+      if ($("askBooleanAskBtn")) $("askBooleanAskBtn").disabled = false;
       $("askBtn").textContent = "Generate answer";
+      if ($("askBooleanAskBtn")) $("askBooleanAskBtn").textContent = "True / False only";
     }
-  };
+  }
+
+  $("askBtn").onclick = () => submitAsk("ask");
+  if ($("askBooleanAskBtn")) {
+    $("askBooleanAskBtn").onclick = () => submitAsk("boolean_ask");
+  }
 
   $("statsClearBtn").onclick = () => {
     $("statsRaw").textContent = "(no output)";

@@ -71,12 +71,13 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
 atlasrag search --q "remote test" --collection cli-smoke --k 3
 atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
 ```
 
 Important distinction:
 
 - `atlasrag onboard` is for local self-hosted setup
-- `atlasrag write`, `atlasrag search`, and `atlasrag ask` are the normal commands for testing or using an already deployed AtlasRAG service
+- `atlasrag write`, `atlasrag search`, `atlasrag ask`, and `atlasrag boolean_ask` are the normal commands for testing or using an already deployed AtlasRAG service
 - Docker is not required on the client machine for this remote path
 
 ## Bootstrap Once
@@ -184,6 +185,7 @@ Supported today:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 
@@ -256,6 +258,22 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
     "answerLength":"medium"
   }'
 ```
+
+### True/False Only
+
+```bash
+curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question":"Does AtlasRAG store memory for agents?",
+    "k":5,
+    "policy":"amvl"
+  }'
+```
+
+Read `data.supportingChunks` when the caller needs the exact chunk text that supported the boolean decision.
 
 ### Memory Write
 
@@ -417,6 +435,18 @@ const answer = await atlasrag("/v1/ask", {
 });
 
 console.log(answer.data.answer);
+
+const booleanAsk = await atlasrag("/v1/boolean_ask", {
+  method: "POST",
+  body: {
+    question: "Does AtlasRAG store memory for agents?",
+    k: 5,
+    policy: "amvl"
+  }
+});
+
+console.log(booleanAsk.data.answer);
+console.log(booleanAsk.data.supportingChunks);
 ```
 
 ## When To Use The Node SDK

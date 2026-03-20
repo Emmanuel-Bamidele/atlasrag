@@ -58,6 +58,16 @@ function testParseCliArgs() {
   ]);
   assert.equal(updateParsed.command, "update");
   assert.equal(updateParsed.flags["project-root"], "/tmp/atlasrag");
+
+  const booleanAskParsed = parseCliArgs([
+    "boolean_ask",
+    "--question",
+    "Does AtlasRAG store memory?",
+    "--json"
+  ]);
+  assert.equal(booleanAskParsed.command, "boolean_ask");
+  assert.equal(booleanAskParsed.flags.question, "Does AtlasRAG store memory?");
+  assert.equal(booleanAskParsed.flags.json, true);
 }
 
 function testMergeEnvText() {

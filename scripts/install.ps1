@@ -169,6 +169,7 @@ Write-Host "  atlasrag update"
 Write-Host "  atlasrag onboard"
 Write-Host '  atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."'
 Write-Host '  atlasrag ask --question "What does AtlasRAG store?"'
+Write-Host '  atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?"'
 
 if ($RunOnboard) {
   Write-Host ""

@@ -24,9 +24,10 @@ If this repository is available locally and the goal is to run or test AtlasRAG 
 
 ## Collection Rules
 
-- Use `--collection` explicitly on `atlasrag write`, `atlasrag search`, and `atlasrag ask` whenever collection scope matters.
+- Use `--collection` explicitly on `atlasrag write`, `atlasrag search`, `atlasrag ask`, and `atlasrag boolean_ask` whenever collection scope matters.
 - Keep write and read operations on the same collection unless the user explicitly wants a wider or different scope.
 - For folder ingest, `atlasrag write --folder ./some-folder` uses the folder name as the collection if `--collection` is omitted.
+- When a caller needs a grounded binary decision instead of a freeform answer, use `atlasrag boolean_ask`. The API, SDK, and UI responses include `supportingChunks` when the caller needs the exact evidence text.
 
 ## Local CLI Examples
 
@@ -36,6 +37,7 @@ atlasrag onboard
 atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
 atlasrag search --q "memory for agents" --collection local-demo --k 5
 atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
 ```
 
 Folder ingest:

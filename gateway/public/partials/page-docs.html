@@ -51,7 +51,8 @@
                   <pre class="doc-code">./scripts/install.sh
 atlasrag onboard
 atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre>
+atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use the <strong>CLI Setup</strong> tab if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
                 </div>
                 <div class="doc-block">
@@ -78,7 +79,8 @@ atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre
                   <p>You do not need to copy the token anywhere just to use the CLI locally. After onboarding, the CLI reads the saved config and sends the saved service token automatically.</p>
                   <pre class="doc-code">atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
 atlasrag search --q "memory for agents" --collection local-demo --k 5
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre>
+atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use the same collection name on both write and read operations when you want tighter control over what the CLI searches. Later, refresh the installed CLI checkout with <span class="mono">atlasrag update</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -86,7 +88,8 @@ atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre
                   <p>If you point the CLI at a folder, it ingests supported files inside it. Plain text files are read directly, while <span class="mono">.pdf</span> and <span class="mono">.docx</span> files are extracted to text locally before indexing. By default, the folder name becomes the collection name.</p>
                   <pre class="doc-code">atlasrag write --folder ./customer-support
 atlasrag search --q "refund policy" --collection customer-support --k 5
-atlasrag ask --question "What is the refund policy?" --collection customer-support</pre>
+atlasrag ask --question "What is the refund policy?" --collection customer-support
+atlasrag boolean_ask --question "Does the refund policy mention store credit?" --collection customer-support</pre>
                   <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported files are skipped. Legacy <span class="mono">.doc</span> files still need conversion to <span class="mono">.docx</span> first.</p>
                 </div>
                 <div class="doc-block">
@@ -111,7 +114,12 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
 curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${ATLASRAG_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3}'</pre>
+  -d '{"question":"What does AtlasRAG store?","k":3}'
+
+curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Does AtlasRAG store memory for agents?","k":3}'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Fundamentals first</div>
@@ -259,6 +267,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                       <tr><td><span class="mono">GET /v1/collections</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">GET /v1/search</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/ask</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/boolean_ask</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/memory/recall</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/feedback</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/memory/event</span></td><td>Reader+</td></tr>
@@ -293,7 +302,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   JSON payloads; the Playground UI and CLI can extract supported files like <span class="mono">.pdf</span> and <span class="mono">.docx</span> to text locally first. Use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
                 </p>
                 <p class="hint">
-                  <span class="mono">X-OpenAI-API-Key</span> is supported on sync routes such as docs, search, ask, memory write, and memory recall.
+                  <span class="mono">X-OpenAI-API-Key</span> is supported on sync routes such as docs, search, ask, boolean_ask, memory write, and memory recall.
                   It is currently rejected by async <span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span>.
                 </p>
                 <ul>
@@ -302,6 +311,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   <li><span class="mono">/v1/docs/:docId</span> delete a document</li>
                   <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
                   <li><span class="mono">/v1/ask</span> RAG answers with citations and controllable response length</li>
+                  <li><span class="mono">/v1/boolean_ask</span> grounded responses constrained to true, false, or invalid</li>
                   <li><span class="mono">/v1/memory/write</span> durable memory items</li>
                   <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
                   <li><span class="mono">/v1/memory/reflect</span> async reflection jobs</li>
@@ -363,6 +373,52 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                     </tbody>
                   </table>
                   <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">POST /v1/boolean_ask request fields</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Required</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="mono">question</span></td>
+                        <td>string</td>
+                        <td>Yes</td>
+                        <td>Ask a clear true/false question when you expect a grounded binary response.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">k</span></td>
+                        <td>integer</td>
+                        <td>No</td>
+                        <td>Top-K chunks retrieved before classification (default: <span class="mono">5</span>).</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">docIds</span></td>
+                        <td>string[]</td>
+                        <td>No</td>
+                        <td>Optional doc filter; only these doc IDs are searched.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">collection</span></td>
+                        <td>string</td>
+                        <td>No</td>
+                        <td>Limit retrieval to one collection. Use <span class="mono">collectionScope=all</span> to search all collections.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">policy</span></td>
+                        <td>enum</td>
+                        <td>No</td>
+                        <td>Memory/retrieval policy: <span class="mono">amvl</span> (default), <span class="mono">ttl</span>, or <span class="mono">lru</span>.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="hint">The response <span class="mono">data.answer</span> is always one of <span class="mono">true</span>, <span class="mono">false</span>, or <span class="mono">invalid</span>. The response also includes <span class="mono">data.supportingChunks</span> with the chunk text used for the decision.</p>
                 </div>
                 <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
                 <div class="doc-block">
@@ -442,7 +498,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   <p>If an assistant is operating on a local computer that already has this repo, it should treat the AtlasRAG CLI as the default local control surface.</p>
                   <pre class="doc-code">1. Run atlasrag doctor
 2. If AtlasRAG is not configured locally, run atlasrag onboard
-3. Prefer atlasrag write/search/ask over raw bootstrap commands
+3. Prefer atlasrag write/search/ask/boolean_ask over raw bootstrap commands
 4. Use --collection explicitly when scope matters
 5. For folder ingest, atlasrag write --folder ./name uses the folder name as the default collection
 6. Do not ask for token re-entry when local CLI config already exists</pre>
@@ -588,6 +644,13 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
   -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium", "policy": "amvl" }'</pre>
                 </div>
                 <div class="doc-block">
+                  <div class="doc-label">Boolean ask</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/boolean_ask \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "question": "Is write-ahead logging enabled?", "k": 5, "policy": "amvl" }'</pre>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
                   <pre class="doc-code">curl -X DELETE "http://localhost:3000/v1/docs/swe_notes?collection=default" \
   -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
@@ -702,7 +765,16 @@ res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
 res.raise_for_status()
 print(res.json())
 
-# 4) Memory write
+# 4) Boolean ask
+res = requests.post(f"{BASE}/v1/boolean_ask", headers=headers, json={
+  "question": "Does WAL keep vectors durable across restarts?",
+  "k": 5,
+  "policy": "amvl"
+})
+res.raise_for_status()
+print(res.json())
+
+# 5) Memory write
 res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-Key": "mem-001"}, json={
   "type": "semantic",
   "policy": "amvl",
@@ -715,7 +787,7 @@ res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-
 })
 res.raise_for_status()
 
-# 5) Recall
+# 6) Recall
 res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
   "query": "WAL enabled",
   "policy": "amvl",
@@ -830,7 +902,10 @@ console.log(await get("/v1/search", { q: "durability", k: "5", collection: "defa
 // 3) Ask
 console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5, answerLength: "long", policy: "amvl" }));
 
-// 4) Memory write
+// 4) Boolean ask
+console.log(await post("/v1/boolean_ask", { question: "Do we persist vectors with WAL?", k: 5, policy: "amvl" }));
+
+// 5) Memory write
 await post("/v1/memory/write", {
   type: "semantic",
   policy: "amvl",
@@ -842,13 +917,13 @@ await post("/v1/memory/write", {
   pinned: false
 }, { "Idempotency-Key": "mem-001" });
 
-// 5) Recall
+// 6) Recall
 console.log(await post("/v1/memory/recall", { query: "WAL enabled", policy: "amvl", types: ["semantic"], tags: ["infra"], k: 5 }));
 
-// 5b) Feedback
+// 6b) Feedback
 await post("/v1/feedback", { memoryId: "mem_123", feedback: "positive", eventValue: 0.8 });
 
-// 6) Reflect + job polling
+// 7) Reflect + job polling
 const reflect = await post("/v1/memory/reflect", {
   docId: "swe_notes",
   policy: "amvl",
@@ -983,7 +1058,7 @@ while (true) {
                         <a href="#doc-cli-build">Build on top after setup</a>
                         <a href="#doc-cli-remote">Use the CLI against an online deployment</a>
                         <a href="#doc-cli-commands">Runtime commands</a>
-                        <a href="#doc-cli-write-search-ask">Write, manage, search, ask</a>
+                        <a href="#doc-cli-write-search-ask">Write, manage, search, ask, boolean_ask</a>
                         <a href="#doc-cli-config">Config and overrides</a>
                         <a href="#doc-cli-examples">End-to-end examples</a>
                         <a href="#doc-cli-troubleshoot">Troubleshooting</a>
@@ -1127,7 +1202,7 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <div class="doc-label">Finish setup if the stack is already running</div>
                   <p>If Docker services are already up but the CLI has not saved the base URL and service token yet, finish setup on the running stack with:</p>
                   <pre class="doc-code">atlasrag bootstrap --username your-username --tenant default</pre>
-                  <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> commands.</p>
+                  <p class="hint">Use the same admin username you entered during onboarding. If you pressed <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span>, keep <span class="mono">default</span> here too. This completes setup and stores the first service token for later <span class="mono">write</span>, <span class="mono">search</span>, <span class="mono">ask</span>, and <span class="mono">boolean_ask</span> commands.</p>
                 </div>
               </div>
             </details>
@@ -1173,8 +1248,17 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
     "question": "What does AtlasRAG store?",
     "collection": "default",
     "k": 3
+  }'
+
+curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Does AtlasRAG store memory for agents?",
+    "collection": "default",
+    "k": 3
   }'</pre>
-                  <p class="hint">Keep write and read operations on the same <span class="mono">collection</span>. If you write to <span class="mono">default</span>, search and ask on <span class="mono">default</span> too unless you intentionally want a different scope.</p>
+                  <p class="hint">Keep write and read operations on the same <span class="mono">collection</span>. If you write to <span class="mono">default</span>, search, ask, and <span class="mono">boolean_ask</span> on <span class="mono">default</span> too unless you intentionally want a different scope.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">4. Use the Node SDK in a real backend or worker</div>
@@ -1197,6 +1281,14 @@ async function main() {
   });
 
   console.log(answer.data.answer);
+
+  const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
+    collection: process.env.ATLASRAG_COLLECTION || "default",
+    k: 3
+  });
+
+  console.log(booleanAsk.data.answer);
+  console.log(booleanAsk.data.supportingChunks);
 }
 
 main().catch(console.error);</pre>
@@ -1227,7 +1319,7 @@ main().catch(console.error);</pre>
                   <ul>
                     <li><strong>Needed on the client:</strong> the CLI, a public base URL, and a service token</li>
                     <li><strong>Not needed on the client:</strong> Docker, Compose, local bootstrap, or local Postgres</li>
-                    <li><strong>Main remote commands:</strong> <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span></li>
+                    <li><strong>Main remote commands:</strong> <span class="mono">write</span>, <span class="mono">search</span>, <span class="mono">ask</span>, and <span class="mono">boolean_ask</span></li>
                   </ul>
                 </div>
                 <div class="doc-block">
@@ -1254,6 +1346,10 @@ atlasrag search \
 
 atlasrag ask \
   --question "What does the CLI test document say?" \
+  --collection cli-smoke
+
+atlasrag boolean_ask \
+  --question "Does the CLI test document mention AtlasRAG?" \
   --collection cli-smoke</pre>
                 </div>
                 <div class="doc-block">
@@ -1262,7 +1358,7 @@ atlasrag ask \
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Important rule</div>
-                  <p>Think of the CLI in remote mode as a thin client for the live API. Use <span class="mono">onboard</span>, <span class="mono">start</span>, <span class="mono">stop</span>, and <span class="mono">logs</span> for local self-hosted control. Use <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> to test or use a live deployment.</p>
+                  <p>Think of the CLI in remote mode as a thin client for the live API. Use <span class="mono">onboard</span>, <span class="mono">start</span>, <span class="mono">stop</span>, and <span class="mono">logs</span> for local self-hosted control. Use <span class="mono">write</span>, <span class="mono">search</span>, <span class="mono">ask</span>, and <span class="mono">boolean_ask</span> to test or use a live deployment.</p>
                 </div>
               </div>
             </details>
@@ -1378,7 +1474,7 @@ atlasrag ask \
             </details>
 
             <details class="details section" id="doc-cli-write-search-ask">
-              <summary>Write, manage, search, and ask</summary>
+              <summary>Write, manage, search, ask, and boolean_ask</summary>
               <div class="section-body">
                 <p>The CLI can act like a small API client once onboarding is complete. It uses the saved base URL and service token unless you override them with flags or env vars.</p>
                 <div class="doc-block">
@@ -1452,9 +1548,11 @@ atlasrag collections delete --collection customer-support --yes</pre>
 atlasrag search --q "tenant auth mode" --collection default --json</pre>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Ask examples</div>
+                  <div class="doc-label">Ask and boolean_ask examples</div>
                   <pre class="doc-code">atlasrag ask --question "What does AtlasRAG store?" --collection local-demo --k 3
-atlasrag ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short</pre>
+atlasrag ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo --k 3
+atlasrag boolean_ask --question "Is password login enabled?" --collection default --policy amvl</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Useful write flags</div>
@@ -1511,7 +1609,8 @@ ATLASRAG_COLLECTION</pre>
 atlasrag onboard
 atlasrag status
 atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo</pre>
+atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Example 2: local external Postgres</div>
@@ -1525,7 +1624,8 @@ atlasrag search --q "policies" --collection compliance --json</pre>
                   <pre class="doc-code">atlasrag write --folder ./customer-support
 atlasrag write --folder ./customer-support --sync --yes
 atlasrag search --q "refund policy" --collection customer-support --k 5
-atlasrag ask --question "What is the refund policy?" --collection customer-support</pre>
+atlasrag ask --question "What is the refund policy?" --collection customer-support
+atlasrag boolean_ask --question "Does the refund policy mention store credit?" --collection customer-support</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Example 4: update one doc after the file changes</div>
@@ -1537,6 +1637,10 @@ atlasrag ask --question "What is the refund policy?" --collection customer-suppo
 
 atlasrag ask \
   --question "Summarize the handbook." \
+  --collection customer-support
+
+atlasrag boolean_ask \
+  --question "Does the handbook mention onboarding?" \
   --collection customer-support</pre>
                 </div>
                 <div class="doc-block">
@@ -1552,7 +1656,8 @@ atlasrag config show</pre>
 export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
 atlasrag search --q "remote test" --collection cli-smoke --k 3
-atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke</pre>
+atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke</pre>
                 </div>
               </div>
             </details>
@@ -1763,7 +1868,12 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
 curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${ATLASRAG_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3}'</pre>
+  -d '{"question":"What does AtlasRAG store?","k":3}'
+
+curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Does AtlasRAG store memory for agents?","k":3}'</pre>
                     </div>
                   </div>
 
@@ -1934,7 +2044,13 @@ OPENAI_API_KEY=YOUR_OPENAI_KEY</pre>
   -H "X-API-Key: ${ATLASRAG_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3,"policy":"amvl"}'</pre>
+  -d '{"question":"What does AtlasRAG store?","k":3,"policy":"amvl"}'
+
+curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Does AtlasRAG store memory for agents?","k":3,"policy":"amvl"}'</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Supported today</div>
@@ -1943,6 +2059,7 @@ OPENAI_API_KEY=YOUR_OPENAI_KEY</pre>
                         <li><span class="mono">POST /v1/docs/url</span></li>
                         <li><span class="mono">GET /v1/search</span></li>
                         <li><span class="mono">POST /v1/ask</span></li>
+                        <li><span class="mono">POST /v1/boolean_ask</span></li>
                         <li><span class="mono">POST /v1/memory/write</span></li>
                         <li><span class="mono">POST /v1/memory/recall</span></li>
                       </ul>

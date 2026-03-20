@@ -26,6 +26,10 @@ async function main() {
 
   const answer = await client.ask("What does AtlasRAG store?", { k: 3 });
   console.log("answer", answer.data.answer);
+
+  const booleanAsk = await client.booleanAsk("Does AtlasRAG store semantic memories for agents?", { k: 3 });
+  console.log("boolean_ask", booleanAsk.data.answer);
+  console.log("supportingChunks", booleanAsk.data.supportingChunks);
 }
 
 main().catch((err) => {

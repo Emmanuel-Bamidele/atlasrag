@@ -172,6 +172,7 @@ Recommended next commands:
   atlasrag onboard
   atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."
   atlasrag ask --question "What does AtlasRAG store?"
+  atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?"
 EOF
 
 if [[ "$RUN_ONBOARD" -eq 1 ]]; then

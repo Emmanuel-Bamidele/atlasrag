@@ -51,6 +51,7 @@ Usage:
   atlasrag write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--replace] [--sync] [--yes] [--json]
   atlasrag search --q QUERY [--k 5] [--collection NAME] [--json]
   atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--json]
+  atlasrag boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--json]
   atlasrag config show [--show-secrets]
   atlasrag help
 
@@ -883,7 +884,8 @@ async function handleOnboard(parsed) {
     `CLI config: ${CONFIG_FILE}`,
     "Next: atlasrag status",
     "Try: atlasrag write --doc-id welcome --text \"AtlasRAG stores memory for agents.\"",
-    "Then: atlasrag ask --question \"What does AtlasRAG store?\""
+    "Then: atlasrag ask --question \"What does AtlasRAG store?\"",
+    "Or: atlasrag boolean_ask --question \"Is AtlasRAG designed for agents?\""
   ];
   if (!hostHealthSettled) {
     summaryRows.push(`Host health is still settling at ${baseUrl}; retry \`atlasrag status\` in a few seconds if needed.`);
@@ -1682,6 +1684,58 @@ async function handleAsk(parsed) {
   }
 }
 
+async function handleBooleanAsk(parsed) {
+  const client = buildClient(parsed);
+  const question = String(getFlag(parsed, "question") || parsed.positionals.slice(1).join(" ") || "").trim();
+  if (!question) {
+    throw new Error("boolean_ask requires --question TEXT or a positional question.");
+  }
+  const k = parseInt(String(getFlag(parsed, "k") || "5"), 10);
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error("boolean_ask requires --k to be a positive integer.");
+  }
+  const policy = getFlag(parsed, "policy");
+  const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
+  const payload = await client.booleanAsk(question, { k, policy, docIds });
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const data = payload?.data || payload;
+  console.log(`Question: ${question}`);
+  console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  console.log("");
+  console.log(data.answer || "invalid");
+  const citations = Array.isArray(data.citations) ? data.citations : [];
+  if (citations.length) {
+    console.log("");
+    console.log("Sources:");
+    citations.forEach((item, index) => {
+      if (typeof item === "string") {
+        console.log(`${index + 1}. ${item}`);
+        return;
+      }
+      console.log(`${index + 1}. ${item.docId || item.chunkId || "source"}`);
+    });
+  }
+  const supportingChunks = Array.isArray(data.supportingChunks) ? data.supportingChunks : [];
+  if (supportingChunks.length) {
+    console.log("");
+    console.log("Supporting chunks:");
+    supportingChunks.forEach((item, index) => {
+      const score = Number.isFinite(item?.score) ? ` score=${Number(item.score).toFixed(4)}` : "";
+      console.log(`${index + 1}. ${item.docId || item.chunkId || "chunk"}${score}`);
+      const text = String(item?.text || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        const preview = text.length > 220 ? `${text.slice(0, 220)}...` : text;
+        console.log(`   ${preview}`);
+      }
+    });
+  }
+}
+
 function handleConfig(parsed) {
   const sub = parsed.subcommand || "show";
   if (sub !== "show") {
@@ -1745,6 +1799,12 @@ async function main() {
       return;
     case "ask":
       await handleAsk(parsed);
+      return;
+    case "boolean_ask":
+    case "boolean-ask":
+    case "yesno":
+    case "yes-no":
+      await handleBooleanAsk(parsed);
       return;
     case "config":
       handleConfig(parsed);

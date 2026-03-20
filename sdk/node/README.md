@@ -57,6 +57,10 @@ async function main() {
 
   const answer = await client.ask("What does AtlasRAG store?", { k: 3 });
   console.log(answer.data.answer);
+
+  const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", { k: 3 });
+  console.log(booleanAsk.data.answer);
+  console.log(booleanAsk.data.supportingChunks);
 }
 
 main().catch(console.error);
@@ -78,7 +82,7 @@ If `openAiApiKey` is set, the SDK sends `X-OpenAI-API-Key` so AtlasRAG can use y
 
 Current limitation:
 
-- request-scoped OpenAI key override works on sync requests such as docs, search, ask, memory write, and memory recall
+- request-scoped OpenAI key override works on sync requests such as docs, search, ask, boolean_ask, memory write, and memory recall
 - `memoryReflect()` and `memoryCompact()` should keep using the server-side OpenAI key today because those flows continue asynchronously after the request ends
 
 Human admin login is still available when you need a JWT for the UI or admin setup:
@@ -98,6 +102,8 @@ await client.login(process.env.ATLASRAG_USER, process.env.ATLASRAG_PASS);
 - `deleteDoc(docId, params)`
 - `search(query, params)`
 - `ask(question, params)`
+- `booleanAsk(question, params)`
+- `boolean_ask(question, params)`
 - `memoryWrite(data)`
 - `memoryRecall(data)`
 - `memoryReflect(data)`
@@ -130,7 +136,7 @@ Memory writes and reflect support access control via `visibility` (`tenant`, `pr
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
 Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
-Ask and memory recall requests also accept `policy` to choose retrieval mode per request.
+Ask, boolean_ask, and memory recall requests also accept `policy` to choose retrieval mode per request.
 Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.

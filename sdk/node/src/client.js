@@ -175,6 +175,17 @@ class AtlasRAGClient {
     });
   }
 
+  async booleanAsk(question, params = {}) {
+    return this.request("/v1/boolean_ask", {
+      method: "POST",
+      body: { question, ...params }
+    });
+  }
+
+  async boolean_ask(question, params = {}) {
+    return this.booleanAsk(question, params);
+  }
+
   async memoryWrite(data) {
     const payload = data || {};
     const { idempotencyKey, ...body } = payload;

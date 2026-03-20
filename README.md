@@ -135,6 +135,7 @@ atlasrag status
 atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
 atlasrag search --q "memory for agents" --collection local-demo --k 5
 atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
 atlasrag logs
 atlasrag doctor
 ```
@@ -202,9 +203,10 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
 atlasrag search --q "remote test" --collection cli-smoke --k 3
 atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
 ```
 
-In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, and `ask` are the main commands for testing a live deployment.
+In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
 
 Use the CLI when you want the fastest path from install to a working local deployment. Use the manual Docker steps below if you want to see and control each setup step explicitly.
 
@@ -289,6 +291,7 @@ Supported sync request paths:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 
@@ -336,7 +339,23 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
   }'
 ```
 
-### 6. Optional: Log In As A Human Admin
+### 6. Ask A Strict True/False Question
+
+```bash
+curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "question":"Does AtlasRAG store memory for agents?",
+    "k":3,
+    "policy":"amvl"
+  }'
+```
+
+This endpoint returns only `true`, `false`, or `invalid`. `invalid` means the input was not a grounded true/false question for the retrieved sources. The response also includes `supportingChunks` when you need the exact chunk text used for the decision.
+
+### 7. Optional: Log In As A Human Admin
 
 ```bash
 curl -sS http://localhost:3000/v1/login \

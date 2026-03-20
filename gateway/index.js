@@ -64,7 +64,7 @@ const {
   upsertSsoUser
 } = require("./db");
 const { requireJwt, limiter, loginLimiter } = require("./security");
-const { generateAnswer } = require("./answer");
+const { generateAnswer, generateBooleanAskAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
 const { estimateTokensFromText } = require("./memory_value");
 const {
@@ -256,6 +256,8 @@ app.use((req, res, next) => {
       routePath.startsWith("/mcp") ||
       routePath.startsWith("/llms") ||
       routePath.startsWith("/ask") ||
+      routePath.startsWith("/yes-no") ||
+      routePath.startsWith("/boolean_ask") ||
       routePath.startsWith("/search") ||
       routePath.startsWith("/stats") ||
       routePath.startsWith("/health") ||
@@ -511,6 +513,12 @@ function classifyTelemetryEndpoint(rawPath) {
   }
   if (cleanPath === "/ask" || cleanPath === "/v1/ask") {
     return "ask";
+  }
+  if (
+    cleanPath === "/yes-no" || cleanPath === "/v1/yes-no" ||
+    cleanPath === "/boolean_ask" || cleanPath === "/v1/boolean_ask"
+  ) {
+    return "boolean_ask";
   }
   return "other";
 }
@@ -2388,7 +2396,8 @@ async function handleMcpMethod(method, params, req) {
         "Use tools/search_docs to find AtlasRAG API and product guidance.",
         "Use resources/list and resources/read to access full docs pages.",
         "Memory policy values are amvl, ttl, and lru; amvl is the default when policy is omitted.",
-        "For /v1/ask, answer length can be controlled with answerLength: auto, short, medium, or long."
+        "For /v1/ask, answer length can be controlled with answerLength: auto, short, medium, or long.",
+        "Use /v1/boolean_ask when you need a strict true, false, or invalid response."
       ].join(" ")
     };
   }
@@ -3141,12 +3150,12 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey }) {
+async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
     collection,
-    source: telemetry?.source || "answer_question"
+    source: telemetry?.source || operation
   });
 
   const results = await searchChunks({
@@ -3165,7 +3174,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       requestId: telemetryContext.requestId,
       tenantId,
       collection,
-      source: "answer_retrieval_query"
+      source: retrievalSource || "answer_retrieval_query"
     })
   });
 
@@ -3201,7 +3210,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       }
 
       emitTelemetry("memory_retrieval", telemetryContext, {
-        operation: "answer_question",
+        operation,
         query_chars: String(question || "").length,
         retrieved_top_n: retrieved.length,
         retrieved_count: retrieved.length,
@@ -3210,7 +3219,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     } catch (err) {
       console.warn("[memory_events] Failed to resolve retrieved memory rows:", err?.message || err);
       emitTelemetry("memory_retrieval", telemetryContext, {
-        operation: "answer_question",
+        operation,
         query_chars: String(question || "").length,
         retrieved_top_n: results.length,
         retrieved_count: results.length,
@@ -3234,6 +3243,80 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
       memory_type: memory?.item_type || null
     };
   }).filter(Boolean);
+
+  return {
+    telemetryContext,
+    usedItems,
+    chunks
+  };
+}
+
+function collectInjectedMemoryItems(usedItems, injectedMemoryIds) {
+  const injectedItems = [];
+  if (!(injectedMemoryIds instanceof Set) || injectedMemoryIds.size === 0) {
+    return injectedItems;
+  }
+  const seen = new Set();
+  for (const item of usedItems || []) {
+    if (!item?.id) continue;
+    if (!injectedMemoryIds.has(item.id)) continue;
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    injectedItems.push(item);
+  }
+  return injectedItems;
+}
+
+function mapAnswerCitations(citations) {
+  return citations.map((c) => {
+    const parsed = parseChunkId(c);
+    if (!parsed) {
+      return { chunkId: c, docId: null, collection: null };
+    }
+    return {
+      chunkId: stripChunkNamespace(c),
+      docId: parsed.docId,
+      collection: parsed.collection
+    };
+  });
+}
+
+function mapSupportingChunks(chunks) {
+  return (Array.isArray(chunks) ? chunks : []).map((chunk, index) => {
+    const parsedChunk = parseChunkId(chunk?.chunk_id);
+    const parsedDoc = parseNamespacedDocId(chunk?.doc_id);
+    return {
+      rank: index + 1,
+      chunkId: chunk?.chunk_id ? stripChunkNamespace(chunk.chunk_id) : null,
+      docId: parsedChunk?.docId || parsedDoc?.docId || null,
+      collection: parsedChunk?.collection || parsedDoc?.collection || null,
+      score: Number.isFinite(Number(chunk?._retrieval_score))
+        ? Number(chunk._retrieval_score)
+        : null,
+      text: String(chunk?.text || "")
+    };
+  }).filter((chunk) => chunk.chunkId || chunk.text);
+}
+
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey }) {
+  const {
+    telemetryContext,
+    usedItems,
+    chunks
+  } = await buildAnswerContext({
+    tenantId,
+    collection,
+    question,
+    k,
+    docIds,
+    principalId,
+    privileges,
+    telemetry,
+    policy,
+    apiKey,
+    operation: "answer_question",
+    retrievalSource: "answer_retrieval_query"
+  });
 
   const injectedMemoryIds = new Set();
   const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
@@ -3272,17 +3355,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     }
   });
 
-  const injectedItems = [];
-  if (injectedMemoryIds.size > 0) {
-    const seen = new Set();
-    for (const item of usedItems) {
-      if (!item?.id) continue;
-      if (!injectedMemoryIds.has(item.id)) continue;
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      injectedItems.push(item);
-    }
-  }
+  const injectedItems = collectInjectedMemoryItems(usedItems, injectedMemoryIds);
   if (injectedItems.length) {
     await recordMemoryEventsForItems(injectedItems, "used_in_answer");
     emitTelemetry("memory_used", telemetryContext, {
@@ -3300,23 +3373,93 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     source: "answer_generation"
   }));
 
-  const mapped = citations.map((c) => {
-    const parsed = parseChunkId(c);
-    if (!parsed) {
-      return { chunkId: c, docId: null, collection: null };
-    }
-    return {
-      chunkId: stripChunkNamespace(c),
-      docId: parsed.docId,
-      collection: parsed.collection
-    };
+  return {
+    answer,
+    citations: mapAnswerCitations(citations),
+    chunksUsed: chunks.length,
+    answerLength: resolvedAnswerLength || answerLength || "auto"
+  };
+}
+
+async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey }) {
+  const {
+    telemetryContext,
+    usedItems,
+    chunks
+  } = await buildAnswerContext({
+    tenantId,
+    collection,
+    question,
+    k,
+    docIds,
+    principalId,
+    privileges,
+    telemetry,
+    policy,
+    apiKey,
+    operation: "answer_boolean_ask",
+    retrievalSource: "answer_boolean_ask_retrieval_query"
   });
+
+  const injectedMemoryIds = new Set();
+  const { answer, citations, usage } = await generateBooleanAskAnswer(question, chunks, {
+    apiKey,
+    onPromptBuilt: (promptStats) => {
+      const memoryIds = [];
+      const seen = new Set();
+      const chunkIds = [];
+      for (const chunk of promptStats?.chunks || []) {
+        if (chunk?.chunkId) {
+          chunkIds.push(chunk.chunkId);
+        }
+        const memoryId = chunk?.memoryId;
+        if (!memoryId || seen.has(memoryId)) continue;
+        seen.add(memoryId);
+        memoryIds.push(memoryId);
+        injectedMemoryIds.add(memoryId);
+      }
+      emitTelemetry("prompt_constructed", telemetryContext, {
+        operation: "answer_boolean_ask",
+        response_mode: "boolean_ask",
+        question_chars: String(question || "").length,
+        prompt_chars: Number(promptStats?.promptChars || 0),
+        prompt_tokens: Number(promptStats?.promptTokensEst || 0),
+        prompt_tokens_est: Number(promptStats?.promptTokensEst || 0),
+        memory_tokens_est: Number(promptStats?.memoryTokensEst || 0),
+        total_tokens_est: Number(promptStats?.totalTokensEst || promptStats?.promptTokensEst || 0),
+        injected_chunks_count: chunkIds.length,
+        chunk_count: chunkIds.length,
+        memory_count: memoryIds.length || Number(promptStats?.memoriesIncluded || 0),
+        chunk_ids: chunkIds,
+        memory_ids: memoryIds
+      });
+    }
+  });
+
+  const injectedItems = collectInjectedMemoryItems(usedItems, injectedMemoryIds);
+  if (injectedItems.length) {
+    await recordMemoryEventsForItems(injectedItems, "used_in_answer");
+    emitTelemetry("memory_used", telemetryContext, {
+      operation: "answer_boolean_ask",
+      response_mode: "boolean_ask",
+      answer,
+      memory_count: injectedItems.length,
+      memory_ids: injectedItems.map((mem) => mem.id)
+    });
+  }
+
+  recordGenerationUsage(tenantId, usage, buildTelemetryContext({
+    requestId: telemetryContext.requestId,
+    tenantId,
+    collection,
+    source: "answer_boolean_ask_generation"
+  }));
 
   return {
     answer,
-    citations: mapped,
+    citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
-    answerLength: resolvedAnswerLength || answerLength || "auto"
+    supportingChunks: mapSupportingChunks(chunks)
   };
 }
 
@@ -5014,9 +5157,10 @@ app.get("/llms.txt", (req, res) => {
     "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
     "- If working on a local computer with this repo, prefer the atlasrag CLI: run `atlasrag doctor`, then `atlasrag onboard` if not configured.",
     "- On the local CLI path, `atlasrag onboard` creates the first admin and first service token and stores them in local CLI config.",
-    "- Use `--collection` explicitly on write/search/ask when scope matters. `atlasrag write --folder ./name` uses the folder name as the default collection.",
-    "- For memory/ask APIs, policy can be set to amvl, ttl, or lru; the default is amvl.",
+    "- Use `--collection` explicitly on write/search/ask/boolean_ask when scope matters. `atlasrag write --folder ./name` uses the folder name as the default collection.",
+    "- For memory, ask, and boolean_ask APIs, policy can be set to amvl, ttl, or lru; the default is amvl.",
     "- For /v1/ask, use answerLength (auto|short|medium|long) to control response depth.",
+    "- Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
     "- Use llms.txt for quick discovery of docs and MCP entrypoints."
   ];
   res.type("text/plain; charset=utf-8").send(lines.join("\n"));
@@ -6122,6 +6266,107 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     sendError(res, 400, e, "ASK_FAILED", tenantId, collection);
   }
 });
+
+async function handleBooleanAskLegacy(req, res) {
+  const { question } = req.body || {};
+  const k = parseInt(req.body?.k || "5", 10);
+  const docIds = parseDocFilter(req.body?.docIds);
+
+  if (!question || !question.trim()) {
+    return res.status(400).json({ error: "question is required" });
+  }
+
+  try {
+    const tenantId = resolveTenantId(req);
+    const access = resolveAccessContext(req);
+    const collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+
+    const result = await answerBooleanAskQuestion({
+      tenantId,
+      collection,
+      question,
+      k,
+      docIds,
+      principalId: access.principalId,
+      privileges: access.privileges,
+      policy,
+      apiKey: openAiApiKey,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "boolean_ask_legacy"
+      })
+    });
+    const citationIds = result.citations.map((c) => c.chunkId);
+
+    res.json({
+      question,
+      answer: result.answer,
+      citations: citationIds,
+      sources: result.citations,
+      supportingChunks: result.supportingChunks,
+      tenantId,
+      collection
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+}
+
+async function handleBooleanAskV1(req, res) {
+  const { question } = req.body || {};
+  const k = parseInt(req.body?.k || "5", 10);
+  const docIds = parseDocFilter(req.body?.docIds);
+
+  if (!question || !question.trim()) {
+    return sendError(res, 400, "question is required", "INVALID_INPUT", null, null);
+  }
+
+  let tenantId = null;
+  let collection = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const access = resolveAccessContext(req);
+    collection = resolveCollectionScope(req, { defaultAll: true });
+    const policy = resolveRequestedMemoryPolicy(req.body);
+    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const result = await answerBooleanAskQuestion({
+      tenantId,
+      collection,
+      question,
+      k,
+      docIds,
+      principalId: access.principalId,
+      privileges: access.privileges,
+      policy,
+      apiKey: openAiApiKey,
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "boolean_ask_v1"
+      })
+    });
+    sendOk(res, {
+      question,
+      answer: result.answer,
+      citations: result.citations,
+      supportingChunks: result.supportingChunks,
+      chunksUsed: result.chunksUsed,
+      k
+    }, tenantId, collection);
+  } catch (e) {
+    sendError(res, 400, e, "BOOLEAN_ASK_FAILED", tenantId, collection);
+  }
+}
+
+app.post("/boolean_ask", requireJwt, requireRole("reader"), handleBooleanAskLegacy);
+app.post("/yes-no", requireJwt, requireRole("reader"), handleBooleanAskLegacy);
+app.post("/v1/boolean_ask", requireJwt, requireRole("reader"), handleBooleanAskV1);
+app.post("/v1/yes-no", requireJwt, requireRole("reader"), handleBooleanAskV1);
 
 
 // DELETE /docs/:docId

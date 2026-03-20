@@ -174,7 +174,23 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
   }'
 ```
 
-### 8. Optional: Bring Your Own OpenAI Key To A Shared AtlasRAG Deployment
+### 8. Ask A Strict True/False Question
+
+```bash
+curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question":"Does AtlasRAG store memory for agents?",
+    "k":3,
+    "policy":"amvl"
+  }'
+```
+
+This returns only `true`, `false`, or `invalid`. Use it when the caller needs a grounded binary answer instead of a freeform response, and inspect `supportingChunks` when the caller needs the exact evidence text.
+
+### 9. Optional: Bring Your Own OpenAI Key To A Shared AtlasRAG Deployment
 
 If you are using an AtlasRAG instance that already has its own Postgres and auth, but you want your requests to use your own OpenAI key, add:
 
@@ -188,6 +204,7 @@ This works on supported sync request paths such as:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 

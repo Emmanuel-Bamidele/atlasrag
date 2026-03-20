@@ -31,9 +31,17 @@ function testPromptInjectionLinesAreStillRemoved() {
   assert.equal(sanitized[0].text, "AtlasRAG stores memory for agents.");
 }
 
+function testBooleanAskAnswerNormalization() {
+  assert.equal(__testHooks.normalizeBooleanAskAnswer("TRUE"), "true");
+  assert.equal(__testHooks.normalizeBooleanAskAnswer("false."), "false");
+  assert.equal(__testHooks.normalizeBooleanAskAnswer("invalid"), "invalid");
+  assert.equal(__testHooks.normalizeBooleanAskAnswer("maybe"), "invalid");
+}
+
 function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
   testPromptInjectionLinesAreStillRemoved();
+  testBooleanAskAnswerNormalization();
   console.log("answer guard tests passed");
 }
 
