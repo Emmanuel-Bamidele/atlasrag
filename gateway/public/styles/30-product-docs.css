@@ -111,6 +111,16 @@
   background: rgba(61,213,200,0.12);
 }
 
+.doc-tabs-compact{
+  margin: 10px 0 12px;
+  gap: 8px;
+}
+
+.doc-tabs-compact .doc-tab{
+  padding: 6px 11px;
+  font-size: 12px;
+}
+
 .doc-panel{
   display:none;
 }

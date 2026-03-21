@@ -1128,19 +1128,33 @@ while (true) {
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Install from the current checkout</div>
-                  <pre class="doc-code"># macOS / Linux
-./scripts/install.sh
-
-# Windows PowerShell
-powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1</pre>
+                  <div class="doc-tabs doc-tabs-compact" data-doc-tabs="cliInstallLocalOs">
+                    <button class="doc-tab active" data-doc-tab="unix" type="button">macOS / Linux</button>
+                    <button class="doc-tab" data-doc-tab="windows" type="button">Windows</button>
+                  </div>
+                  <div class="doc-panels" data-doc-panels="cliInstallLocalOs">
+                    <div class="doc-panel active" data-doc-panel="unix">
+                      <pre class="doc-code">./scripts/install.sh</pre>
+                    </div>
+                    <div class="doc-panel" data-doc-panel="windows">
+                      <pre class="doc-code">powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1</pre>
+                    </div>
+                  </div>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">One-line remote install</div>
-                  <pre class="doc-code"># macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.sh | bash
-
-# Windows PowerShell
-irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.ps1 | iex</pre>
+                  <div class="doc-tabs doc-tabs-compact" data-doc-tabs="cliInstallRemoteOs">
+                    <button class="doc-tab active" data-doc-tab="unix" type="button">macOS / Linux</button>
+                    <button class="doc-tab" data-doc-tab="windows" type="button">Windows</button>
+                  </div>
+                  <div class="doc-panels" data-doc-panels="cliInstallRemoteOs">
+                    <div class="doc-panel active" data-doc-panel="unix">
+                      <pre class="doc-code">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.sh | bash</pre>
+                    </div>
+                    <div class="doc-panel" data-doc-panel="windows">
+                      <pre class="doc-code">irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.ps1 | iex</pre>
+                    </div>
+                  </div>
                   <p class="hint">Those commands install the CLI from the current <span class="mono">main</span> branch. If you want to inspect the installer first, use the local-checkout path instead.</p>
                 </div>
                 <div class="doc-block">
