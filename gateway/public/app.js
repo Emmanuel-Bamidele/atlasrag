@@ -1043,8 +1043,8 @@ function activateDocPanel(groupId, panelName){
   const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
   if (!group || !panelWrap) return false;
 
-  const buttons = Array.from(group.querySelectorAll(".doc-tab"));
-  const panels = Array.from(panelWrap.querySelectorAll(".doc-panel"));
+  const buttons = Array.from(group.children).filter((node) => node.classList?.contains("doc-tab"));
+  const panels = Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
   const hasTarget = buttons.some((btn) => btn.dataset.docTab === panelName);
   if (!hasTarget) return false;
 
@@ -1149,8 +1149,8 @@ function initDocTabs(){
     const groupId = group.dataset.docTabs;
     const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
     if (!panelWrap) return;
-    const buttons = Array.from(group.querySelectorAll(".doc-tab"));
-    const panels = Array.from(panelWrap.querySelectorAll(".doc-panel"));
+    const buttons = Array.from(group.children).filter((node) => node.classList?.contains("doc-tab"));
+    const panels = Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
 
     const activate = (name) => {
       buttons.forEach((btn) => {
