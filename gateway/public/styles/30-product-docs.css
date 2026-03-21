@@ -539,6 +539,15 @@ body.light-theme .doc-backtop a{
   white-space: pre-wrap;
 }
 
+.doc-copy-wrap{
+  position: relative;
+}
+
+.doc-copy-wrap > .doc-code{
+  padding-right: 42px;
+  min-height: 34px;
+}
+
 .table{
   width: 100%;
   border-collapse: collapse;
@@ -576,6 +585,12 @@ body.light-theme .doc-backtop a{
 body.light-theme .docs-article .docs-content .doc-block.mono{
   background: #ffffff;
   border-color: rgba(26,54,70,0.12);
+}
+
+body.light-theme .doc-copy-wrap > .copy-inline-btn{
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(26,54,70,0.12);
+  color: rgba(31,58,72,0.72);
 }
 
 .product-page{

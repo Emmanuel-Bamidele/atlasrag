@@ -784,8 +784,27 @@ function setLinkById(id, value){
   }
 }
 
-function copyButtonMarkup(label = "Copy"){
-  const safeLabel = String(label || "Copy");
+function copyButtonMarkup(state = "copy"){
+  const safeState = String(state || "copy").trim().toLowerCase();
+  if (safeState === "copied") {
+    return `
+      <span class="copy-inline-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.5 8.4 6.6 11.4 12.5 4.9"></path>
+        </svg>
+      </span>
+    `;
+  }
+  if (safeState === "failed") {
+    return `
+      <span class="copy-inline-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 5 11 11"></path>
+          <path d="M11 5 5 11"></path>
+        </svg>
+      </span>
+    `;
+  }
   return `
     <span class="copy-inline-icon" aria-hidden="true">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
@@ -793,41 +812,79 @@ function copyButtonMarkup(label = "Copy"){
         <path d="M3 11V5.8C3 4.81 3.81 4 4.8 4H9"></path>
       </svg>
     </span>
-    <span>${safeLabel}</span>
   `;
+}
+
+function setCopyButtonState(btn, label, state = "copy"){
+  if (!btn) return;
+  const safeLabel = String(label || "Copy").trim() || "Copy";
+  btn.innerHTML = copyButtonMarkup(state);
+  btn.setAttribute("aria-label", safeLabel);
+  btn.setAttribute("title", safeLabel);
+  btn.dataset.copyState = state;
 }
 
 function bindCopyButton(btn){
   if (!btn || btn.dataset.copyBound === "1") return;
   btn.dataset.copyBound = "1";
-  const existingLabel = String(btn.textContent || "").trim() || "Copy";
-  const originalHtml = btn.innerHTML && btn.innerHTML.includes("copy-inline-icon")
-    ? btn.innerHTML
-    : copyButtonMarkup(existingLabel);
-  btn.innerHTML = originalHtml;
+  const existingLabel = String(
+    btn.dataset.copyLabel
+    || btn.getAttribute("aria-label")
+    || btn.getAttribute("title")
+    || btn.textContent
+    || ""
+  ).trim() || "Copy";
+  btn.dataset.copyLabel = existingLabel;
+  setCopyButtonState(btn, existingLabel, "copy");
 
   btn.addEventListener("click", async () => {
     const targetId = btn.getAttribute("data-copy-target");
     const targetEl = targetId ? $(targetId) : null;
     const value = String(targetEl?.textContent || "").trim();
     if (!value) {
-      btn.innerHTML = copyButtonMarkup("No text");
+      setCopyButtonState(btn, "No text", "failed");
       window.setTimeout(() => {
-        btn.innerHTML = originalHtml;
+        setCopyButtonState(btn, existingLabel, "copy");
       }, 1200);
       return;
     }
     try {
       await copyTextToClipboard(value);
-      btn.innerHTML = copyButtonMarkup("Copied");
+      setCopyButtonState(btn, "Copied", "copied");
     } catch {
-      btn.innerHTML = copyButtonMarkup("Failed");
+      setCopyButtonState(btn, "Failed", "failed");
     } finally {
       window.setTimeout(() => {
-        btn.innerHTML = originalHtml;
+        setCopyButtonState(btn, existingLabel, "copy");
       }, 1200);
     }
   });
+}
+
+function ensureDocCopyWrap(targetEl){
+  if (!targetEl) return null;
+  const existingWrap = targetEl.parentElement;
+  if (existingWrap?.classList?.contains("doc-copy-wrap")) {
+    return existingWrap;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "doc-copy-wrap";
+  targetEl.insertAdjacentElement("beforebegin", wrap);
+  wrap.appendChild(targetEl);
+  return wrap;
+}
+
+function mountCopyButtonOnTarget(btn, targetEl){
+  if (!btn || !targetEl) return;
+  const wrap = ensureDocCopyWrap(targetEl);
+  if (!wrap) return;
+  const sourceActions = btn.parentElement?.classList?.contains("actions") ? btn.parentElement : null;
+  btn.classList.remove("btn", "secondary");
+  btn.classList.add("copy-inline-btn");
+  wrap.appendChild(btn);
+  if (sourceActions && !sourceActions.querySelector("[data-copy-target]")) {
+    sourceActions.remove();
+  }
 }
 
 function initDocsCopyButtons(){
@@ -841,27 +898,31 @@ function initDocsCopyButtons(){
       generatedCount += 1;
       pre.id = `docCodeAuto${generatedCount}`;
     }
-    const parent = pre.parentElement;
-    if (!parent) return;
-    const existingBtn = parent.querySelector(`[data-copy-target="${pre.id}"]`);
-    if (existingBtn) {
-      bindCopyButton(existingBtn);
-      return;
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "actions doc-code-actions";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn secondary copy-inline-btn";
-    btn.setAttribute("data-copy-target", pre.id);
-    btn.innerHTML = copyButtonMarkup("Copy");
-    actions.appendChild(btn);
-    pre.insertAdjacentElement("afterend", actions);
-    bindCopyButton(btn);
+    ensureDocCopyWrap(pre);
   });
 
   Array.from(docsPage.querySelectorAll("[data-copy-target]")).forEach((btn) => {
+    const targetId = btn.getAttribute("data-copy-target");
+    const targetEl = targetId ? $(targetId) : null;
+    if (targetEl?.matches?.("pre.doc-code")) {
+      mountCopyButtonOnTarget(btn, targetEl);
+    }
+    bindCopyButton(btn);
+  });
+
+  codeBlocks.forEach((pre) => {
+    const wrap = pre.parentElement;
+    if (!wrap) return;
+    const existingBtn = docsPage.querySelector(`[data-copy-target="${pre.id}"]`);
+    if (existingBtn) {
+      return;
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-inline-btn";
+    btn.setAttribute("data-copy-target", pre.id);
+    btn.dataset.copyLabel = "Copy";
+    wrap.appendChild(btn);
     bindCopyButton(btn);
   });
 }

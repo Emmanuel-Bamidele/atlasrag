@@ -256,9 +256,41 @@ select option{
 }
 
 .copy-inline-btn{
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(226,232,240,0.14);
+  border-radius: 9px;
+  background: rgba(8,18,20,0.78);
+  color: rgba(232,242,242,0.78);
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease, color .2s ease, transform .2s ease;
+}
+
+.copy-inline-btn:hover{
+  background: rgba(61,213,200,0.16);
+  border-color: rgba(61,213,200,0.3);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.copy-inline-btn[data-copy-state="copied"]{
+  color: #34d399;
+  border-color: rgba(52,211,153,0.35);
+  background: rgba(52,211,153,0.14);
+}
+
+.copy-inline-btn[data-copy-state="failed"]{
+  color: #fb7185;
+  border-color: rgba(251,113,133,0.35);
+  background: rgba(251,113,133,0.14);
 }
 
 .copy-inline-icon{
