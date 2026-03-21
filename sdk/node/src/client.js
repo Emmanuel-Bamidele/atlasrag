@@ -122,6 +122,14 @@ class AtlasRAGClient {
     return this.request("/v1/stats");
   }
 
+  async getModels() {
+    return this.request("/v1/models", { auth: false });
+  }
+
+  async models() {
+    return this.getModels();
+  }
+
   async listDocs(params = {}) {
     return this.request("/v1/docs", { query: params });
   }

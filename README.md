@@ -114,7 +114,7 @@ The wizard prompts for:
 - admin password
 - OpenAI API key
 - tenant id
-- default generation model (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = custom`)
+- default generation model (current presets are `1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`)
 - optional external Postgres values if you choose the BYO Postgres path
 
 For the normal first-run path, you can usually press `Enter` at:
@@ -174,7 +174,22 @@ atlasrag changemodel \
 
 `atlasrag changemodel` edits the local AtlasRAG env file. `--answer-model` accepts the same numbered choices as onboarding so you do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer model, and `--compact-model inherit` makes compaction follow the reflect model.
 
-`atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` accept the same common numbered choices too: `1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = custom`.
+The current numbered generation choices are:
+- `1 = gpt-4o`
+- `2 = gpt-4.1`
+- `3 = gpt-4o-mini`
+- `4 = gpt-4.1-mini`
+- `5 = gpt-4.1-nano`
+- `6 = gpt-5.2`
+- `7 = gpt-5-mini`
+- `8 = gpt-5-nano`
+- `9 = o1`
+- `10 = o3`
+- `11 = o3-mini`
+- `12 = o4-mini`
+- `13 = custom`
+
+`atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` accept the same numbered shortcuts, and explicit model ids still work anywhere.
 
 Model env keys for self-hosted installs:
 
@@ -186,10 +201,19 @@ REFLECT_MODEL=gpt-4o-mini
 COMPACT_MODEL=gpt-4o-mini
 ```
 
+You can also discover the preset catalog over HTTP:
+
+```bash
+curl http://localhost:3000/v1/models
+```
+
+The response lists the current preset generation models, embedding presets, and instance defaults. Model availability still depends on your OpenAI account and region.
+
 `EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `atlasrag changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
 
 Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
 On startup, AtlasRAG now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
+Reasoning-style models such as `o1`, `o3`, `o4-mini`, and the GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. AtlasRAG omits unsupported `temperature` parameters automatically for those models.
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 

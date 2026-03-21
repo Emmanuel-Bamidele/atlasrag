@@ -170,14 +170,23 @@
                   <div class="field">
                     <label for="askModel">Model override</label>
                     <input id="askModel" list="askGenerationModels" placeholder="blank = tenant or instance default">
-                    <div class="hint">Optional per-request override for <span class="mono">ask</span> or <span class="mono">boolean_ask</span>.</div>
+                    <div class="hint">Optional per-request override for <span class="mono">ask</span> or <span class="mono">boolean_ask</span>. AtlasRAG also exposes the live preset catalog at <span class="mono">GET /v1/models</span>.</div>
                   </div>
                 </div>
 
                 <datalist id="askGenerationModels">
+                  <option value="gpt-5.2"></option>
+                  <option value="gpt-5-mini"></option>
+                  <option value="gpt-5-nano"></option>
                   <option value="gpt-4o"></option>
                   <option value="gpt-4.1"></option>
+                  <option value="gpt-4.1-mini"></option>
+                  <option value="gpt-4.1-nano"></option>
                   <option value="gpt-4o-mini"></option>
+                  <option value="o1"></option>
+                  <option value="o3"></option>
+                  <option value="o3-mini"></option>
+                  <option value="o4-mini"></option>
                 </datalist>
 
                 <div class="actions">

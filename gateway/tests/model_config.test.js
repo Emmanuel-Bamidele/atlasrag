@@ -1,6 +1,9 @@
 const assert = require("assert/strict");
 
 const {
+  buildPublicModelCatalog,
+  buildResponsesCreateParams,
+  GENERATION_MODEL_PRESETS,
   resolveEnvModelDefaults,
   resolveTenantModelSettings,
   parseTenantModelSettingsInput
@@ -91,6 +94,42 @@ function testAnswerModelResolvers() {
   });
 }
 
+function testResponsesCompatibility() {
+  const gpt41 = buildResponsesCreateParams({
+    model: "gpt-4.1",
+    input: "hello",
+    temperature: 0.2
+  });
+  assert.equal(gpt41.temperature, 0.2);
+
+  const o1 = buildResponsesCreateParams({
+    model: "o1",
+    input: "hello",
+    temperature: 0.2
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(o1, "temperature"), false);
+
+  const gpt52 = buildResponsesCreateParams({
+    model: "gpt-5.2",
+    input: "hello",
+    temperature: 0.2
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(gpt52, "temperature"), false);
+}
+
+function testPublicModelCatalog() {
+  const catalog = buildPublicModelCatalog();
+  const generationModels = catalog.generation.map((item) => item.model);
+  assert.deepEqual(
+    generationModels,
+    GENERATION_MODEL_PRESETS.map((item) => item.model)
+  );
+  assert.equal(generationModels.includes("o1"), true);
+  assert.equal(generationModels.includes("o3"), true);
+  assert.equal(generationModels.includes("o4-mini"), true);
+  assert.equal(generationModels[generationModels.length - 1], "__custom__");
+}
+
 function testEmbedAndReflectResolvers() {
   withEnv({
     EMBED_MODEL: "text-embedding-3-large",
@@ -111,6 +150,8 @@ function main() {
   testTenantModelInheritance();
   testTenantModelInputParsing();
   testAnswerModelResolvers();
+  testResponsesCompatibility();
+  testPublicModelCatalog();
   testEmbedAndReflectResolvers();
   console.log("model config tests passed");
 }

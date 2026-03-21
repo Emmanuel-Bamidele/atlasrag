@@ -103,6 +103,9 @@ COMPACT_MODEL=gpt-4o-mini
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
 `EMBED_MODEL` is instance-wide. Because AtlasRAG stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
 On startup, AtlasRAG also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
+Common generation presets are `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, and `o4-mini`. Custom OpenAI model ids are also allowed.
+Reasoning-style presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with AtlasRAG. The gateway omits unsupported `temperature` parameters automatically for those models.
+You can inspect the live preset catalog and instance defaults at `GET /v1/models`.
 
 Useful optional values:
 
@@ -195,7 +198,7 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
 
 `model` is optional and overrides the tenant or instance ask model for that single request.
 
-On the CLI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` also accept the common numbered shortcuts `1`, `2`, `3`, and `4` for the default model menu.
+On the CLI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` also accept the same numbered shortcuts shown by `atlasrag changemodel`. The live preset catalog is available from `GET /v1/models`.
 
 ### 8. Ask A Strict True/False Question
 

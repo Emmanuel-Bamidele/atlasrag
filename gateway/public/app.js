@@ -45,6 +45,36 @@ const MAMMOTH_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/ma
 const externalScriptCache = new Map();
 const DOC_CONNECT_BASE_URL_PLACEHOLDER = "https://YOUR_ATLASRAG_BASE_URL";
 const DOC_CONNECT_SERVER_NAME = "atlasrag-docs";
+let modelCatalogLoaded = false;
+
+function setModelDatalistOptions(listId, models){
+  const list = $(listId);
+  if (!list) return;
+  const next = Array.isArray(models) ? models : [];
+  list.innerHTML = "";
+  next.forEach((entry) => {
+    const model = String(entry?.model || "").trim();
+    if (!model || entry?.custom) return;
+    const option = document.createElement("option");
+    option.value = model;
+    list.appendChild(option);
+  });
+}
+
+async function loadModelCatalog(){
+  if (modelCatalogLoaded) return;
+  try{
+    const res = await fetch("/v1/models");
+    const payload = await res.json();
+    if (!res.ok || !payload?.ok) return;
+    const generation = payload?.data?.presets?.generation || [];
+    setModelDatalistOptions("askGenerationModels", generation);
+    setModelDatalistOptions("tenantGenerationModels", generation);
+    modelCatalogLoaded = true;
+  }catch(_err){
+    // Keep the static datalist fallback if the catalog endpoint is unavailable.
+  }
+}
 
 function loadStoredAuth(){
   let token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -1853,6 +1883,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initDocTabs();
   initDocsAgentConnect();
+  loadModelCatalog();
   $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");
   $("tabUsage").onclick = () => showPage("pageUsage");

@@ -84,7 +84,9 @@ Important distinction:
 Model guidance:
 
 - use `atlasrag changemodel` for local self-hosted defaults instead of editing the env file by hand
-- `ask` and `boolean_ask` accept a per-request `model` override, and the CLI `--model` flag accepts the same common numbered shortcuts used during onboarding
+- `ask` and `boolean_ask` accept a per-request `model` override, and the CLI `--model` flag accepts the same numbered shortcuts used during onboarding
+- the preset list now includes GPT-4.1 / GPT-4o, GPT-5 presets, and o-series reasoning models; custom model ids are still allowed
+- use `GET /v1/models` when you need the live preset catalog and current instance defaults
 - tenant admins can persist `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` with `PATCH /v1/admin/tenant`
 - `embedModel` stays instance-wide and requires a reindex when it changes
 

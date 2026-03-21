@@ -1,13 +1,18 @@
-const DEFAULT_ANSWER_MODEL = "gpt-4o";
+const {
+  DEFAULT_ANSWER_MODEL,
+  DEFAULT_EMBED_MODEL: CATALOG_DEFAULT_EMBED_MODEL,
+  DEFAULT_REFLECT_MODEL,
+  GENERATION_MODEL_PRESETS,
+  EMBEDDING_MODEL_PRESETS,
+  buildPublicModelCatalog,
+  buildResponsesCreateParams,
+  normalizeModelId,
+  supportsTemperature
+} = require("./model_catalog");
+
 // Keep the runtime fallback conservative for older installs that never pinned EMBED_MODEL.
 // Fresh installs and CLI-managed env files explicitly write the recommended embed model.
 const DEFAULT_EMBED_MODEL = "text-embedding-3-small";
-const DEFAULT_REFLECT_MODEL = "gpt-4o-mini";
-
-function normalizeModelId(value) {
-  const clean = String(value || "").trim();
-  return clean || null;
-}
 
 function resolveEnvModelDefaults(env = process.env) {
   const answerModel = normalizeModelId(env.ANSWER_MODEL) || DEFAULT_ANSWER_MODEL;
@@ -85,7 +90,13 @@ module.exports = {
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
+  CLI_DEFAULT_EMBED_MODEL: CATALOG_DEFAULT_EMBED_MODEL,
+  GENERATION_MODEL_PRESETS,
+  EMBEDDING_MODEL_PRESETS,
   normalizeModelId,
+  supportsTemperature,
+  buildResponsesCreateParams,
+  buildPublicModelCatalog,
   resolveEnvModelDefaults,
   extractTenantModelOverrides,
   resolveTenantModelSettings,

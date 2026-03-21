@@ -2,7 +2,11 @@
 // Generate semantic/procedural/summary memories from artifact text.
 
 const OpenAI = require("openai");
-const { DEFAULT_REFLECT_MODEL, normalizeModelId } = require("./model_config");
+const {
+  DEFAULT_REFLECT_MODEL,
+  buildResponsesCreateParams,
+  normalizeModelId
+} = require("./model_config");
 
 let defaultClient = null;
 function createClient(key) {
@@ -129,12 +133,12 @@ async function reflectMemories({ text, types, maxItems, apiKey, reflectModel }) 
 
   let resp = null;
   try {
-    resp = await getClient(apiKey).responses.create({
+    resp = await getClient(apiKey).responses.create(buildResponsesCreateParams({
       model: resolveReflectModel({ reflectModel }),
       input,
       temperature: 0.2,
       text: { format: { type: "json_object" } }
-    });
+    }));
   } catch (err) {
     if (!reflectFallbackWarned) {
       reflectFallbackWarned = true;
@@ -181,12 +185,12 @@ async function summarizeMemories({ text, apiKey, compactModel, reflectModel }) {
   const input = buildCompactPrompt(text);
   let resp = null;
   try {
-    resp = await getClient(apiKey).responses.create({
+    resp = await getClient(apiKey).responses.create(buildResponsesCreateParams({
       model: resolveCompactModel({ compactModel, reflectModel }),
       input,
       temperature: 0.2,
       text: { format: { type: "json_object" } }
-    });
+    }));
   } catch (err) {
     if (!compactFallbackWarned) {
       compactFallbackWarned = true;

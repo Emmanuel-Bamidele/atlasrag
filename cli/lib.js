@@ -2,20 +2,21 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const {
+  DEFAULT_ANSWER_MODEL,
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_REFLECT_MODEL,
+  GENERATION_MODEL_PRESETS,
+  EMBEDDING_MODEL_PRESETS,
+  defaultGenerationModelSelection,
+  normalizeGenerationModelSelection
+} = require("../gateway/model_catalog");
 
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const CONFIG_DIR = path.join(os.homedir(), ".atlasrag");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const DEFAULT_INSTALL_HOME = path.join(os.homedir(), ".atlasrag");
-const DEFAULT_ANSWER_MODEL = "gpt-4o";
-const DEFAULT_EMBED_MODEL = "text-embedding-3-large";
-const DEFAULT_REFLECT_MODEL = "gpt-4o-mini";
-const ONBOARD_ANSWER_MODEL_OPTIONS = Object.freeze([
-  Object.freeze({ key: "1", model: "gpt-4o", label: "Balanced default" }),
-  Object.freeze({ key: "2", model: "gpt-4.1", label: "Stronger text output" }),
-  Object.freeze({ key: "3", model: "gpt-4o-mini", label: "Fastest / lowest cost" }),
-  Object.freeze({ key: "4", model: "__custom__", label: "Enter a custom model id" })
-]);
+const ONBOARD_ANSWER_MODEL_OPTIONS = GENERATION_MODEL_PRESETS;
 const SHELL_PATH_BLOCK_START = "# >>> atlasrag >>>";
 const SHELL_PATH_BLOCK_END = "# <<< atlasrag <<<";
 const INGESTIBLE_TEXT_EXTENSIONS = new Set([
@@ -245,19 +246,11 @@ function normalizeConfiguredModel(value, fallback = "") {
 }
 
 function defaultOnboardAnswerModelSelection(value, fallback = DEFAULT_ANSWER_MODEL) {
-  const clean = normalizeConfiguredModel(value, fallback);
-  const match = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.model === clean);
-  return match ? match.key : clean;
+  return defaultGenerationModelSelection(normalizeConfiguredModel(value, fallback), fallback);
 }
 
 function normalizeOnboardAnswerModelSelection(value, fallback = DEFAULT_ANSWER_MODEL) {
-  const clean = normalizeConfiguredModel(value, fallback);
-  const match = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.key === clean || item.model === clean);
-  if (!match) return clean;
-  if (match.model === "__custom__") {
-    throw new Error("Custom model id is required.");
-  }
-  return match.model;
+  return normalizeGenerationModelSelection(normalizeConfiguredModel(value, fallback), fallback);
 }
 
 function ensureConfigDir() {
@@ -540,6 +533,8 @@ module.exports = {
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
+  EMBEDDING_MODEL_PRESETS,
+  GENERATION_MODEL_PRESETS,
   PACKAGE_ROOT,
   CONFIG_DIR,
   CONFIG_FILE,

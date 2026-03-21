@@ -9,7 +9,11 @@
 // This file generates an answer using retrieved chunks (RAG = Retrieval-Augmented Generation).
 
 const OpenAI = require("openai");
-const { DEFAULT_ANSWER_MODEL, normalizeModelId } = require("./model_config");
+const {
+  DEFAULT_ANSWER_MODEL,
+  buildResponsesCreateParams,
+  normalizeModelId
+} = require("./model_config");
 
 let defaultClient = null;
 function createClient(key) {
@@ -330,12 +334,11 @@ async function generateAnswer(question, chunks, options = {}) {
 
   let resp = null;
   try {
-    // Use Responses API with GPT-4o
-    resp = await getClient(options?.apiKey).responses.create({
+    resp = await getClient(options?.apiKey).responses.create(buildResponsesCreateParams({
       model: resolveAnswerModel(options),
       input,
       temperature: 0.2
-    });
+    }));
   } catch (err) {
     if (!fallbackWarned) {
       fallbackWarned = true;
@@ -417,11 +420,11 @@ async function generateBooleanAskAnswer(question, chunks, options = {}) {
 
   let resp = null;
   try {
-    resp = await getClient(options?.apiKey).responses.create({
+    resp = await getClient(options?.apiKey).responses.create(buildResponsesCreateParams({
       model: resolveBooleanAskModel(options),
       input,
       temperature: 0
-    });
+    }));
   } catch (err) {
     if (!fallbackWarned) {
       fallbackWarned = true;

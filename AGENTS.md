@@ -32,8 +32,9 @@ If this repository is available locally and the goal is to run or test AtlasRAG 
 ## Model Rules
 
 - For local self-hosted defaults, use `atlasrag changemodel` instead of telling the user to edit the env file by hand.
-- `atlasrag onboard` and `atlasrag changemodel` support numbered generation-model choices for the common defaults.
+- `atlasrag onboard` and `atlasrag changemodel` support numbered generation-model choices for the current preset list, including GPT-4.1 / GPT-4o, GPT-5 presets, and o-series reasoning models.
 - `ask` and `boolean_ask` also accept a per-request `model` override through the API and CLI when the caller wants a different generation model for one request. On the CLI, `--model` accepts the same common numbered shortcuts too.
+- Use `GET /v1/models` when you need the live preset catalog and current instance defaults.
 - Tenant-level admin settings can override `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` via `/v1/admin/tenant`.
 - `embedModel` is instance-wide, not tenant-specific. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space.
 

@@ -1237,7 +1237,8 @@ atlasrag changemodel \
   --reflect-model gpt-4o-mini \
   --compact-model inherit \
   --restart</pre>
-                  <p class="hint">Common generation choices are <span class="mono">1 = gpt-4o</span>, <span class="mono">2 = gpt-4.1</span>, <span class="mono">3 = gpt-4o-mini</span>, and <span class="mono">4 = custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">atlasrag ask --model ...</span> and <span class="mono">atlasrag boolean_ask --model ...</span>.</p>
+                  <p class="hint">Current generation choices are <span class="mono">1 = gpt-4o</span>, <span class="mono">2 = gpt-4.1</span>, <span class="mono">3 = gpt-4o-mini</span>, <span class="mono">4 = gpt-4.1-mini</span>, <span class="mono">5 = gpt-4.1-nano</span>, <span class="mono">6 = gpt-5.2</span>, <span class="mono">7 = gpt-5-mini</span>, <span class="mono">8 = gpt-5-nano</span>, <span class="mono">9 = o1</span>, <span class="mono">10 = o3</span>, <span class="mono">11 = o3-mini</span>, <span class="mono">12 = o4-mini</span>, and <span class="mono">13 = custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">atlasrag ask --model ...</span> and <span class="mono">atlasrag boolean_ask --model ...</span>.</p>
+                  <p class="hint">Reasoning-style presets such as <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o4-mini</span>, and the GPT-5 family are supported. AtlasRAG omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What you get at the end</div>
@@ -1608,8 +1609,8 @@ atlasrag search --q "tenant auth mode" --collection default --json</pre>
                   <pre class="doc-code">atlasrag ask --question "What does AtlasRAG store?" --collection local-demo --k 3
 atlasrag ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short --model 2
 atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo --k 3
-atlasrag boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model gpt-4o-mini</pre>
-                  <p class="hint"><span class="mono">--model</span> is optional. If you omit it, AtlasRAG uses the tenant or instance default model. On the CLI you can also use the common numbered shortcuts <span class="mono">1</span>, <span class="mono">2</span>, <span class="mono">3</span>, and <span class="mono">4</span>.</p>
+atlasrag boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model o1</pre>
+                  <p class="hint"><span class="mono">--model</span> is optional. If you omit it, AtlasRAG uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">atlasrag changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Useful write flags</div>
@@ -1662,6 +1663,8 @@ EMBED_MODEL=text-embedding-3-large
 REFLECT_MODEL=gpt-4o-mini
 COMPACT_MODEL=gpt-4o-mini</pre>
                   <p class="hint"><span class="mono">EMBED_MODEL</span> is instance-wide. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, AtlasRAG also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
+                  <p class="hint">Preset generation models include <span class="mono">gpt-4o</span>, <span class="mono">gpt-4.1</span>, <span class="mono">gpt-4o-mini</span>, <span class="mono">gpt-4.1-mini</span>, <span class="mono">gpt-4.1-nano</span>, <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o3-mini</span>, and <span class="mono">o4-mini</span>. Custom model ids are also allowed, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
+                  <pre class="doc-code">curl http://localhost:3000/v1/models</pre>
                 </div>
               </div>
             </details>

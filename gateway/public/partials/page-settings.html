@@ -155,7 +155,7 @@
                 <div class="field">
                   <label for="tenantAnswerModel">Ask model</label>
                   <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                  <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default.</div>
+                  <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default. The live preset catalog is also available from <span class="mono">GET /v1/models</span>.</div>
                 </div>
                 <div class="field">
                   <label for="tenantBooleanAskModel">Boolean ask model</label>
@@ -186,9 +186,18 @@
               </div>
 
               <datalist id="tenantGenerationModels">
+                <option value="gpt-5.2"></option>
+                <option value="gpt-5-mini"></option>
+                <option value="gpt-5-nano"></option>
                 <option value="gpt-4o"></option>
                 <option value="gpt-4.1"></option>
+                <option value="gpt-4.1-mini"></option>
+                <option value="gpt-4.1-nano"></option>
                 <option value="gpt-4o-mini"></option>
+                <option value="o1"></option>
+                <option value="o3"></option>
+                <option value="o3-mini"></option>
+                <option value="o4-mini"></option>
               </datalist>
 
               <div class="actions">

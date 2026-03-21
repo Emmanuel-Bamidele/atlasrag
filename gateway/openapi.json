@@ -16,6 +16,10 @@
       "description": "Liveness/readiness checks."
     },
     {
+      "name": "Models",
+      "description": "Preset model catalog and current instance defaults."
+    },
+    {
       "name": "Auth",
       "description": "User authentication and token issuance."
     },
@@ -323,7 +327,106 @@
       },
       "ModelId": {
         "type": "string",
-        "description": "OpenAI model id."
+        "description": "OpenAI model id. AtlasRAG publishes its current preset catalog at GET /v1/models, but custom model ids are also allowed."
+      },
+      "ModelPreset": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "supportsTemperature": {
+            "type": "boolean"
+          },
+          "recommended": {
+            "type": "boolean"
+          },
+          "custom": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EmbeddingModelPreset": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "dimensions": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "recommended": {
+            "type": "boolean"
+          },
+          "custom": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModelsCatalog": {
+        "type": "object",
+        "properties": {
+          "generation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelPreset"
+            }
+          },
+          "embeddings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingModelPreset"
+            }
+          },
+          "notes": {
+            "type": "object",
+            "properties": {
+              "customModelAllowed": {
+                "type": "boolean"
+              },
+              "compatibility": {
+                "type": "string"
+              },
+              "availability": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ModelsResponseData": {
+        "type": "object",
+        "properties": {
+          "presets": {
+            "$ref": "#/components/schemas/ModelsCatalog"
+          },
+          "defaults": {
+            "type": "object",
+            "properties": {
+              "instance": {
+                "$ref": "#/components/schemas/TenantModelResolved"
+              }
+            }
+          }
+        }
       },
       "TenantModelOverrides": {
         "type": "object",
@@ -1531,6 +1634,104 @@
           }
         },
         "description": "Public health probe for gateway + vector TCP connectivity."
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "List preset models and current instance defaults",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ModelsResponseData"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "ok": true,
+                  "data": {
+                    "presets": {
+                      "generation": [
+                        {
+                          "key": "1",
+                          "model": "gpt-4o",
+                          "label": "Balanced default",
+                          "family": "gpt-4o",
+                          "supportsTemperature": true,
+                          "recommended": true,
+                          "custom": false
+                        },
+                        {
+                          "key": "9",
+                          "model": "o1",
+                          "label": "Deeper reasoning",
+                          "family": "o-series",
+                          "supportsTemperature": false,
+                          "recommended": false,
+                          "custom": false
+                        },
+                        {
+                          "key": "13",
+                          "model": "__custom__",
+                          "label": "Enter a custom model id",
+                          "family": "custom",
+                          "supportsTemperature": false,
+                          "recommended": false,
+                          "custom": true
+                        }
+                      ],
+                      "embeddings": [
+                        {
+                          "key": "1",
+                          "model": "text-embedding-3-large",
+                          "label": "Best quality (default)",
+                          "dimensions": 3072,
+                          "recommended": true,
+                          "custom": false
+                        }
+                      ],
+                      "notes": {
+                        "customModelAllowed": true,
+                        "compatibility": "AtlasRAG omits temperature automatically for reasoning-style models that do not accept it.",
+                        "availability": "Model availability depends on your OpenAI account and region."
+                      }
+                    },
+                    "defaults": {
+                      "instance": {
+                        "answerModel": "gpt-4o",
+                        "booleanAskModel": "gpt-4o",
+                        "embedModel": "text-embedding-3-large",
+                        "reflectModel": "gpt-4o-mini",
+                        "compactModel": "gpt-4o-mini"
+                      }
+                    }
+                  },
+                  "meta": {
+                    "tenantId": null,
+                    "collection": null,
+                    "timestamp": "2026-03-20T00:00:00.000Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Return AtlasRAG's curated preset model list, including the CLI numeric shortcuts, plus the current instance defaults. Custom model ids remain allowed anywhere a model field is supported."
       }
     },
     "/v1/login": {

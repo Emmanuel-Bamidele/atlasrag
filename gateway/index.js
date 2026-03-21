@@ -67,6 +67,8 @@ const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
 const {
+  buildPublicModelCatalog,
+  resolveEnvModelDefaults,
   normalizeModelId,
   resolveTenantModelSettings,
   parseTenantModelSettingsInput,
@@ -5252,6 +5254,15 @@ app.get("/v1/health", async (req, res) => {
   } catch (e) {
     sendError(res, 500, e, "HEALTH_CHECK_FAILED", null, null);
   }
+});
+
+app.get(["/models", "/v1/models"], async (req, res) => {
+  sendOk(res, {
+    presets: buildPublicModelCatalog(),
+    defaults: {
+      instance: resolveEnvModelDefaults(process.env)
+    }
+  }, null, null);
 });
 
 // --------------------------

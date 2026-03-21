@@ -152,10 +152,13 @@ Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conve
 Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
 Tenant settings accept `models.answerModel`, `models.booleanAskModel`, `models.reflectModel`, and `models.compactModel`. `embedModel` is instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+The live preset catalog is available from `client.getModels()` / `client.models()`. Current AtlasRAG presets include `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, and `o4-mini`, plus custom model ids.
 
 Per-request model override example:
 
 ```js
+const models = await client.getModels();
+
 const answer = await client.ask("What does AtlasRAG store?", {
   collection: "default",
   model: "gpt-4.1"
@@ -163,7 +166,7 @@ const answer = await client.ask("What does AtlasRAG store?", {
 
 const check = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
   collection: "default",
-  model: "gpt-4o-mini"
+  model: "o1"
 });
 ```
 

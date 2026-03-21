@@ -561,7 +561,7 @@ async function resolvePromptValue({
 function formatOnboardAnswerModelPrompt() {
   const lines = ["Default generation model"];
   for (const option of ONBOARD_ANSWER_MODEL_OPTIONS) {
-    const defaultLabel = option.key === "1" ? " (Recommended)" : "";
+    const defaultLabel = option.recommended ? " (Recommended)" : "";
     lines.push(`  ${option.key}. ${option.model === "__custom__" ? option.label : `${option.model} - ${option.label}`}${defaultLabel}`);
   }
   return lines.join("\n");
@@ -570,6 +570,7 @@ function formatOnboardAnswerModelPrompt() {
 async function resolveOnboardAnswerModel({ parsed, nonInteractive, existingValue }) {
   const fallback = normalizeConfiguredModel(existingValue, DEFAULT_ANSWER_MODEL);
   const rawFlag = getFlag(parsed, "answer-model") ?? getFlag(parsed, "model");
+  const customChoice = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.model === "__custom__");
   if (rawFlag !== undefined && rawFlag !== true) {
     return normalizeOnboardAnswerModelSelection(rawFlag, fallback);
   }
@@ -583,7 +584,7 @@ async function resolveOnboardAnswerModel({ parsed, nonInteractive, existingValue
       defaultOnboardAnswerModelSelection(fallback, DEFAULT_ANSWER_MODEL)
     );
     const clean = String(answer || "").trim();
-    if (clean === "4") {
+    if (customChoice && clean === customChoice.key) {
       const existingCustom = ONBOARD_ANSWER_MODEL_OPTIONS.some((item) => item.model === fallback) ? "" : fallback;
       const custom = await askVisible("Custom generation model id", existingCustom);
       const customClean = String(custom || "").trim();
