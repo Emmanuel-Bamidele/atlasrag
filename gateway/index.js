@@ -67,12 +67,16 @@ const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
 const {
+  DEFAULT_EMBED_PROVIDER,
+  DEFAULT_EMBED_MODEL,
   buildPublicModelCatalog,
   resolveEnvModelDefaults,
   normalizeModelId,
+  normalizeProviderId,
   resolveTenantModelSettings,
   parseTenantModelSettingsInput,
-  hasTenantModelSettingsInput
+  hasTenantModelSettingsInput,
+  resolveRequestedGenerationConfig
 } = require("./model_config");
 const { estimateTokensFromText } = require("./memory_value");
 const {
@@ -860,12 +864,30 @@ function buildTenantSettingsPayload(tenantId, tenant) {
   };
 }
 
+function resolveAskProviderOverride(body = {}) {
+  return normalizeProviderId(body?.provider ?? body?.answerProvider ?? body?.answer_provider) || "";
+}
+
 function resolveAskModelOverride(body = {}) {
   return normalizeModelId(body?.model ?? body?.answerModel ?? body?.answer_model) || "";
 }
 
+function resolveBooleanAskProviderOverride(body = {}) {
+  return normalizeProviderId(body?.provider ?? body?.booleanAskProvider ?? body?.boolean_ask_provider ?? body?.answerProvider ?? body?.answer_provider) || "";
+}
+
 function resolveBooleanAskModelOverride(body = {}) {
   return normalizeModelId(body?.model ?? body?.booleanAskModel ?? body?.boolean_ask_model ?? body?.answerModel ?? body?.answer_model) || "";
+}
+
+async function getRequestEmbeddingConfig(req, tenantId, models = null) {
+  const effectiveModels = models || await getEffectiveTenantModels(tenantId);
+  return {
+    models: effectiveModels,
+    embedProvider: effectiveModels.embedProvider,
+    embedModel: effectiveModels.embedModel,
+    apiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider)
+  };
 }
 
 function resolvePrincipalId(req) {
@@ -1051,22 +1073,36 @@ function requireAdmin(req, res, next) {
   return requireRole("admin")(req, res, next);
 }
 
-function resolveOpenAiApiKeyOverride(req) {
-  const raw = req?.header("x-openai-api-key");
+function readProviderKeyHeader(req, headerName) {
+  const raw = req?.header(headerName);
   if (raw === undefined || raw === null) return "";
   const clean = String(raw).trim();
   if (!clean) return "";
   if (clean.length > 4096) {
-    throw new Error("x-openai-api-key header is too long");
+    throw new Error(`${headerName} header is too long`);
   }
   return clean;
 }
 
+function resolveProviderApiKeyOverrides(req) {
+  return {
+    openai: readProviderKeyHeader(req, "x-openai-api-key"),
+    gemini: readProviderKeyHeader(req, "x-gemini-api-key"),
+    anthropic: readProviderKeyHeader(req, "x-anthropic-api-key")
+  };
+}
+
+function resolveProviderApiKeyOverride(req, provider) {
+  const cleanProvider = normalizeProviderId(provider) || "openai";
+  const overrides = resolveProviderApiKeyOverrides(req);
+  return overrides[cleanProvider] || "";
+}
+
 function assertNoOpenAiApiKeyOverride(req, endpointLabel) {
-  const override = resolveOpenAiApiKeyOverride(req);
-  if (!override) return;
+  const overrides = resolveProviderApiKeyOverrides(req);
+  if (!overrides.openai && !overrides.gemini && !overrides.anthropic) return;
   const endpoint = endpointLabel || "this endpoint";
-  throw new Error(`${endpoint} does not support X-OpenAI-API-Key because the work runs asynchronously after the request ends`);
+  throw new Error(`${endpoint} does not support request-scoped provider API key headers because the work runs asynchronously after the request ends`);
 }
 
 function resolveCollection(req, options = {}) {
@@ -2801,7 +2837,9 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
   const effectiveModels = options?.models || await getEffectiveTenantModels(tenantId);
   const { vectors, usage } = await embedTexts(texts, {
     apiKey: options?.apiKey,
-    embedModel: options?.embedModel || effectiveModels.embedModel
+    embedProvider: options?.embedProvider || effectiveModels.embedProvider,
+    embedModel: options?.embedModel || effectiveModels.embedModel,
+    taskType: "RETRIEVAL_DOCUMENT"
   });
   recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
@@ -2995,7 +3033,7 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey, embedModel }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey, embedProvider, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -3003,8 +3041,18 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     source: telemetry?.source || "search_query"
   });
   const policyConfig = resolveMemoryPolicyConfig(policy);
-  const effectiveModels = embedModel ? { embedModel } : await getEffectiveTenantModels(tenantId);
-  const { vectors: [qvec], usage } = await embedTexts([query], { apiKey, embedModel: effectiveModels.embedModel });
+  const effectiveModels = (embedModel || embedProvider)
+    ? {
+        embedProvider: embedProvider || DEFAULT_EMBED_PROVIDER,
+        embedModel: embedModel || DEFAULT_EMBED_MODEL
+      }
+    : await getEffectiveTenantModels(tenantId);
+  const { vectors: [qvec], usage } = await embedTexts([query], {
+    apiKey,
+    embedProvider: effectiveModels.embedProvider,
+    embedModel: effectiveModels.embedModel,
+    taskType: "RETRIEVAL_QUERY"
+  });
   recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
   const cleanDocIds = Array.isArray(docIds) ? docIds : [];
@@ -3255,7 +3303,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource, embedModel }) {
+async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource, embedProvider, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -3275,6 +3323,7 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     candidateTypes: ["artifact"],
     policy,
     apiKey,
+    embedProvider,
     embedModel,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
@@ -3404,8 +3453,14 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey, model, models }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, generationApiKey, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
+  const requestedAnswerConfig = resolveRequestedGenerationConfig({
+    provider,
+    model,
+    fallbackProvider: effectiveModels.answerProvider,
+    fallbackModel: effectiveModels.answerModel
+  });
   const {
     telemetryContext,
     usedItems,
@@ -3420,16 +3475,18 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     privileges,
     telemetry,
     policy,
-    apiKey,
+    apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
+    embedProvider: effectiveModels.embedProvider,
     operation: "answer_question",
     retrievalSource: "answer_retrieval_query"
   });
 
   const injectedMemoryIds = new Set();
   const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
-    apiKey,
-    model: model || effectiveModels.answerModel,
+    apiKey: generationApiKey,
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model,
     answerLength,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
@@ -3487,12 +3544,19 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
     answerLength: resolvedAnswerLength || answerLength || "auto",
-    model: model || effectiveModels.answerModel
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model
   };
 }
 
-async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, model, models }) {
+async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, generationApiKey, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
+  const requestedAnswerConfig = resolveRequestedGenerationConfig({
+    provider,
+    model,
+    fallbackProvider: effectiveModels.booleanAskProvider,
+    fallbackModel: effectiveModels.booleanAskModel
+  });
   const {
     telemetryContext,
     usedItems,
@@ -3507,16 +3571,18 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     privileges,
     telemetry,
     policy,
-    apiKey,
+    apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
+    embedProvider: effectiveModels.embedProvider,
     operation: "answer_boolean_ask",
     retrievalSource: "answer_boolean_ask_retrieval_query"
   });
 
   const injectedMemoryIds = new Set();
   const { answer, citations, usage } = await generateBooleanAskAnswer(question, chunks, {
-    apiKey,
-    model: model || effectiveModels.booleanAskModel,
+    apiKey: generationApiKey,
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
       const seen = new Set();
@@ -3573,7 +3639,8 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
     supportingChunks: mapSupportingChunks(chunks),
-    model: model || effectiveModels.booleanAskModel
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model
   };
 }
 
@@ -3603,7 +3670,9 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   const effectiveModels = options?.models || await getEffectiveTenantModels(parsed?.tenantId);
   const { vectors, usage } = await embedTexts(texts, {
     apiKey: options?.apiKey,
-    embedModel: options?.embedModel || effectiveModels.embedModel
+    embedProvider: options?.embedProvider || effectiveModels.embedProvider,
+    embedModel: options?.embedModel || effectiveModels.embedModel,
+    taskType: "RETRIEVAL_DOCUMENT"
   });
   recordEmbeddingUsage(parsed?.tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
@@ -3706,7 +3775,7 @@ async function memoryWriteCore(req) {
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
   const nowMs = Date.now();
   const initialValueScore = resolveInitialValueScore(policy);
-  const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+  const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
   const metadataWithTokens = buildStoredMemoryMetadata(metadata, text, policy);
   const memory = await upsertMemoryItem({
@@ -3736,7 +3805,9 @@ async function memoryWriteCore(req) {
   });
 
   const { chunksIndexed, truncated } = await indexMemoryText(memory.namespace_id, text, {
-    apiKey: openAiApiKey,
+    apiKey: embedConfig.apiKey,
+    embedProvider: embedConfig.embedProvider,
+    embedModel: embedConfig.embedModel,
     telemetry: buildTelemetryContext({
       requestId: req.requestId,
       tenantId,
@@ -3949,6 +4020,7 @@ async function runReflectionJob(jobId, tenantId) {
       text,
       types,
       maxItems,
+      reflectProvider: tenantModels.reflectProvider,
       reflectModel: tenantModels.reflectModel
     });
     recordGenerationUsage(tenantId, reflection?.usage, buildTelemetryContext({
@@ -4199,7 +4271,9 @@ async function runCompactionJob(jobId, tenantId) {
     const tenantModels = await getEffectiveTenantModels(tenantId);
     const summary = await summarizeMemories({
       text: combined,
+      reflectProvider: tenantModels.reflectProvider,
       reflectModel: tenantModels.reflectModel,
+      compactProvider: tenantModels.compactProvider,
       compactModel: tenantModels.compactModel
     });
     recordGenerationUsage(tenantId, summary?.usage, buildTelemetryContext({
@@ -4535,6 +4609,7 @@ async function promoteMemoryItem(item, options = {}) {
     text,
     types: ["semantic", "procedural"],
     maxItems: MEMORY_PROMOTION_MAX_ITEMS,
+    reflectProvider: tenantModels.reflectProvider,
     reflectModel: tenantModels.reflectModel
   });
   recordGenerationUsage(item.tenant_id, reflection?.usage, buildTelemetryContext({
@@ -4720,7 +4795,9 @@ async function compactLowValueGroup(seed, options = {}) {
   const tenantModels = await getEffectiveTenantModels(seed.tenant_id);
   const summary = await summarizeMemories({
     text: combined,
+    reflectProvider: tenantModels.reflectProvider,
     reflectModel: tenantModels.reflectModel,
+    compactProvider: tenantModels.compactProvider,
     compactModel: tenantModels.compactModel
   });
   recordGenerationUsage(seed.tenant_id, summary?.usage, buildTelemetryContext({
@@ -5651,9 +5728,13 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
     const tenant = await setTenantSettings(tenantId, {
       authMode: rawMode === undefined ? undefined : authMode,
       ssoProviders: providersInput.provided ? providersInput.value : undefined,
+      answerProvider: modelInput.answerProvider,
       answerModel: modelInput.answerModel,
+      booleanAskProvider: modelInput.booleanAskProvider,
       booleanAskModel: modelInput.booleanAskModel,
+      reflectProvider: modelInput.reflectProvider,
       reflectModel: modelInput.reflectModel,
+      compactProvider: modelInput.compactProvider,
       compactModel: modelInput.compactModel
     });
     const nextPayload = buildTenantSettingsPayload(tenantId, tenant);
@@ -6092,7 +6173,7 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
@@ -6103,7 +6184,9 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
       text,
       { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
       {
-        apiKey: openAiApiKey,
+        apiKey: embedConfig.apiKey,
+        embedProvider: embedConfig.embedProvider,
+        embedModel: embedConfig.embedModel,
         telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_legacy" })
       }
     );
@@ -6130,12 +6213,12 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
   let principalId = null;
   let agentId = null;
   let tags = [];
-  let openAiApiKey = "";
+  let embedConfig = null;
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
-    openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
   } catch (e) {
@@ -6159,7 +6242,9 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
           text,
           { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
           {
-            apiKey: openAiApiKey,
+            apiKey: embedConfig.apiKey,
+            embedProvider: embedConfig.embedProvider,
+            embedModel: embedConfig.embedModel,
             telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_v1" })
           }
         );
@@ -6197,7 +6282,7 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
     const tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
@@ -6209,7 +6294,9 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
       fetched.text,
       { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
       {
-        apiKey: openAiApiKey,
+        apiKey: embedConfig.apiKey,
+        embedProvider: embedConfig.embedProvider,
+        embedModel: embedConfig.embedModel,
         telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_legacy" })
       }
     );
@@ -6248,12 +6335,12 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
   let principalId = null;
   let agentId = null;
   let tags = [];
-  let openAiApiKey = "";
+  let embedConfig = null;
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
-    openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
   } catch (e) {
@@ -6278,7 +6365,9 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
           fetched.text,
           { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
           {
-            apiKey: openAiApiKey,
+            apiKey: embedConfig.apiKey,
+            embedProvider: embedConfig.embedProvider,
+            embedModel: embedConfig.embedModel,
             telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_url_index_v1" })
           }
         );
@@ -6332,8 +6421,15 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider,
+      model,
+      fallbackProvider: effectiveModels.answerProvider,
+      fallbackModel: effectiveModels.answerModel
+    });
 
     const result = await answerQuestion({
       tenantId,
@@ -6346,7 +6442,10 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answerLength,
       policy,
       model,
-      apiKey: openAiApiKey,
+      provider,
+      models: effectiveModels,
+      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6362,6 +6461,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       citations: citationIds,
       sources: result.citations,
       answerLength: result.answerLength,
+      provider: result.provider,
       model: result.model,
       tenantId,
       collection
@@ -6391,8 +6491,15 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider,
+      model,
+      fallbackProvider: effectiveModels.answerProvider,
+      fallbackModel: effectiveModels.answerModel
+    });
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -6404,7 +6511,10 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answerLength,
       policy,
       model,
-      apiKey: openAiApiKey,
+      provider,
+      models: effectiveModels,
+      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6418,6 +6528,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       citations: result.citations,
       chunksUsed: result.chunksUsed,
       answerLength: result.answerLength,
+      provider: result.provider,
       model: result.model,
       k
     }, tenantId, collection);
@@ -6440,8 +6551,15 @@ async function handleBooleanAskLegacy(req, res) {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider,
+      model,
+      fallbackProvider: effectiveModels.booleanAskProvider,
+      fallbackModel: effectiveModels.booleanAskModel
+    });
 
     const result = await answerBooleanAskQuestion({
       tenantId,
@@ -6453,7 +6571,10 @@ async function handleBooleanAskLegacy(req, res) {
       privileges: access.privileges,
       policy,
       model,
-      apiKey: openAiApiKey,
+      provider,
+      models: effectiveModels,
+      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6469,6 +6590,7 @@ async function handleBooleanAskLegacy(req, res) {
       citations: citationIds,
       sources: result.citations,
       supportingChunks: result.supportingChunks,
+      provider: result.provider,
       model: result.model,
       tenantId,
       collection
@@ -6494,8 +6616,15 @@ async function handleBooleanAskV1(req, res) {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider,
+      model,
+      fallbackProvider: effectiveModels.booleanAskProvider,
+      fallbackModel: effectiveModels.booleanAskModel
+    });
     const result = await answerBooleanAskQuestion({
       tenantId,
       collection,
@@ -6506,7 +6635,10 @@ async function handleBooleanAskV1(req, res) {
       privileges: access.privileges,
       policy,
       model,
-      apiKey: openAiApiKey,
+      provider,
+      models: effectiveModels,
+      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -6520,6 +6652,7 @@ async function handleBooleanAskV1(req, res) {
       citations: result.citations,
       supportingChunks: result.supportingChunks,
       chunksUsed: result.chunksUsed,
+      provider: result.provider,
       model: result.model,
       k
     }, tenantId, collection);
@@ -6647,7 +6780,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
       tenantId,
@@ -6656,7 +6789,9 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
-      apiKey: openAiApiKey,
+      apiKey: embedConfig.apiKey,
+      embedProvider: embedConfig.embedProvider,
+      embedModel: embedConfig.embedModel,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
@@ -6700,7 +6835,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     const results = await searchChunks({
       tenantId,
       collection,
@@ -6708,7 +6843,9 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
-      apiKey: openAiApiKey,
+      apiKey: embedConfig.apiKey,
+      embedProvider: embedConfig.embedProvider,
+      embedModel: embedConfig.embedModel,
       principalId: access.principalId,
       privileges: access.privileges,
       enforceArtifactVisibility: true,
@@ -6840,7 +6977,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
       tenantId,
@@ -6856,7 +6993,9 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       since: sinceTime,
       until: untilTime,
       policy,
-      apiKey: openAiApiKey,
+      apiKey: embedConfig.apiKey,
+      embedProvider: embedConfig.embedProvider,
+      embedModel: embedConfig.embedModel,
       telemetry: telemetryContext
     });
 
@@ -6946,7 +7085,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
-    const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
       tenantId,
@@ -6962,7 +7101,9 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       since: sinceTime,
       until: untilTime,
       policy,
-      apiKey: openAiApiKey,
+      apiKey: embedConfig.apiKey,
+      embedProvider: embedConfig.embedProvider,
+      embedModel: embedConfig.embedModel,
       telemetry: telemetryContext
     });
 

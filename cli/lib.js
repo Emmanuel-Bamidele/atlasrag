@@ -3,11 +3,24 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const {
+  DEFAULT_ANSWER_PROVIDER,
+  DEFAULT_EMBED_PROVIDER,
+  DEFAULT_REFLECT_PROVIDER,
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
+  GENERATION_PROVIDER_PRESETS,
+  EMBEDDING_PROVIDER_PRESETS,
   GENERATION_MODEL_PRESETS,
+  listEmbeddingModelPresets,
+  listGenerationModelPresets,
   EMBEDDING_MODEL_PRESETS,
+  defaultProviderSelection,
+  normalizeProviderSelection,
+  defaultGenerationModelSelectionForProvider,
+  normalizeGenerationModelSelectionForProvider,
+  defaultEmbeddingModelSelectionForProvider,
+  normalizeEmbeddingModelSelectionForProvider,
   defaultGenerationModelSelection,
   normalizeGenerationModelSelection
 } = require("../gateway/model_catalog");
@@ -510,6 +523,8 @@ function createOnboardConfig({
   adminUsername,
   apiKey,
   openAiApiKey,
+  geminiApiKey,
+  anthropicApiKey,
   onboardingPending = false
 }) {
   return {
@@ -523,6 +538,8 @@ function createOnboardConfig({
     adminUsername,
     apiKey,
     openAiApiKey: openAiApiKey || "",
+    geminiApiKey: geminiApiKey || "",
+    anthropicApiKey: anthropicApiKey || "",
     onboardingPending: Boolean(onboardingPending),
     updatedAt: new Date().toISOString()
   };
@@ -530,11 +547,18 @@ function createOnboardConfig({
 
 module.exports = {
   DEFAULT_INSTALL_HOME,
+  DEFAULT_ANSWER_PROVIDER,
+  DEFAULT_EMBED_PROVIDER,
+  DEFAULT_REFLECT_PROVIDER,
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
+  GENERATION_PROVIDER_PRESETS,
+  EMBEDDING_PROVIDER_PRESETS,
   EMBEDDING_MODEL_PRESETS,
   GENERATION_MODEL_PRESETS,
+  listEmbeddingModelPresets,
+  listGenerationModelPresets,
   PACKAGE_ROOT,
   CONFIG_DIR,
   CONFIG_FILE,
@@ -549,9 +573,12 @@ module.exports = {
   buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
+  defaultProviderSelection,
   defaultCollectionFromFolder,
   detectIngestibleFileType,
   detectProjectRoot,
+  defaultEmbeddingModelSelectionForProvider,
+  defaultGenerationModelSelectionForProvider,
   defaultOnboardAnswerModelSelection,
   extractDocumentText,
   formatEnvValue,
@@ -564,7 +591,10 @@ module.exports = {
   normalizeExtractedText,
   normalizeCommandName,
   normalizeConfiguredModel,
+  normalizeEmbeddingModelSelectionForProvider,
+  normalizeGenerationModelSelectionForProvider,
   normalizeOnboardAnswerModelSelection,
+  normalizeProviderSelection,
   normalizePathForCompare,
   normalizeTcpPort,
   parseCliArgs,

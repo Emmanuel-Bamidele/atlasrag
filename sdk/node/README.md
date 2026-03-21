@@ -37,6 +37,8 @@ Store the printed values in your environment:
 export ATLASRAG_BASE_URL="http://localhost:3000"
 export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 export OPENAI_API_KEY="YOUR_OPENAI_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_KEY"
+export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"
 ```
 
 ## Quick start
@@ -47,7 +49,9 @@ const { AtlasRAGClient } = require("@atlasrag/sdk");
 const client = new AtlasRAGClient({
   baseUrl: process.env.ATLASRAG_BASE_URL || process.env.ATLASRAG_URL || "http://localhost:3000",
   apiKey: process.env.ATLASRAG_API_KEY,
-  openAiApiKey: process.env.OPENAI_API_KEY
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  geminiApiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY
 });
 
 async function main() {
@@ -55,10 +59,10 @@ async function main() {
     collection: "default"
   });
 
-  const answer = await client.ask("What does AtlasRAG store?", { k: 3 });
+  const answer = await client.ask("What does AtlasRAG store?", { k: 3, provider: "openai" });
   console.log(answer.data.answer);
 
-  const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", { k: 3 });
+  const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", { k: 3, provider: "openai" });
   console.log(booleanAsk.data.answer);
   console.log(booleanAsk.data.supportingChunks);
 }
@@ -74,16 +78,18 @@ Use a JWT (Bearer) or a service token (API key). For apps, agents, workers, and 
 const client = new AtlasRAGClient({
   baseUrl: process.env.ATLASRAG_BASE_URL || "http://localhost:3000",
   apiKey: process.env.ATLASRAG_API_KEY,
-  openAiApiKey: process.env.OPENAI_API_KEY
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  geminiApiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY
 });
 ```
 
-If `openAiApiKey` is set, the SDK sends `X-OpenAI-API-Key` so AtlasRAG can use your OpenAI key while still using the shared AtlasRAG deployment and its Postgres/auth state.
+If `openAiApiKey`, `geminiApiKey`, or `anthropicApiKey` is set, the SDK sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` so AtlasRAG can use your provider key while still using the shared AtlasRAG deployment and its Postgres/auth state.
 
 Current limitation:
 
-- request-scoped OpenAI key override works on sync requests such as docs, search, ask, boolean_ask, memory write, and memory recall
-- `memoryReflect()` and `memoryCompact()` should keep using the server-side OpenAI key today because those flows continue asynchronously after the request ends
+- request-scoped provider-key override works on sync requests such as docs, search, ask, boolean_ask, memory write, and memory recall
+- `memoryReflect()` and `memoryCompact()` should keep using the server-side provider key today because those flows continue asynchronously after the request ends
 
 Human admin login is still available when you need a JWT for the UI or admin setup:
 
@@ -127,9 +133,13 @@ await client.updateTenantSettings({
   authMode: "sso_only",
   ssoProviders: ["google"],
   models: {
+    answerProvider: "openai",
     answerModel: "gpt-4.1",
+    booleanAskProvider: null,
     booleanAskModel: null,
+    reflectProvider: "openai",
     reflectModel: "gpt-4o-mini",
+    compactProvider: null,
     compactModel: null
   }
 });
@@ -144,15 +154,15 @@ Memory writes and reflect support access control via `visibility` (`tenant`, `pr
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
 Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
-Ask and boolean_ask requests also accept `model` for a per-request generation override. Memory recall requests accept `policy` to choose retrieval mode per request.
+Ask and boolean_ask requests also accept `provider` and `model` for a per-request generation override. Memory recall requests accept `policy` to choose retrieval mode per request.
 Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
 Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
 Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
-Tenant settings accept `models.answerModel`, `models.booleanAskModel`, `models.reflectModel`, and `models.compactModel`. `embedModel` is instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
-The live preset catalog is available from `client.getModels()` / `client.models()`. Current AtlasRAG presets include `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, and `o4-mini`, plus custom model ids.
+Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+The live preset catalog is available from `client.getModels()` / `client.models()`. It returns provider-aware generation catalogs for OpenAI, Gemini, and Anthropic, plus embedding catalogs for OpenAI and Gemini.
 
 Per-request model override example:
 
@@ -161,12 +171,20 @@ const models = await client.getModels();
 
 const answer = await client.ask("What does AtlasRAG store?", {
   collection: "default",
+  provider: "gemini",
+  model: "gemini-2.5-flash"
+});
+
+const answerWithOpenAI = await client.ask("What does AtlasRAG store?", {
+  collection: "default",
+  provider: "openai",
   model: "gpt-4.1"
 });
 
 const check = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
   collection: "default",
-  model: "o1"
+  provider: "anthropic",
+  model: "claude-sonnet-4-20250514"
 });
 ```
 

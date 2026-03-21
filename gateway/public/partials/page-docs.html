@@ -6,7 +6,7 @@
             <div class="doc-tabs" data-doc-tabs="docs">
               <button class="doc-tab active" data-doc-tab="core" type="button">Overview</button>
               <button class="doc-tab" data-doc-tab="cli" type="button">CLI Setup</button>
-              <button class="doc-tab" data-doc-tab="setup" type="button">Setup</button>
+              <button class="doc-tab" data-doc-tab="setup" type="button">Setup Modes</button>
               <button class="doc-tab" data-doc-tab="amv" type="button">Memory policies</button>
             </div>
             <div class="doc-panels" data-doc-panels="docs">
@@ -32,7 +32,7 @@
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">How to read this page</div>
-                      <p>Use this tab for architecture, auth, and API behavior. If you need command-line install and usage flow, open CLI Setup. If you want manual deployment paths, open Setup.</p>
+                      <p>Use this tab for architecture, auth, and API behavior. If you need command-line install and usage flow, open CLI Setup. If you want clear self-hosted versus shared deployment setup paths, open Setup Modes.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
@@ -58,7 +58,7 @@ atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --colle
                 <div class="doc-block">
                   <div class="doc-label">What <span class="mono">atlasrag onboard</span> does</div>
                   <ol>
-                    <li>Prompts for admin username, admin password, tenant id, and your OpenAI key.</li>
+                    <li>Prompts for admin username, admin password, tenant id, provider/model defaults, and whichever provider API keys are needed for those defaults.</li>
                     <li>Writes the local env file and stages the local CLI config.</li>
                     <li>Starts the AtlasRAG Docker stack and runs the bootstrap helper.</li>
                     <li>Creates the first admin user and the first service token.</li>
@@ -143,11 +143,13 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
                 <div class="doc-block">
                   <div class="doc-label">Optional third mode</div>
                   <pre class="doc-code">X-API-Key: YOUR_SERVICE_TOKEN
-X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
+X-OpenAI-API-Key: YOUR_OPENAI_KEY
+X-Gemini-API-Key: YOUR_GEMINI_KEY
+X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </div>
-                <div id="doc-shared-openai-key"></div>
+                <div id="doc-shared-provider-key"></div>
                 <p class="hint">
-                  Use this when you want AtlasRAG to keep its own Postgres/auth/runtime but use your OpenAI key for a specific request.
+                  Use this when you want AtlasRAG to keep its own Postgres/auth/runtime but use your provider key for a specific request.
                   This is request-scoped; AtlasRAG does not persist the key for the tenant.
                 </p>
                 <div class="doc-block">
@@ -183,7 +185,8 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   service token instead of making every end user or agent log in directly to AtlasRAG.
                 </p>
                 <p>
-                  Optional third mode: keep AtlasRAG auth the same, but send <span class="mono">X-OpenAI-API-Key</span>
+                  Optional third mode: keep AtlasRAG auth the same, but send the matching provider-key header
+                  (<span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, or <span class="mono">X-Anthropic-API-Key</span>)
                   on supported sync requests when you want your own model-provider key to be used instead of the server default.
                 </p>
                 <div class="doc-block">
@@ -232,16 +235,20 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
     "authMode": "sso_only",
     "ssoProviders": ["google"],
     "models": {
+      "answerProvider": "openai",
       "answerModel": "gpt-4.1",
+      "booleanAskProvider": null,
       "booleanAskModel": null,
+      "reflectProvider": "openai",
       "reflectModel": "gpt-4o-mini",
+      "compactProvider": null,
       "compactModel": null
     }
   }'</pre>
                 </div>
               </div>
             </details>
-            <p class="hint">Valid authMode values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>. Set a model field to <span class="mono">null</span> to clear the tenant override and fall back to the instance default.</p>
+            <p class="hint">Valid authMode values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>. Set a provider/model field to <span class="mono">null</span> to clear the tenant override and fall back to the instance default. <span class="mono">embedProvider</span> and <span class="mono">embedModel</span> remain instance-wide.</p>
 
             <details class="details section" id="doc-security">
               <summary>Security</summary>
@@ -316,8 +323,8 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   JSON payloads; the Playground UI and CLI can extract supported files like <span class="mono">.pdf</span> and <span class="mono">.docx</span> to text locally first. Use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
                 </p>
                 <p class="hint">
-                  <span class="mono">X-OpenAI-API-Key</span> is supported on sync routes such as docs, search, ask, boolean_ask, memory write, and memory recall.
-                  It is currently rejected by async <span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span>.
+                  Request-scoped provider-key headers such as <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, and <span class="mono">X-Anthropic-API-Key</span> are supported on sync routes such as docs, search, ask, boolean_ask, memory write, and memory recall.
+                  They are currently rejected by async <span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span>.
                 </p>
                 <ul>
                   <li><span class="mono">/v1/docs</span> index + list documents</li>
@@ -1058,7 +1065,7 @@ while (true) {
                   <li>Gateway (Node) handles auth, routing, and orchestration.</li>
                   <li>Vector store (C++ TCP service) stores embeddings and serves similarity search.</li>
                   <li>Postgres stores chunks, memory items, links, jobs, and idempotency keys.</li>
-                  <li>OpenAI (or compatible) provides embeddings and generation.</li>
+                  <li>Provider adapters handle generation for OpenAI, Gemini, and Anthropic. Embeddings are currently supported through OpenAI and Gemini.</li>
                   <li>Background jobs handle reflection, summarization, redundancy scoring, and lifecycle tasks.</li>
                   <li>Expired items are automatically swept and removed (vectors + DB rows), preventing orphan vectors.</li>
                   <li>Jobs retry with exponential backoff before transitioning to failed.</li>
@@ -1078,69 +1085,45 @@ while (true) {
                     <div class="doc-outline docs-sidebar-card">
                       <div class="doc-outline-title">CLI Setup</div>
                       <div class="doc-outline-links">
-                        <a href="#doc-cli-overview">What the CLI covers</a>
-                        <a href="#doc-cli-install">Install the CLI</a>
-                        <a href="#doc-cli-onboard">Onboard a local deployment</a>
-                        <a href="#doc-cli-build">Build on top after setup</a>
-                        <a href="#doc-cli-remote">Use the CLI against an online deployment</a>
-                        <a href="#doc-cli-commands">Runtime commands</a>
-                        <a href="#doc-cli-write-search-ask">Write, manage, search, ask, boolean_ask</a>
-                        <a href="#doc-cli-config">Config and overrides</a>
-                        <a href="#doc-cli-examples">End-to-end examples</a>
-                        <a href="#doc-cli-troubleshoot">Troubleshooting</a>
+                        <a href="#doc-cli-install">Install</a>
+                        <a href="#doc-cli-container">Container</a>
+                        <a href="#doc-cli-hosting">Hosting</a>
+                        <a href="#doc-cli-maintenance">Maintenance</a>
+                        <a href="#doc-cli-commands">Commands</a>
+                        <a href="#doc-cli-examples">Examples</a>
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">Best use</div>
-                      <p>Use this tab when you want AtlasRAG to feel like one command surface: install, onboard, operate the stack, and make test requests without switching to raw Docker or curl first.</p>
+                      <p>Use this tab when you want AtlasRAG to feel like one command surface: install it, run the local container stack, point apps at it, maintain it over time, and keep a working command reference close by.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
-
-            <details class="details section" id="doc-cli-overview" open>
-              <summary>What the CLI covers</summary>
+            <details class="details section" id="doc-cli-install" open>
+              <summary>Install</summary>
               <div class="section-body">
                 <p>
                   The AtlasRAG CLI is the fastest self-hosted path in this repo. It installs a local
-                  <span class="mono">atlasrag</span> command, guides the first bootstrap, saves your runtime config,
-                  and then lets you keep working from the terminal.
+                  <span class="mono">atlasrag</span> command, guides the first bootstrap, saves runtime config,
+                  and keeps installation and upgrade steps in one place.
                 </p>
                 <div class="doc-block">
-                  <div class="doc-label">What it does</div>
+                  <div class="doc-label">What the CLI covers</div>
                   <ul>
                     <li><strong>Install:</strong> adds a local <span class="mono">atlasrag</span> wrapper for the current checkout or a cloned checkout.</li>
-                    <li><strong>Onboard:</strong> prompts for admin username, admin password, tenant id, and your OpenAI key.</li>
-                    <li><strong>Start and stop:</strong> controls the bundled Docker stack after install.</li>
+                    <li><strong>Onboard:</strong> prompts for admin username, admin password, tenant id, provider/model defaults, and whichever provider API keys are needed for the chosen providers.</li>
+                    <li><strong>Operate:</strong> controls the bundled Docker stack after install.</li>
                     <li><strong>Diagnose:</strong> shows health, compose status, and local configuration.</li>
                     <li><strong>Use the API:</strong> lets you run <span class="mono">write</span>, <span class="mono">search</span>, and <span class="mono">ask</span> directly from the terminal.</li>
                   </ul>
                 </div>
-                <div class="doc-block">
-                  <div class="doc-label">What it saves</div>
-                  <p>After onboarding, the CLI stores local config in <span class="mono">~/.atlasrag/config.json</span>. That file includes the project root, base URL, tenant id, and the saved service token so later CLI commands can work without repeating flags every time.</p>
-                </div>
-                <div class="doc-block">
-                  <div class="doc-label">Repository and source code</div>
-                  <p>AtlasRAG is open source. If you want to inspect the implementation, fork it, or follow the installer and deployment files directly, use the <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
-                </div>
-                <div class="doc-block">
-                  <div class="doc-label">Default behavior</div>
-                  <p>The default path uses the bundled Postgres service from <span class="mono">docker-compose.yml</span>. If you already manage your own Postgres, use <span class="mono">atlasrag onboard --external-postgres</span> and the CLI will write <span class="mono">.env.external-postgres</span> and use <span class="mono">docker-compose.external-postgres.yml</span> instead.</p>
-                  <p class="hint">That choice only changes which Postgres database this self-hosted AtlasRAG instance uses. It does not turn the instance into a shared AtlasRAG deployment, and its service tokens still belong only to that self-hosted instance.</p>
-                </div>
-              </div>
-            </details>
-
-            <details class="details section" id="doc-cli-install" open>
-              <summary>Install the CLI</summary>
-              <div class="section-body">
                 <div class="doc-block">
                   <div class="doc-label">Prerequisites</div>
                   <ul>
                     <li><span class="mono">Node.js 18+</span> on the host machine</li>
                     <li><span class="mono">Docker</span> with the Compose plugin for self-hosted use</li>
                     <li><span class="mono">git</span> if you want the installer to clone or refresh the repo for you</li>
-                    <li>Your own <span class="mono">OPENAI_API_KEY</span> for normal retrieval and answer quality</li>
+                    <li>At least one provider API key for normal retrieval and answer quality. OpenAI remains the default quickstart path.</li>
                   </ul>
                 </div>
                 <div class="doc-block">
@@ -1161,15 +1144,6 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                   <p class="hint">Those commands install the CLI from the current <span class="mono">main</span> branch. If you want to inspect the installer first, use the local-checkout path instead.</p>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Update or remove later</div>
-                  <pre class="doc-code">atlasrag update
-atlasrag changemodel
-atlasrag uninstall</pre>
-                  <p class="hint"><span class="mono">atlasrag update</span> updates the managed checkout under <span class="mono">~/.atlasrag</span>. If the remote <span class="mono">main</span> branch was force-pushed, the CLI can still recover as long as that managed checkout is clean.</p>
-                  <p class="hint"><span class="mono">atlasrag changemodel</span> updates the local self-hosted env file, supports numbered generation-model choices, and if the embedding model changes it sets <span class="mono">REINDEX_ON_START=force</span> for the next restart.</p>
-                  <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists, and for managed local self-hosted installs it also clears the local AtlasRAG Docker containers and volumes.</p>
-                </div>
-                <div class="doc-block">
                   <div class="doc-label">What the installer creates</div>
                   <ul>
                     <li>macOS/Linux wrapper: <span class="mono">~/.atlasrag/bin/atlasrag</span></li>
@@ -1178,20 +1152,33 @@ atlasrag uninstall</pre>
                   </ul>
                   <p class="hint">If your current terminal still says <span class="mono">atlasrag: command not found</span>, open a new shell or add the install bin directory to PATH manually.</p>
                 </div>
+                <div class="doc-block">
+                  <div class="doc-label">What it saves</div>
+                  <p>After onboarding, the CLI stores local config in <span class="mono">~/.atlasrag/config.json</span>. That file includes the project root, base URL, tenant id, and the saved service token so later CLI commands can work without repeating flags every time.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Repository and source code</div>
+                  <p>AtlasRAG is open source. If you want to inspect the implementation, fork it, or follow the installer and deployment files directly, use the <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                </div>
               </div>
             </details>
 
-            <details class="details section" id="doc-cli-onboard" open>
-              <summary>Onboard a local deployment</summary>
+            <details class="details section" id="doc-cli-container" open>
+              <summary>Container</summary>
               <div class="section-body">
                 <p>
-                  Onboarding is the command that turns an installed CLI into a working local AtlasRAG deployment.
+                  Onboarding is the command that turns an installed CLI into a working local AtlasRAG container stack.
                   It writes the env file, stages the local CLI config, starts Docker, runs the bootstrap helper, and then verifies readiness before printing the final ready summary.
                 </p>
                 <div class="doc-block">
+                  <div class="doc-label">Default container behavior</div>
+                  <p>The default path uses the bundled Postgres service from <span class="mono">docker-compose.yml</span>. If you already manage your own Postgres, use <span class="mono">atlasrag onboard --external-postgres</span> and the CLI will write <span class="mono">.env.external-postgres</span> and use <span class="mono">docker-compose.external-postgres.yml</span> instead.</p>
+                  <p class="hint">That choice only changes which Postgres database this self-hosted AtlasRAG instance uses. It does not turn the instance into a shared AtlasRAG deployment, and its service tokens still belong only to that self-hosted instance.</p>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">Bundled Postgres (default)</div>
                   <pre class="doc-code">atlasrag onboard</pre>
-                  <p class="hint">This prompts for admin username, admin password, tenant id, gateway port, your OpenAI key, and a numbered default generation-model choice. It writes <span class="mono">.env</span> and uses <span class="mono">docker-compose.yml</span>.</p>
+                  <p class="hint">This prompts for admin username, admin password, tenant id, gateway port, a numbered provider choice, a numbered model choice for that provider, and whichever provider API keys are needed. It writes <span class="mono">.env</span> and uses <span class="mono">docker-compose.yml</span>.</p>
                   <p class="hint">For a normal first run, press <span class="mono">Enter</span> at <span class="mono">Gateway port [3000]:</span> to keep port <span class="mono">3000</span>, and press <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span> to keep tenant <span class="mono">default</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -1207,6 +1194,7 @@ atlasrag uninstall</pre>
   --admin-password change_me \
   --tenant default \
   --gateway-port 3000 \
+  --answer-provider openai \
   --answer-model 1 \
   --openai-key "$OPENAI_API_KEY"</pre>
                 </div>
@@ -1231,13 +1219,16 @@ atlasrag uninstall</pre>
                   <pre class="doc-code">atlasrag changemodel
 
 atlasrag changemodel \
+  --answer-provider openai \
   --answer-model 2 \
   --boolean-ask-model inherit \
+  --embed-provider openai \
   --embed-model text-embedding-3-large \
+  --reflect-provider openai \
   --reflect-model gpt-4o-mini \
   --compact-model inherit \
   --restart</pre>
-                  <p class="hint">Current generation choices are <span class="mono">1 = gpt-4o</span>, <span class="mono">2 = gpt-4.1</span>, <span class="mono">3 = gpt-4o-mini</span>, <span class="mono">4 = gpt-4.1-mini</span>, <span class="mono">5 = gpt-4.1-nano</span>, <span class="mono">6 = gpt-5.2</span>, <span class="mono">7 = gpt-5-mini</span>, <span class="mono">8 = gpt-5-nano</span>, <span class="mono">9 = o1</span>, <span class="mono">10 = o3</span>, <span class="mono">11 = o3-mini</span>, <span class="mono">12 = o4-mini</span>, and <span class="mono">13 = custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">atlasrag ask --model ...</span> and <span class="mono">atlasrag boolean_ask --model ...</span>.</p>
+                  <p class="hint">The CLI now asks for a provider first, then shows the numbered model list for that provider. Generation providers are <span class="mono">1 = openai</span>, <span class="mono">2 = gemini</span>, and <span class="mono">3 = anthropic</span>. Embedding providers are <span class="mono">1 = openai</span> and <span class="mono">2 = gemini</span>. When the provider is OpenAI, the familiar numbered model shortcuts still map to <span class="mono">gpt-4o</span>, <span class="mono">gpt-4.1</span>, <span class="mono">gpt-4o-mini</span>, <span class="mono">gpt-4.1-mini</span>, <span class="mono">gpt-4.1-nano</span>, <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o3-mini</span>, <span class="mono">o4-mini</span>, and <span class="mono">custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">atlasrag ask --provider ... --model ...</span> and <span class="mono">atlasrag boolean_ask --provider ... --model ...</span>.</p>
                   <p class="hint">Reasoning-style presets such as <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o4-mini</span>, and the GPT-5 family are supported. AtlasRAG omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
                 </div>
                 <div class="doc-block">
@@ -1250,6 +1241,45 @@ atlasrag changemodel \
                   </ul>
                 </div>
                 <div class="doc-block">
+                  <div class="doc-label">Local container lifecycle</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Command</th>
+                        <th>What it does</th>
+                        <th>Example</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="mono">atlasrag start</span></td>
+                        <td>Starts the configured Docker stack</td>
+                        <td><span class="mono">atlasrag start --build</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag stop</span></td>
+                        <td>Stops the stack</td>
+                        <td><span class="mono">atlasrag stop --down</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag status</span></td>
+                        <td>Shows compose state plus health</td>
+                        <td><span class="mono">atlasrag status --json</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag logs</span></td>
+                        <td>Follows service logs</td>
+                        <td><span class="mono">atlasrag logs --service gateway --tail 200</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">atlasrag doctor</span></td>
+                        <td>Checks local prerequisites and saved config</td>
+                        <td><span class="mono">atlasrag doctor --json</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">Finish setup if the stack is already running</div>
                   <p>If Docker services are already up but the saved config still shows onboarding as incomplete, finish setup on the running stack with:</p>
                   <pre class="doc-code">atlasrag bootstrap --username your-username --tenant default</pre>
@@ -1258,8 +1288,8 @@ atlasrag changemodel \
               </div>
             </details>
 
-            <details class="details section" id="doc-cli-build" open>
-              <summary>Build on top after setup</summary>
+            <details class="details section" id="doc-cli-hosting" open>
+              <summary>Hosting</summary>
               <div class="section-body">
                 <p>
                   Once CLI setup is complete, AtlasRAG becomes a running local service your own app, backend,
@@ -1278,7 +1308,9 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
 export ATLASRAG_COLLECTION="default"
 
 # optional if you want request-scoped provider usage
-export OPENAI_API_KEY="YOUR_OPENAI_KEY"</pre>
+export OPENAI_API_KEY="YOUR_OPENAI_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_KEY"
+export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"</pre>
                   <p class="hint">For a deployed AtlasRAG instead of a local stack, keep the same pattern but set <span class="mono">ATLASRAG_BASE_URL</span> to your public domain such as <span class="mono">https://atlasrag.example.com</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -1318,7 +1350,9 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
 const client = new AtlasRAGClient({
   baseUrl: process.env.ATLASRAG_BASE_URL,
   apiKey: process.env.ATLASRAG_API_KEY,
-  openAiApiKey: process.env.OPENAI_API_KEY
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  geminiApiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY
 });
 
 async function main() {
@@ -1328,14 +1362,16 @@ async function main() {
 
   const answer = await client.ask("What does AtlasRAG store?", {
     collection: process.env.ATLASRAG_COLLECTION || "default",
-    k: 3
+    k: 3,
+    provider: "openai"
   });
 
   console.log(answer.data.answer);
 
   const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
     collection: process.env.ATLASRAG_COLLECTION || "default",
-    k: 3
+    k: 3,
+    provider: "openai"
   });
 
   console.log(booleanAsk.data.answer);
@@ -1354,19 +1390,13 @@ main().catch(console.error);</pre>
                   </ul>
                   <p class="hint">For production apps, keep the AtlasRAG service token on the server side. Do not ship admin credentials or long-lived service tokens into browser code.</p>
                 </div>
-              </div>
-            </details>
-
-            <details class="details section" id="doc-cli-remote">
-              <summary>Use the CLI against an online deployment</summary>
-              <div class="section-body">
-                <p>
-                  If AtlasRAG is already deployed behind nginx or another public reverse proxy,
-                  use the CLI as a remote API client. In this mode, you do <strong>not</strong> run
-                  <span class="mono">atlasrag onboard</span> from the client machine unless that machine is also the self-hosted AtlasRAG server.
-                </p>
                 <div class="doc-block">
-                  <div class="doc-label">What is different on the remote path</div>
+                  <div class="doc-label">Remote hosting mode</div>
+                  <p>
+                    If AtlasRAG is already deployed behind nginx or another public reverse proxy,
+                    use the CLI as a remote API client. In this mode, you do <strong>not</strong> run
+                    <span class="mono">atlasrag onboard</span> from the client machine unless that machine is also the self-hosted AtlasRAG server.
+                  </p>
                   <ul>
                     <li><strong>Needed on the client:</strong> the CLI, a public base URL, and a service token</li>
                     <li><strong>Not needed on the client:</strong> Docker, Compose, local bootstrap, or local Postgres</li>
@@ -1381,7 +1411,7 @@ main().catch(console.error);</pre>
                   <div class="doc-label">2. Export the live runtime values on your own machine</div>
                   <pre class="doc-code">export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
 export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
-                  <p class="hint">If you want AtlasRAG to use your own OpenAI key for supported sync requests, also export <span class="mono">OPENAI_API_KEY</span>.</p>
+                  <p class="hint">If you want AtlasRAG to use your own provider key for supported sync requests, also export <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">3. Smoke test the live deployment from the CLI</div>
@@ -1416,7 +1446,7 @@ atlasrag boolean_ask \
             </details>
 
             <details class="details section" id="doc-cli-commands">
-              <summary>Runtime commands</summary>
+              <summary>Commands</summary>
               <div class="section-body">
                 <div class="doc-block">
                   <div class="doc-label">Stack and admin commands</div>
@@ -1527,13 +1557,6 @@ atlasrag boolean_ask \
                   </table>
                   <p class="hint"><span class="mono">collections delete</span> requires an admin-capable credential. <span class="mono">docs delete</span>, <span class="mono">docs replace</span>, and <span class="mono">write</span> require an indexer-capable credential.</p>
                 </div>
-              </div>
-            </details>
-
-            <details class="details section" id="doc-cli-write-search-ask">
-              <summary>Write, manage, search, ask, and boolean_ask</summary>
-              <div class="section-body">
-                <p>The CLI can act like a small API client once onboarding is complete. It uses the saved base URL and service token unless you override them with flags or env vars.</p>
                 <div class="doc-block">
                   <div class="doc-label">Inspect collections and docs</div>
                   <pre class="doc-code">atlasrag collections list
@@ -1626,9 +1649,18 @@ atlasrag boolean_ask --question "Is password login enabled?" --collection defaul
               </div>
             </details>
 
-            <details class="details section" id="doc-cli-config">
-              <summary>Config and overrides</summary>
+            <details class="details section" id="doc-cli-maintenance">
+              <summary>Maintenance</summary>
               <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Update, change models, or remove later</div>
+                  <pre class="doc-code">atlasrag update
+atlasrag changemodel
+atlasrag uninstall</pre>
+                  <p class="hint"><span class="mono">atlasrag update</span> updates the managed checkout under <span class="mono">~/.atlasrag</span>. If the remote <span class="mono">main</span> branch was force-pushed, the CLI can still recover as long as that managed checkout is clean.</p>
+                  <p class="hint"><span class="mono">atlasrag changemodel</span> updates the local self-hosted env file, supports numbered generation-model choices, and if the embedding model changes it sets <span class="mono">REINDEX_ON_START=force</span> for the next restart.</p>
+                  <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists, and for managed local self-hosted installs it also clears the local AtlasRAG Docker containers and volumes.</p>
+                </div>
                 <div class="doc-block">
                   <div class="doc-label">Saved config</div>
                   <pre class="doc-code">atlasrag config show
@@ -1641,7 +1673,7 @@ atlasrag config show --show-secrets</pre>
                     <li><span class="mono">--base-url</span> to target a different deployment</li>
                     <li><span class="mono">--api-key</span> to override the saved service token</li>
                     <li><span class="mono">--tenant</span> and <span class="mono">--collection</span> to override saved scope</li>
-                    <li><span class="mono">--openai-key</span> to send a request-scoped OpenAI key on supported sync routes</li>
+                    <li><span class="mono">--openai-key</span>, <span class="mono">--gemini-key</span>, and <span class="mono">--anthropic-key</span> to send request-scoped provider keys on supported sync routes</li>
                   </ul>
                 </div>
                 <div class="doc-block">
@@ -1652,25 +1684,50 @@ ATLASRAG_API_KEY
 ATLASRAG_TOKEN
 ATLASRAG_OPENAI_API_KEY
 OPENAI_API_KEY
+ATLASRAG_GEMINI_API_KEY
+GEMINI_API_KEY
+GEMINI_API
+ATLASRAG_ANTHROPIC_API_KEY
+ANTHROPIC_API_KEY
 ATLASRAG_TENANT_ID
 ATLASRAG_COLLECTION</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Self-hosted model env keys</div>
-                  <pre class="doc-code">ANSWER_MODEL=gpt-4o
+                  <pre class="doc-code">OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+ANSWER_PROVIDER=openai
+ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
+EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
+REFLECT_PROVIDER=openai
 REFLECT_MODEL=gpt-4o-mini
+COMPACT_PROVIDER=
 COMPACT_MODEL=gpt-4o-mini</pre>
-                  <p class="hint"><span class="mono">EMBED_MODEL</span> is instance-wide. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, AtlasRAG also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
-                  <p class="hint">Preset generation models include <span class="mono">gpt-4o</span>, <span class="mono">gpt-4.1</span>, <span class="mono">gpt-4o-mini</span>, <span class="mono">gpt-4.1-mini</span>, <span class="mono">gpt-4.1-nano</span>, <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o3-mini</span>, and <span class="mono">o4-mini</span>. Custom model ids are also allowed, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
+                  <p class="hint"><span class="mono">EMBED_PROVIDER</span> and <span class="mono">EMBED_MODEL</span> are instance-wide. Changing either requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, AtlasRAG also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
+                  <p class="hint">Generation providers can be <span class="mono">openai</span>, <span class="mono">gemini</span>, or <span class="mono">anthropic</span>. Embedding providers can be <span class="mono">openai</span> or <span class="mono">gemini</span>. Anthropic is generation-only today. The live provider-aware preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                   <pre class="doc-code">curl http://localhost:3000/v1/models</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Common problems</div>
+                  <ul>
+                    <li><strong><span class="mono">atlasrag</span> not found:</strong> open a new terminal or add <span class="mono">~/.atlasrag/bin</span> to PATH manually.</li>
+                    <li><strong>Docker missing:</strong> install Docker and make sure <span class="mono">docker compose version</span> works in the same shell.</li>
+                    <li><strong>No saved config:</strong> run <span class="mono">atlasrag onboard</span> first or pass <span class="mono">--base-url</span> and <span class="mono">--api-key</span> explicitly.</li>
+                    <li><strong>Stack is up but setup is not saved yet:</strong> run <span class="mono">atlasrag bootstrap --username your-username --tenant default</span> to finish setup on the running stack.</li>
+                    <li><strong>Gateway health timeout:</strong> run <span class="mono">atlasrag logs --service gateway</span> and check the written env file.</li>
+                    <li><strong>Need a fresh token:</strong> use <span class="mono">atlasrag bootstrap</span> against the running stack.</li>
+                    <li><strong>Need to update a changed file cleanly:</strong> use <span class="mono">atlasrag docs replace</span> or <span class="mono">atlasrag write --replace</span> instead of writing a shorter replacement over the old doc without cleanup.</li>
+                  </ul>
                 </div>
               </div>
             </details>
 
             <details class="details section" id="doc-cli-examples">
-              <summary>End-to-end examples</summary>
+              <summary>Examples</summary>
               <div class="section-body">
                 <div class="doc-block">
                   <div class="doc-label">Example 1: local bundled stack</div>
@@ -1731,24 +1788,6 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
               </div>
             </details>
 
-            <details class="details section" id="doc-cli-troubleshoot">
-              <summary>Troubleshooting</summary>
-              <div class="section-body">
-                <div class="doc-block">
-                  <div class="doc-label">Common problems</div>
-                  <ul>
-                    <li><strong><span class="mono">atlasrag</span> not found:</strong> open a new terminal or add <span class="mono">~/.atlasrag/bin</span> to PATH manually.</li>
-                    <li><strong>Docker missing:</strong> install Docker and make sure <span class="mono">docker compose version</span> works in the same shell.</li>
-                    <li><strong>No saved config:</strong> run <span class="mono">atlasrag onboard</span> first or pass <span class="mono">--base-url</span> and <span class="mono">--api-key</span> explicitly.</li>
-                    <li><strong>Stack is up but setup is not saved yet:</strong> run <span class="mono">atlasrag bootstrap --username your-username --tenant default</span> to finish setup on the running stack.</li>
-                    <li><strong>Gateway health timeout:</strong> run <span class="mono">atlasrag logs --service gateway</span> and check the written env file.</li>
-                    <li><strong>Need a fresh token:</strong> use <span class="mono">atlasrag bootstrap</span> against the running stack.</li>
-                    <li><strong>Need to update a changed file cleanly:</strong> use <span class="mono">atlasrag docs replace</span> or <span class="mono">atlasrag write --replace</span> instead of writing a shorter replacement over the old doc without cleanup.</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
                   </div>
                 </div>
               </div>
@@ -1756,26 +1795,24 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                 <div class="docs-shell">
                   <aside class="docs-sidebar" aria-label="Setup outline">
                     <div class="doc-outline docs-sidebar-card">
-                      <div class="doc-outline-title">Setup paths</div>
+                      <div class="doc-outline-title">Setup Modes</div>
                       <div class="doc-outline-links">
                         <a href="#doc-setup-modes">Start here</a>
-                        <a href="#mode-bundled">Self-host (bundled)</a>
-                        <a href="#mode-byo-postgres">Self-host (BYO Postgres)</a>
-                        <a href="#mode-shared">Use existing deployment</a>
-                        <a href="#mode-shared-openai">Existing deployment + your AI key</a>
-                        <a href="#mode-backend-proxy">Backend-as-caller</a>
-                        <a href="#mode-human-admin">Human admin</a>
+                        <a href="#doc-setup-boundaries">What changes by mode</a>
+                        <a href="#doc-setup-guides">Mode-by-mode setup</a>
+                        <a href="#doc-setup-rules">Credential rules</a>
+                        <a href="#doc-setup-mistakes">Common mistakes</a>
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">Setup philosophy</div>
-                      <p>Pick one mode, follow it top to bottom, and stop mixing setup paths. This tab is the manual deployment guide. If you want installer-driven CLI setup, use the CLI Setup tab instead.</p>
+                      <p>Pick one mode, follow it top to bottom, and stop mixing setup paths. This tab is the manual setup-mode guide. If you want installer-driven CLI setup, use the CLI Setup tab instead.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
 
             <details class="details section" id="doc-setup-modes" open>
-              <summary>Setup by usage mode</summary>
+              <summary>Choose a setup mode</summary>
               <div class="section-body">
                 <p>
                   This tab is the operational setup guide. “Usage mode” means two things together:
@@ -1783,7 +1820,8 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Before you use this tab</div>
-                  <p>Use <strong>CLI Setup</strong> if you want AtlasRAG installed, onboarded, and operated from one command-line workflow. Stay on this tab when you want the manual deployment steps by usage mode, including clone, env, compose, bootstrap, and shared-deployment credential paths.</p>
+                  <p>Use <strong>CLI Setup</strong> if you want AtlasRAG installed, onboarded, and operated from one command-line workflow. Stay on this tab when you want the manual steps by setup mode, including what to clone, what env file to edit, when to run Docker, when not to clone at all, and where the first service token actually comes from.</p>
+                  <p class="hint">The same explanation also lives in <span class="mono">docs/setup-modes.md</span> in the repository for people reading the markdown docs directly.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What the mode names mean</div>
@@ -1824,10 +1862,10 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                         <td>Ask the admin for credentials, or if you are the admin, sign in and create a token in <a href="#mode-shared">shared deployment setup</a>.</td>
                       </tr>
                       <tr>
-                        <td>Existing deployment + your OpenAI key</td>
+                        <td>Existing deployment + your provider key</td>
                         <td>You still use an existing AtlasRAG deployment, but send your own provider key per request.</td>
-                        <td>You want AtlasRAG to keep its own runtime and data plane, but want your own OpenAI billing/key on supported sync routes.</td>
-                        <td>Get the same base URL and service token as shared mode, then follow <a href="#mode-shared-openai">shared + your AI key</a>.</td>
+                        <td>You want AtlasRAG to keep its own runtime and data plane, but want your own provider billing/key on supported sync routes.</td>
+                        <td>Get the same base URL and service token as shared mode, then follow <a href="#mode-shared-provider">shared + your AI key</a>.</td>
                       </tr>
                       <tr>
                         <td>Backend-as-caller</td>
@@ -1851,8 +1889,88 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
               </div>
             </details>
 
+            <details class="details section" id="doc-setup-boundaries" open>
+              <summary>What changes by mode</summary>
+              <div class="section-body">
+                <p>The fastest way to avoid setup mistakes is to answer four questions up front:</p>
+                <ol>
+                  <li>Are you running AtlasRAG yourself, or is it already running somewhere else?</li>
+                  <li>Will you use the bundled Postgres container, or your own Postgres?</li>
+                  <li>Do you need AtlasRAG to keep its own provider key, or should each request use your provider key?</li>
+                  <li>Will browsers/users talk to AtlasRAG directly, or only through your backend?</li>
+                </ol>
+                <div class="doc-block">
+                  <div class="doc-label">Mode boundary table</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Mode</th>
+                        <th>Clone repo?</th>
+                        <th>Run Docker?</th>
+                        <th>Edit env file?</th>
+                        <th>Where the first service token comes from</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Self-host: bundled stack</td>
+                        <td>Yes</td>
+                        <td>Yes</td>
+                        <td><span class="mono">.env</span></td>
+                        <td>Your own <span class="mono">bootstrap_instance.js</span> run</td>
+                      </tr>
+                      <tr>
+                        <td>Self-host: BYO Postgres</td>
+                        <td>Yes</td>
+                        <td>Yes</td>
+                        <td><span class="mono">.env.external-postgres</span></td>
+                        <td>Your own <span class="mono">bootstrap_instance.js</span> run</td>
+                      </tr>
+                      <tr>
+                        <td>Use an existing deployment</td>
+                        <td>No, unless you are also the operator</td>
+                        <td>No on the client machine</td>
+                        <td>No AtlasRAG server env on the client machine</td>
+                        <td>An AtlasRAG admin gives it to you, or creates it in the UI/API</td>
+                      </tr>
+                      <tr>
+                        <td>Existing deployment + your provider key</td>
+                        <td>No, unless you are also the operator</td>
+                        <td>No on the client machine</td>
+                        <td>No AtlasRAG server env on the client machine</td>
+                        <td>Same service token path as shared deployment</td>
+                      </tr>
+                      <tr>
+                        <td>Backend-as-caller</td>
+                        <td>Only if you self-host</td>
+                        <td>Only on the AtlasRAG server side</td>
+                        <td>Only on the backend / AtlasRAG server side</td>
+                        <td>From whichever self-hosted or shared deployment your backend uses</td>
+                      </tr>
+                      <tr>
+                        <td>Human admin</td>
+                        <td>Only if you self-host</td>
+                        <td>Only if you self-host</td>
+                        <td>Only if you self-host</td>
+                        <td>The admin creates later machine tokens for apps and agents</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What not to mix</div>
+                  <ul>
+                    <li>Do not run <span class="mono">atlasrag onboard</span> on a client machine that is only consuming an already running shared deployment.</li>
+                    <li>Do not copy a token from one AtlasRAG deployment and expect it to work against another deployment.</li>
+                    <li>Do not assume <span class="mono">--external-postgres</span> means “hosted by AtlasRAG.” It is still your own self-hosted AtlasRAG deployment.</li>
+                    <li>Do not give browsers long-lived admin or service tokens if your backend can hold them instead.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
             <details class="details section" id="doc-setup-guides">
-              <summary>Detailed guides</summary>
+              <summary>Mode-by-mode setup</summary>
               <div class="section-body">
                 <p>
                   Each guide below is written as a concrete setup flow. Self-hosted modes start from repository checkout.
@@ -1863,7 +1981,7 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                   <button class="doc-tab active" data-doc-tab="bundled" type="button">Self-host (bundled)</button>
                   <button class="doc-tab" data-doc-tab="byoPostgres" type="button">Self-host (BYO Postgres)</button>
                   <button class="doc-tab" data-doc-tab="shared" type="button">Use existing deployment</button>
-                  <button class="doc-tab" data-doc-tab="sharedOpenAi" type="button">Existing deployment + your AI key</button>
+                  <button class="doc-tab" data-doc-tab="sharedOpenAi" type="button">Existing deployment + your provider key</button>
                   <button class="doc-tab" data-doc-tab="backendProxy" type="button">Backend-as-caller</button>
                   <button class="doc-tab" data-doc-tab="humanAdmin" type="button">Human admin</button>
                 </div>
@@ -1876,11 +1994,27 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                       <p>The fastest self-hosted path when you want to go from repository checkout to a working local or single-node AtlasRAG instance with the least infra setup.</p>
                     </div>
                     <div class="doc-block">
+                      <div class="doc-label">You are setting up</div>
+                      <ul>
+                        <li>Your own AtlasRAG server</li>
+                        <li>The bundled AtlasRAG Postgres container</li>
+                        <li>Your own first admin and your own first service token</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are not setting up</div>
+                      <ul>
+                        <li>A shared AtlasRAG deployment run by someone else</li>
+                        <li>Your own external Postgres server</li>
+                        <li>A client-only integration with an already running AtlasRAG service</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
                       <div class="doc-label">Before you start</div>
                       <ul>
                         <li>Git installed so you can clone the repository locally</li>
                         <li>Docker and the Compose plugin installed</li>
-                        <li>Your own <span class="mono">OPENAI_API_KEY</span></li>
+                        <li>One or more provider keys such as <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span></li>
                         <li>No existing Postgres required</li>
                       </ul>
                     </div>
@@ -1902,7 +2036,7 @@ cd atlasrag</pre>
                       <div class="doc-label">3. Create your env file</div>
                       <pre class="doc-code">cp .env.example .env
 # edit .env and set:
-# OPENAI_API_KEY
+# OPENAI_API_KEY and/or GEMINI_API_KEY and/or ANTHROPIC_API_KEY
 # POSTGRES_PASSWORD
 # JWT_SECRET
 # COOKIE_SECRET</pre>
@@ -1953,11 +2087,27 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
                       <p>Teams that already have Postgres, secrets management, backups, and deployment standards, but still want to self-host AtlasRAG.</p>
                     </div>
                     <div class="doc-block">
+                      <div class="doc-label">You are setting up</div>
+                      <ul>
+                        <li>Your own AtlasRAG server</li>
+                        <li>Your own Postgres database for AtlasRAG</li>
+                        <li>Your own first admin and your own first service token</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are not setting up</div>
+                      <ul>
+                        <li>The bundled AtlasRAG Postgres container as your data store</li>
+                        <li>A shared AtlasRAG deployment run by another team</li>
+                        <li>A browser-only login path without server-side service tokens</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
                       <div class="doc-label">Before you start</div>
                       <ul>
                         <li>Git installed so you can clone the repository locally</li>
                         <li>A reachable Postgres instance and credentials for a dedicated AtlasRAG database</li>
-                        <li>Your own <span class="mono">OPENAI_API_KEY</span></li>
+                        <li>One or more provider keys such as <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span></li>
                         <li><span class="mono">JWT_SECRET</span> and <span class="mono">COOKIE_SECRET</span></li>
                       </ul>
                     </div>
@@ -1987,7 +2137,7 @@ GRANT ALL PRIVILEGES ON DATABASE atlasrag TO atlasrag;</pre>
                       <pre class="doc-code">cp .env.external-postgres.example .env.external-postgres
 # edit .env.external-postgres and set:
 # PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
-# OPENAI_API_KEY
+# OPENAI_API_KEY and/or GEMINI_API_KEY and/or ANTHROPIC_API_KEY
 # JWT_SECRET
 # COOKIE_SECRET</pre>
                     </div>
@@ -2026,6 +2176,21 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
                       <p>Using an AtlasRAG deployment that already exists. You are not hosting AtlasRAG yourself in this mode, and you should think of AtlasRAG like any other internal service you call over HTTP.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are setting up</div>
+                      <ul>
+                        <li>A runtime integration that talks to an existing AtlasRAG deployment</li>
+                        <li>Your local app or backend env with <span class="mono">ATLASRAG_BASE_URL</span> and <span class="mono">ATLASRAG_API_KEY</span></li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are not setting up</div>
+                      <ul>
+                        <li>The AtlasRAG server itself</li>
+                        <li>Docker, Compose, Postgres, or AtlasRAG server env files on the client machine</li>
+                        <li>The first service token from scratch unless you are also the admin</li>
+                      </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Important distinction</div>
@@ -2084,42 +2249,60 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
                   </div>
 
                   <div class="doc-panel" data-doc-panel="sharedOpenAi">
-                    <div id="mode-shared-openai"></div>
+                    <div id="mode-shared-provider"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Keeping AtlasRAG on the shared deployment while choosing your own OpenAI key on a request-by-request basis.</p>
+                      <p>Keeping AtlasRAG on the shared deployment while choosing your own provider key on a request-by-request basis.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">What changes in this mode</div>
+                      <ul>
+                        <li>You still use the same <span class="mono">ATLASRAG_BASE_URL</span> and AtlasRAG service token as shared mode.</li>
+                        <li>You add a request-scoped provider-key header on supported sync requests.</li>
+                        <li>You may also set <span class="mono">provider</span> in <span class="mono">ask</span> or <span class="mono">boolean_ask</span> request bodies.</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">What does not change</div>
+                      <ul>
+                        <li>AtlasRAG still owns the shared deployment, Postgres, and auth state.</li>
+                        <li>Your provider key is not persisted into AtlasRAG server-side config just by sending the header.</li>
+                        <li>The service token still comes from the shared deployment admin path.</li>
+                      </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Credential path</div>
-                      <p>This mode does not change how you get AtlasRAG credentials. First complete the shared deployment path to get <span class="mono">ATLASRAG_BASE_URL</span> plus a service token. This mode only adds <span class="mono">X-OpenAI-API-Key</span> on top of that.</p>
+                      <p>This mode does not change how you get AtlasRAG credentials. First complete the shared deployment path to get <span class="mono">ATLASRAG_BASE_URL</span> plus a service token. This mode only adds a request-scoped provider-key header on top of that.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">What you need</div>
                       <ul>
                         <li><span class="mono">ATLASRAG_BASE_URL</span> for the shared deployment</li>
                         <li>An AtlasRAG service token or JWT</li>
-                        <li>Your own <span class="mono">OPENAI_API_KEY</span></li>
+                        <li>Your own provider key: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span></li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">1. Store your runtime env</div>
                       <pre class="doc-code">ATLASRAG_BASE_URL=https://atlasrag.example.com
 ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN
-OPENAI_API_KEY=YOUR_OPENAI_KEY</pre>
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+GEMINI_API_KEY=YOUR_GEMINI_KEY
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_KEY</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">2. Send both headers on supported sync requests</div>
                       <pre class="doc-code">curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${ATLASRAG_API_KEY}" \
-  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "X-Gemini-API-Key: ${GEMINI_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3,"policy":"amvl"}'
+  -d '{"question":"What does AtlasRAG store?","k":3,"policy":"amvl","provider":"gemini","model":"gemini-2.5-flash"}'
 
 curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${ATLASRAG_API_KEY}" \
-  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "X-Anthropic-API-Key: ${ANTHROPIC_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does AtlasRAG store memory for agents?","k":3,"policy":"amvl"}'</pre>
+  -d '{"question":"Does AtlasRAG store memory for agents?","k":3,"policy":"amvl","provider":"anthropic","model":"claude-sonnet-4-20250514"}'</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Supported today</div>
@@ -2134,8 +2317,12 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
                       </ul>
                     </div>
                     <div class="doc-block">
+                      <div class="doc-label">Important note</div>
+                      <p>For <span class="mono">ask</span> and <span class="mono">boolean_ask</span>, the JSON body can override the generation provider with <span class="mono">provider</span>. For docs, search, memory write, and memory recall, the embedding provider remains instance-wide today, so request-scoped provider-key headers only override credentials for the provider that the instance is already configured to use.</p>
+                    </div>
+                    <div class="doc-block">
                       <div class="doc-label">Current limitation</div>
-                      <p><span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span> reject <span class="mono">X-OpenAI-API-Key</span> because those jobs continue asynchronously after the request returns.</p>
+                      <p><span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span> reject request-scoped provider-key headers because those jobs continue asynchronously after the request returns.</p>
                     </div>
                   </div>
 
@@ -2144,6 +2331,20 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
                       <p>Products that already have their own auth and want AtlasRAG to stay behind their server or worker layer.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are setting up</div>
+                      <ul>
+                        <li>Your backend as the only machine that talks directly to AtlasRAG</li>
+                        <li>Server-side storage for AtlasRAG base URL, service token, and optional provider keys</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are not setting up</div>
+                      <ul>
+                        <li>AtlasRAG credentials in browser code</li>
+                        <li>A separate credential type beyond the normal AtlasRAG service token</li>
+                      </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Architecture rule</div>
@@ -2186,6 +2387,14 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <p>Human operators using the browser UI, tenant settings, service-token management, or interactive Playground flows.</p>
                     </div>
                     <div class="doc-block">
+                      <div class="doc-label">What this mode is for</div>
+                      <ul>
+                        <li>Signing in interactively</li>
+                        <li>Managing tenant settings, SSO, and service tokens</li>
+                        <li>Handing machine credentials to apps and agents after the admin work is done</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
                       <div class="doc-label">1. Reach an AtlasRAG deployment</div>
                       <p>If you are self-hosting, complete either the bundled-stack or BYO-Postgres flow first. If your team already runs AtlasRAG, use the shared deployment URL you were given.</p>
                     </div>
@@ -2217,6 +2426,54 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <p>Humans usually log in once for admin work. Apps and agents should normally run on service tokens after that.</p>
                     </div>
                   </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-setup-rules">
+              <summary>Credential rules and boundaries</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Service token rules</div>
+                  <ul>
+                    <li>Service tokens are deployment-scoped. A token minted by one AtlasRAG deployment does not authenticate against another deployment.</li>
+                    <li>For apps, backends, workers, and agents, the normal runtime inputs are <span class="mono">ATLASRAG_BASE_URL</span> and <span class="mono">ATLASRAG_API_KEY</span>.</li>
+                    <li>Username/password is mainly for the one-time bootstrap path or for human admin login.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Provider-key rules</div>
+                  <ul>
+                    <li>Self-hosted AtlasRAG can keep provider keys in its own env file.</li>
+                    <li>Shared deployments can also accept request-scoped provider-key headers on supported sync routes.</li>
+                    <li><span class="mono">ask</span> and <span class="mono">boolean_ask</span> can override generation provider/model per request.</li>
+                    <li>Embedding provider selection stays instance-wide today. Request-scoped provider headers do not change the embedding provider itself.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Database rules</div>
+                  <ul>
+                    <li>Bundled Postgres and external Postgres are both still self-hosted AtlasRAG.</li>
+                    <li><span class="mono">--external-postgres</span> changes where AtlasRAG stores relational state. It does not turn the instance into a shared AtlasRAG platform deployment.</li>
+                    <li>Shared deployment users normally do not edit AtlasRAG server env files or Compose files at all.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-setup-mistakes">
+              <summary>Common mistakes</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Avoid these setup mistakes</div>
+                  <ul>
+                    <li><strong>Running local bootstrap on the wrong machine:</strong> if you are only consuming an existing shared deployment, do not clone the repo just to get credentials unless you are also the operator.</li>
+                    <li><strong>Treating external Postgres as hosted AtlasRAG:</strong> using your own Postgres still means you are self-hosting AtlasRAG yourself.</li>
+                    <li><strong>Mixing human login and machine runtime:</strong> the browser/admin path is not the normal long-running runtime path for apps and agents.</li>
+                    <li><strong>Expecting provider headers to persist server-side config:</strong> request-scoped provider-key headers are request-scoped; they do not automatically reconfigure the server default provider.</li>
+                    <li><strong>Putting long-lived tokens in the browser:</strong> if you have your own backend, keep the AtlasRAG service token there instead.</li>
+                    <li><strong>Forgetting where the first token comes from:</strong> self-hosted flows create it during bootstrap; shared flows receive it from an existing admin path.</li>
+                  </ul>
                 </div>
               </div>
             </details>

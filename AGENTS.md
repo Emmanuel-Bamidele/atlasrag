@@ -2,6 +2,26 @@
 
 These instructions are for coding assistants or local AI agents working inside this repository on a developer machine.
 
+## Setup Mode Rule
+
+When a user asks setup questions, first classify which mode they actually mean before giving commands:
+
+- self-hosted bundled stack
+- self-hosted with external Postgres
+- existing shared AtlasRAG deployment
+- existing shared deployment plus their own provider key
+- backend-as-caller
+- human admin
+
+Use [`docs/setup-modes.md`](docs/setup-modes.md) as the primary repository reference when the user is unsure which path they are setting up.
+
+High-signal boundary rules:
+
+- if they are cloning the repo and running Docker themselves, they are in a self-hosted mode
+- if they already have `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`, they are in a shared-deployment mode
+- `--external-postgres` is still self-hosted AtlasRAG
+- do not tell shared-deployment users to run local bootstrap or onboard commands on a client machine unless that machine is also the AtlasRAG server
+
 ## Local CLI First
 
 If this repository is available locally and the goal is to run or test AtlasRAG on the same computer:
@@ -20,7 +40,7 @@ If this repository is available locally and the goal is to run or test AtlasRAG 
 - The CLI saves the base URL and service token in `~/.atlasrag/config.json`.
 - If you are using the CLI on the same machine, do not ask the user to paste the token back into the CLI; the saved config is the normal path.
 - Only surface the token with `atlasrag config show --show-secrets` when the user needs to wire another local app, backend, worker, or agent runtime.
-- Never commit service tokens, JWTs, or OpenAI keys to the repository.
+- Never commit service tokens, JWTs, or provider keys to the repository.
 
 ## Collection Rules
 
@@ -32,11 +52,11 @@ If this repository is available locally and the goal is to run or test AtlasRAG 
 ## Model Rules
 
 - For local self-hosted defaults, use `atlasrag changemodel` instead of telling the user to edit the env file by hand.
-- `atlasrag onboard` and `atlasrag changemodel` support numbered generation-model choices for the current preset list, including GPT-4.1 / GPT-4o, GPT-5 presets, and o-series reasoning models.
-- `ask` and `boolean_ask` also accept a per-request `model` override through the API and CLI when the caller wants a different generation model for one request. On the CLI, `--model` accepts the same common numbered shortcuts too.
+- `atlasrag onboard` and `atlasrag changemodel` support numbered provider choices first, then numbered model choices for the selected provider. Generation providers are currently OpenAI, Gemini, and Anthropic. Embedding providers are currently OpenAI and Gemini.
+- `ask` and `boolean_ask` also accept per-request `provider` and `model` overrides through the API and CLI when the caller wants a different generation provider/model for one request. On the CLI, `--provider` and `--model` accept the same common numbered shortcuts too.
 - Use `GET /v1/models` when you need the live preset catalog and current instance defaults.
-- Tenant-level admin settings can override `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` via `/v1/admin/tenant`.
-- `embedModel` is instance-wide, not tenant-specific. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space.
+- Tenant-level admin settings can override `answerProvider`, `answerModel`, `booleanAskProvider`, `booleanAskModel`, `reflectProvider`, `reflectModel`, `compactProvider`, and `compactModel` via `/v1/admin/tenant`.
+- `embedProvider` and `embedModel` are instance-wide, not tenant-specific. Changing either requires a reindex because AtlasRAG stores all vectors in one embedding space.
 
 ## Local CLI Examples
 

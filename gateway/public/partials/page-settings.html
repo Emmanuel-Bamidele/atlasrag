@@ -39,7 +39,20 @@
                 <div class="field">
                   <label for="openAiApiKeyOverride">OpenAI key override (optional)</label>
                   <input id="openAiApiKeyOverride" type="password" placeholder="sk-...">
-                  <div class="hint">Use this when you want AtlasRAG to use your OpenAI key while still using this AtlasRAG deployment and its Postgres. Saved locally in your browser and sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
+                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-OpenAI-API-Key</span> on matching requests.</div>
+                </div>
+                <div class="field">
+                  <label for="geminiApiKeyOverride">Gemini key override (optional)</label>
+                  <input id="geminiApiKeyOverride" type="password" placeholder="AIza...">
+                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-Gemini-API-Key</span> on matching requests.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="anthropicApiKeyOverride">Anthropic key override (optional)</label>
+                  <input id="anthropicApiKeyOverride" type="password" placeholder="sk-ant-...">
+                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-Anthropic-API-Key</span> on matching requests.</div>
                 </div>
               </div>
 
@@ -47,7 +60,7 @@
                 <label>Tips</label>
                 <div class="hint">
                   - Recommended flow: run <span class="mono">node scripts/bootstrap_instance.js</span> once, then store the returned service token in your app or agent env.<br>
-                  - Optional third mode: keep AtlasRAG auth the same, but send your own OpenAI key with requests.<br>
+                  - Optional shared-deployment mode: keep AtlasRAG auth the same, but send your own provider keys with requests.<br>
                   - Index at least one document before searching or asking.<br>
                   - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
                   - Health check only verifies gateway to TCP reachability.<br>
@@ -58,8 +71,8 @@
               <div class="actions">
                 <button class="btn secondary" id="loginBtn">Login and Save Token</button>
                 <button class="btn danger" id="clearKeyBtn">Forget Token</button>
-                <button class="btn secondary" id="saveOpenAiOverrideBtn">Use OpenAI Key</button>
-                <button class="btn danger" id="clearOpenAiOverrideBtn">Forget OpenAI key</button>
+                <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
+                <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
               </div>
 
               <div class="banner" id="settingsBanner"></div>
@@ -153,9 +166,32 @@
 
               <div class="row" style="margin-top:16px;">
                 <div class="field">
+                  <label for="tenantAnswerProvider">Ask provider</label>
+                  <select id="tenantAnswerProvider">
+                    <option value="">blank = instance default</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                  <div class="hint">Optional tenant override for the <span class="mono">ask</span> provider.</div>
+                </div>
+                <div class="field">
                   <label for="tenantAnswerModel">Ask model</label>
                   <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
                   <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default. The live preset catalog is also available from <span class="mono">GET /v1/models</span>.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantBooleanAskProvider">Boolean ask provider</label>
+                  <select id="tenantBooleanAskProvider">
+                    <option value="">blank = follow ask provider</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                  <div class="hint">Optional tenant override for the <span class="mono">boolean_ask</span> provider.</div>
                 </div>
                 <div class="field">
                   <label for="tenantBooleanAskModel">Boolean ask model</label>
@@ -166,9 +202,32 @@
 
               <div class="row" style="margin-top:12px;">
                 <div class="field">
+                  <label for="tenantReflectProvider">Reflect provider</label>
+                  <select id="tenantReflectProvider">
+                    <option value="">blank = instance default</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                  <div class="hint">Optional tenant override for reflection jobs.</div>
+                </div>
+                <div class="field">
                   <label for="tenantReflectModel">Reflect model</label>
                   <input id="tenantReflectModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                  <div class="hint">Optional tenant override for reflection jobs.</div>
+                  <div class="hint">Optional tenant override for the reflection model.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantCompactProvider">Compact provider</label>
+                  <select id="tenantCompactProvider">
+                    <option value="">blank = follow reflect provider</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                  <div class="hint">Optional tenant override for compaction jobs.</div>
                 </div>
                 <div class="field">
                   <label for="tenantCompactModel">Compact model</label>
@@ -179,6 +238,11 @@
 
               <div class="row" style="margin-top:12px;">
                 <div class="field">
+                  <label for="tenantEmbedProvider">Embedding provider</label>
+                  <input id="tenantEmbedProvider" readonly>
+                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">atlasrag changemodel</span>.</div>
+                </div>
+                <div class="field">
                   <label for="tenantEmbedModel">Embedding model</label>
                   <input id="tenantEmbedModel" readonly>
                   <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">atlasrag changemodel</span>. Changing the embedding model requires a reindex on restart.</div>
@@ -186,18 +250,26 @@
               </div>
 
               <datalist id="tenantGenerationModels">
+                <option value="gpt-4o"></option>
+                <option value="gpt-4.1"></option>
+                <option value="gpt-4o-mini"></option>
+                <option value="gpt-4.1-mini"></option>
+                <option value="gpt-4.1-nano"></option>
                 <option value="gpt-5.2"></option>
                 <option value="gpt-5-mini"></option>
                 <option value="gpt-5-nano"></option>
-                <option value="gpt-4o"></option>
-                <option value="gpt-4.1"></option>
-                <option value="gpt-4.1-mini"></option>
-                <option value="gpt-4.1-nano"></option>
-                <option value="gpt-4o-mini"></option>
                 <option value="o1"></option>
                 <option value="o3"></option>
                 <option value="o3-mini"></option>
                 <option value="o4-mini"></option>
+                <option value="gemini-2.5-flash"></option>
+                <option value="gemini-2.5-pro"></option>
+                <option value="gemini-2.5-flash-lite"></option>
+                <option value="gemini-2.0-flash"></option>
+                <option value="claude-sonnet-4-20250514"></option>
+                <option value="claude-opus-4-20250514"></option>
+                <option value="claude-3-7-sonnet-latest"></option>
+                <option value="claude-3-5-haiku-latest"></option>
               </datalist>
 
               <div class="actions">

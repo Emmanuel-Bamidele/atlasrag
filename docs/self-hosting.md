@@ -2,13 +2,15 @@
 
 This guide is for teams who want to fork or clone AtlasRAG and run it themselves without relying on a hosted AtlasRAG service.
 
+If you are not yet sure whether you should self-host at all, start with [`setup-modes.md`](setup-modes.md) first.
+
 ## Scope
 
 Current public scope is:
 
 - single-node self-hosted deployment
 - Docker Compose friendly
-- bring your own OpenAI key
+- bring your own provider keys
 - Postgres-backed metadata and auth
 - service-token-first runtime usage for apps and agents
 
@@ -41,7 +43,7 @@ Use AtlasRAG like this:
 
 - humans use username/password or SSO for admin actions and the browser UI
 - apps, backends, workers, and agents use a service token
-- if a caller wants AtlasRAG to use its own OpenAI key while still using this AtlasRAG deployment, it can send `X-OpenAI-API-Key` on supported sync requests
+- if a caller wants AtlasRAG to use its own provider key while still using this AtlasRAG deployment, it can send the matching request-scoped header on supported sync requests: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`
 
 Service tokens created by this deployment are valid only for this deployment. They are not interchangeable with tokens from a different AtlasRAG instance, whether that other instance is local, remote, shared, or managed elsewhere.
 
@@ -59,7 +61,7 @@ You should not design your runtime around repeated human login calls.
 Before you start, have:
 
 - Docker with the Compose plugin
-- an OpenAI API key for normal embedding and answer quality
+- at least one provider API key for normal embedding and answer quality. OpenAI remains the default quickstart path.
 - a machine that can run Docker containers and persist volumes
 
 Recommended baseline:
@@ -88,23 +90,35 @@ Edit at least these values:
 - `POSTGRES_PASSWORD`
 - `JWT_SECRET`
 - `COOKIE_SECRET`
-- `OPENAI_API_KEY`
+- one or more provider keys: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`
 
 Model settings you can change in the env:
 
 ```env
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+ANSWER_PROVIDER=openai
 ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
+EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
+REFLECT_PROVIDER=openai
 REFLECT_MODEL=gpt-4o-mini
+COMPACT_PROVIDER=
 COMPACT_MODEL=gpt-4o-mini
 ```
 
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
 `EMBED_MODEL` is instance-wide. Because AtlasRAG stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
 On startup, AtlasRAG also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
-Common generation presets are `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, and `o4-mini`. Custom OpenAI model ids are also allowed.
-Reasoning-style presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with AtlasRAG. The gateway omits unsupported `temperature` parameters automatically for those models.
+`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because AtlasRAG still needs a provider-native embedding endpoint for indexing and retrieval.
+Common generation presets include:
+- OpenAI: `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, `o4-mini`
+- Gemini: `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite`, `gemini-2.0-flash`
+- Anthropic: `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-3-7-sonnet-latest`, `claude-3-5-haiku-latest`
+Reasoning-style OpenAI presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with AtlasRAG. The gateway omits unsupported `temperature` parameters automatically for those models.
 You can inspect the live preset catalog and instance defaults at `GET /v1/models`.
 
 Useful optional values:
@@ -192,11 +206,12 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
     "question":"What does AtlasRAG store?",
     "k":3,
     "policy":"amvl",
+    "provider":"openai",
     "model":"gpt-4.1"
   }'
 ```
 
-`model` is optional and overrides the tenant or instance ask model for that single request.
+`provider` and `model` are optional and override the tenant or instance ask provider/model for that single request.
 
 On the CLI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` also accept the same numbered shortcuts shown by `atlasrag changemodel`. The live preset catalog is available from `GET /v1/models`.
 
@@ -229,22 +244,28 @@ curl -sS -X PATCH "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
   -H "Content-Type: application/json" \
   -d '{
     "models": {
+      "answerProvider": "openai",
       "answerModel": "gpt-4.1",
+      "booleanAskProvider": null,
       "booleanAskModel": null,
+      "reflectProvider": "openai",
       "reflectModel": "gpt-4o-mini",
+      "compactProvider": null,
       "compactModel": null
     }
   }'
 ```
 
-Those settings are tenant-scoped. `embedModel` is not part of this API because it remains an instance-wide self-hosted env setting.
+Those settings are tenant-scoped. `embedProvider` and `embedModel` are not part of this API because they remain instance-wide self-hosted env settings.
 
-### 9. Optional: Bring Your Own OpenAI Key To A Shared AtlasRAG Deployment
+### 9. Optional: Bring Your Own Provider Key To A Shared AtlasRAG Deployment
 
-If you are using an AtlasRAG instance that already has its own Postgres and auth, but you want your requests to use your own OpenAI key, add:
+If you are using an AtlasRAG instance that already has its own Postgres and auth, but you want your requests to use your own provider key, add the matching request-scoped header:
 
 ```bash
 -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}"
+-H "X-Gemini-API-Key: ${GEMINI_API_KEY}"
+-H "X-Anthropic-API-Key: ${ANTHROPIC_API_KEY}"
 ```
 
 This works on supported sync request paths such as:
@@ -259,12 +280,16 @@ This works on supported sync request paths such as:
 
 It is intentionally request-scoped. AtlasRAG does not persist that key for the tenant.
 
+`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+
+Embedding provider selection remains instance-wide today. Request-scoped provider headers for docs, search, memory write, and memory recall only override credentials for the embedding provider that the instance is already configured to use.
+
 Current limitation:
 
 - `POST /v1/memory/reflect`
 - `POST /v1/memory/compact`
 
-Those endpoints continue work asynchronously after the request ends, so they reject `X-OpenAI-API-Key` today.
+Those endpoints continue work asynchronously after the request ends, so they reject request-scoped provider-key headers today.
 
 ## What Bootstrap Solves
 

@@ -1,61 +1,53 @@
 // memory_reflect.js
 // Generate semantic/procedural/summary memories from artifact text.
 
-const OpenAI = require("openai");
 const {
+  DEFAULT_REFLECT_PROVIDER,
   DEFAULT_REFLECT_MODEL,
-  buildResponsesCreateParams,
-  normalizeModelId
+  normalizeModelId,
+  normalizeProviderId,
+  resolveRequestedGenerationConfig
 } = require("./model_config");
-
-let defaultClient = null;
-function createClient(key) {
-  const cleanKey = String(key || "").trim();
-  if (!cleanKey) {
-    throw new Error("OPENAI_API_KEY not set on server");
-  }
-  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
-  const options = { apiKey: cleanKey };
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    options.timeout = timeoutMs;
-  }
-  return new OpenAI(options);
-}
-
-function getClient(apiKey = "") {
-  const overrideKey = String(apiKey || "").trim();
-  if (overrideKey) {
-    return createClient(overrideKey);
-  }
-  if (defaultClient) return defaultClient;
-  const key = String(process.env.OPENAI_API_KEY || "").trim();
-  if (!key) {
-    throw new Error("OPENAI_API_KEY not set on server");
-  }
-  defaultClient = createClient(key);
-  return defaultClient;
-}
+const { generateProviderText } = require("./provider_clients");
 
 const DEFAULT_MAX_ITEMS = parseInt(process.env.REFLECT_MAX_ITEMS || "5", 10);
 let reflectFallbackWarned = false;
 let compactFallbackWarned = false;
 
+function resolveReflectProvider(options = {}) {
+  return normalizeProviderId(options?.provider ?? options?.reflectProvider)
+    || normalizeProviderId(process.env.REFLECT_PROVIDER)
+    || DEFAULT_REFLECT_PROVIDER;
+}
+
 function resolveReflectModel(options = {}) {
-  return normalizeModelId(options?.model ?? options?.reflectModel)
-    || normalizeModelId(process.env.REFLECT_MODEL)
-    || DEFAULT_REFLECT_MODEL;
+  return resolveRequestedGenerationConfig({
+    provider: resolveReflectProvider(options),
+    model: options?.model ?? options?.reflectModel ?? process.env.REFLECT_MODEL,
+    fallbackProvider: resolveReflectProvider(options),
+    fallbackModel: DEFAULT_REFLECT_MODEL
+  }).model;
+}
+
+function resolveCompactProvider(options = {}) {
+  return normalizeProviderId(options?.provider ?? options?.compactProvider ?? options?.reflectProvider)
+    || normalizeProviderId(process.env.COMPACT_PROVIDER)
+    || resolveReflectProvider(options);
 }
 
 function resolveCompactModel(options = {}) {
-  return normalizeModelId(options?.model ?? options?.compactModel ?? options?.reflectModel)
-    || normalizeModelId(process.env.COMPACT_MODEL)
-    || resolveReflectModel(options);
+  return resolveRequestedGenerationConfig({
+    provider: resolveCompactProvider(options),
+    model: options?.model ?? options?.compactModel ?? options?.reflectModel ?? process.env.COMPACT_MODEL,
+    fallbackProvider: resolveCompactProvider(options),
+    fallbackModel: resolveReflectModel(options)
+  }).model;
 }
 
 function normalizeTypes(types) {
   const allowed = new Set(["semantic", "procedural", "summary"]);
   const list = Array.isArray(types) ? types : [];
-  const out = list.filter(t => allowed.has(t));
+  const out = list.filter((t) => allowed.has(t));
   return out.length ? out : ["semantic", "procedural", "summary"];
 }
 
@@ -126,33 +118,42 @@ function buildFallbackReflection({ text, types, maxItems }) {
   return { semantic, procedural, summary, usage: null };
 }
 
-async function reflectMemories({ text, types, maxItems, apiKey, reflectModel }) {
+async function reflectMemories({ text, types, maxItems, apiKey, provider, reflectProvider, reflectModel }) {
   const selected = normalizeTypes(types);
   const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
   const input = buildPrompt(text, selected, limit);
+  const resolved = resolveRequestedGenerationConfig({
+    provider: provider ?? reflectProvider,
+    model: reflectModel,
+    fallbackProvider: resolveReflectProvider({ provider, reflectProvider }),
+    fallbackModel: resolveReflectModel({ provider, reflectProvider, reflectModel })
+  });
 
   let resp = null;
   try {
-    resp = await getClient(apiKey).responses.create(buildResponsesCreateParams({
-      model: resolveReflectModel({ reflectModel }),
+    resp = await generateProviderText({
+      provider: resolved.provider,
+      model: resolved.model,
       input,
+      apiKey,
       temperature: 0.2,
-      text: { format: { type: "json_object" } }
-    }));
+      jsonMode: true,
+      maxTokens: 1024
+    });
   } catch (err) {
     if (!reflectFallbackWarned) {
       reflectFallbackWarned = true;
-      console.warn(`[reflect] OpenAI unavailable, using extractive fallback (${String(err?.message || err)})`);
+      console.warn(`[reflect] ${resolved.provider} generation unavailable, using extractive fallback (${String(err?.message || err)})`);
     }
     return buildFallbackReflection({ text, types: selected, maxItems: limit });
   }
 
-  const raw = (resp.output_text || "").trim();
-  const usage = resp.usage || null;
+  const raw = String(resp?.text || "").trim();
+  const usage = resp?.usage || null;
   let payload;
   try {
     payload = JSON.parse(raw);
-  } catch (err) {
+  } catch {
     return buildFallbackReflection({ text, types: selected, maxItems: limit });
   }
 
@@ -181,30 +182,40 @@ function buildFallbackCompaction(text) {
   };
 }
 
-async function summarizeMemories({ text, apiKey, compactModel, reflectModel }) {
+async function summarizeMemories({ text, apiKey, provider, compactProvider, compactModel, reflectProvider, reflectModel }) {
   const input = buildCompactPrompt(text);
+  const resolved = resolveRequestedGenerationConfig({
+    provider: provider ?? compactProvider ?? reflectProvider,
+    model: compactModel ?? reflectModel,
+    fallbackProvider: resolveCompactProvider({ provider, compactProvider, reflectProvider }),
+    fallbackModel: resolveCompactModel({ provider, compactProvider, compactModel, reflectProvider, reflectModel })
+  });
+
   let resp = null;
   try {
-    resp = await getClient(apiKey).responses.create(buildResponsesCreateParams({
-      model: resolveCompactModel({ compactModel, reflectModel }),
+    resp = await generateProviderText({
+      provider: resolved.provider,
+      model: resolved.model,
       input,
+      apiKey,
       temperature: 0.2,
-      text: { format: { type: "json_object" } }
-    }));
+      jsonMode: true,
+      maxTokens: 512
+    });
   } catch (err) {
     if (!compactFallbackWarned) {
       compactFallbackWarned = true;
-      console.warn(`[compact] OpenAI unavailable, using extractive fallback (${String(err?.message || err)})`);
+      console.warn(`[compact] ${resolved.provider} generation unavailable, using extractive fallback (${String(err?.message || err)})`);
     }
     return buildFallbackCompaction(text);
   }
 
-  const raw = (resp.output_text || "").trim();
-  const usage = resp.usage || null;
+  const raw = String(resp?.text || "").trim();
+  const usage = resp?.usage || null;
   let payload;
   try {
     payload = JSON.parse(raw);
-  } catch (err) {
+  } catch {
     return buildFallbackCompaction(text);
   }
 
@@ -219,7 +230,9 @@ module.exports = {
   reflectMemories,
   summarizeMemories,
   __testHooks: {
+    resolveReflectProvider,
     resolveReflectModel,
+    resolveCompactProvider,
     resolveCompactModel
   }
 };

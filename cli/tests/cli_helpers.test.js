@@ -95,6 +95,8 @@ function testParseCliArgs() {
 
   const changeModelParsed = parseCliArgs([
     "changemodel",
+    "--answer-provider",
+    "2",
     "--answer-model",
     "2",
     "--boolean-ask-model",
@@ -102,6 +104,7 @@ function testParseCliArgs() {
     "--restart"
   ]);
   assert.equal(changeModelParsed.command, "changemodel");
+  assert.equal(changeModelParsed.flags["answer-provider"], "2");
   assert.equal(changeModelParsed.flags["answer-model"], "2");
   assert.equal(changeModelParsed.flags["boolean-ask-model"], "inherit");
   assert.equal(changeModelParsed.flags.restart, true);
@@ -161,7 +164,9 @@ function testCreateOnboardConfig() {
     tenantId: "default",
     adminUsername: "admin",
     apiKey: "atrg_secret",
-    openAiApiKey: "sk-test"
+    openAiApiKey: "sk-test",
+    geminiApiKey: "gemini-test",
+    anthropicApiKey: "anthropic-test"
   });
 
   assert.equal(config.projectRoot, "/tmp/atlasrag");
@@ -170,6 +175,8 @@ function testCreateOnboardConfig() {
   assert.equal(config.adminUsername, "admin");
   assert.equal(config.apiKey, "atrg_secret");
   assert.equal(config.openAiApiKey, "sk-test");
+  assert.equal(config.geminiApiKey, "gemini-test");
+  assert.equal(config.anthropicApiKey, "anthropic-test");
   assert.equal(config.onboardingPending, false);
   assert.ok(config.updatedAt);
 

@@ -23,7 +23,11 @@ function normalizePolicy(value){
 const AUTH_TOKEN_KEY = "atlasragAuthToken";
 const AUTH_TYPE_KEY = "atlasragAuthType";
 const LEGACY_JWT_KEY = "atlasragJwt";
-const OPENAI_OVERRIDE_KEY = "atlasragOpenAiApiKey";
+const PROVIDER_OVERRIDE_KEYS = Object.freeze({
+  openai: "atlasragOpenAiApiKey",
+  gemini: "atlasragGeminiApiKey",
+  anthropic: "atlasragAnthropicApiKey"
+});
 const UI_THEME_KEY = "atlasragUiTheme";
 const UI_THEME_USER_SET_KEY = "atlasragUiThemeUserSet";
 const SYSTEM_THEME_QUERY = "(prefers-color-scheme: light)";
@@ -35,6 +39,7 @@ let usageLoading = false;
 let lastUsageStats = null;
 let authRejected = false;
 let authRejectedMessage = "";
+let modelCatalogData = null;
 const usageWindowByCard = {};
 const USAGE_WINDOWS = ["24h", "7d", "all"];
 const USAGE_WINDOW_LABELS = { "24h": "24h", "7d": "7d", "all": "All" };
@@ -61,15 +66,43 @@ function setModelDatalistOptions(listId, models){
   });
 }
 
+function getGenerationModelsForProvider(provider){
+  const cleanProvider = String(provider || "").trim().toLowerCase() || "openai";
+  return modelCatalogData?.presets?.generationByProvider?.[cleanProvider]
+    || modelCatalogData?.presets?.generation
+    || [];
+}
+
+function getAllGenerationModels(){
+  const grouped = modelCatalogData?.presets?.generationByProvider || {};
+  const seen = new Set();
+  const out = [];
+  Object.values(grouped).flat().forEach((entry) => {
+    const model = String(entry?.model || "").trim();
+    if (!model || seen.has(model)) return;
+    seen.add(model);
+    out.push(entry);
+  });
+  return out.length ? out : (modelCatalogData?.presets?.generation || []);
+}
+
+function syncGenerationModelList(listId, provider){
+  if (listId === "tenantGenerationModels") {
+    setModelDatalistOptions(listId, getAllGenerationModels());
+    return;
+  }
+  setModelDatalistOptions(listId, getGenerationModelsForProvider(provider));
+}
+
 async function loadModelCatalog(){
   if (modelCatalogLoaded) return;
   try{
     const res = await fetch("/v1/models");
     const payload = await res.json();
     if (!res.ok || !payload?.ok) return;
-    const generation = payload?.data?.presets?.generation || [];
-    setModelDatalistOptions("askGenerationModels", generation);
-    setModelDatalistOptions("tenantGenerationModels", generation);
+    modelCatalogData = payload?.data || null;
+    syncGenerationModelList("askGenerationModels", $("askProvider")?.value || "");
+    syncGenerationModelList("tenantGenerationModels", $("tenantAnswerProvider")?.value || "");
     modelCatalogLoaded = true;
   }catch(_err){
     // Keep the static datalist fallback if the catalog endpoint is unavailable.
@@ -114,16 +147,19 @@ function clearStoredAuth(){
   authRejectedMessage = "";
 }
 
-function loadStoredOpenAiOverride(){
-  return String(localStorage.getItem(OPENAI_OVERRIDE_KEY) || "").trim();
+function loadStoredProviderOverride(provider){
+  const key = PROVIDER_OVERRIDE_KEYS[String(provider || "").trim().toLowerCase()] || "";
+  return key ? String(localStorage.getItem(key) || "").trim() : "";
 }
 
-function saveStoredOpenAiOverride(value){
-  localStorage.setItem(OPENAI_OVERRIDE_KEY, String(value || "").trim());
+function saveStoredProviderOverride(provider, value){
+  const key = PROVIDER_OVERRIDE_KEYS[String(provider || "").trim().toLowerCase()] || "";
+  if (!key) return;
+  localStorage.setItem(key, String(value || "").trim());
 }
 
-function clearStoredOpenAiOverride(){
-  localStorage.removeItem(OPENAI_OVERRIDE_KEY);
+function clearStoredProviderOverrides(){
+  Object.values(PROVIDER_OVERRIDE_KEYS).forEach((key) => localStorage.removeItem(key));
 }
 
 function setThemeButtonState(theme){
@@ -213,10 +249,12 @@ function apiHeaders(){
       headers["Authorization"] = `Bearer ${auth.token}`;
     }
   }
-  const openAiApiKey = loadStoredOpenAiOverride();
-  if (openAiApiKey){
-    headers["X-OpenAI-API-Key"] = openAiApiKey;
-  }
+  const openAiApiKey = loadStoredProviderOverride("openai");
+  const geminiApiKey = loadStoredProviderOverride("gemini");
+  const anthropicApiKey = loadStoredProviderOverride("anthropic");
+  if (openAiApiKey) headers["X-OpenAI-API-Key"] = openAiApiKey;
+  if (geminiApiKey) headers["X-Gemini-API-Key"] = geminiApiKey;
+  if (anthropicApiKey) headers["X-Anthropic-API-Key"] = anthropicApiKey;
   return headers;
 }
 
@@ -746,6 +784,88 @@ function setLinkById(id, value){
   }
 }
 
+function copyButtonMarkup(label = "Copy"){
+  const safeLabel = String(label || "Copy");
+  return `
+    <span class="copy-inline-icon" aria-hidden="true">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="3" width="8" height="10" rx="1.8"></rect>
+        <path d="M3 11V5.8C3 4.81 3.81 4 4.8 4H9"></path>
+      </svg>
+    </span>
+    <span>${safeLabel}</span>
+  `;
+}
+
+function bindCopyButton(btn){
+  if (!btn || btn.dataset.copyBound === "1") return;
+  btn.dataset.copyBound = "1";
+  const existingLabel = String(btn.textContent || "").trim() || "Copy";
+  const originalHtml = btn.innerHTML && btn.innerHTML.includes("copy-inline-icon")
+    ? btn.innerHTML
+    : copyButtonMarkup(existingLabel);
+  btn.innerHTML = originalHtml;
+
+  btn.addEventListener("click", async () => {
+    const targetId = btn.getAttribute("data-copy-target");
+    const targetEl = targetId ? $(targetId) : null;
+    const value = String(targetEl?.textContent || "").trim();
+    if (!value) {
+      btn.innerHTML = copyButtonMarkup("No text");
+      window.setTimeout(() => {
+        btn.innerHTML = originalHtml;
+      }, 1200);
+      return;
+    }
+    try {
+      await copyTextToClipboard(value);
+      btn.innerHTML = copyButtonMarkup("Copied");
+    } catch {
+      btn.innerHTML = copyButtonMarkup("Failed");
+    } finally {
+      window.setTimeout(() => {
+        btn.innerHTML = originalHtml;
+      }, 1200);
+    }
+  });
+}
+
+function initDocsCopyButtons(){
+  const docsPage = $("pageDocs");
+  if (!docsPage) return;
+
+  let generatedCount = 0;
+  const codeBlocks = Array.from(docsPage.querySelectorAll("pre.doc-code"));
+  codeBlocks.forEach((pre) => {
+    if (!pre.id) {
+      generatedCount += 1;
+      pre.id = `docCodeAuto${generatedCount}`;
+    }
+    const parent = pre.parentElement;
+    if (!parent) return;
+    const existingBtn = parent.querySelector(`[data-copy-target="${pre.id}"]`);
+    if (existingBtn) {
+      bindCopyButton(existingBtn);
+      return;
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions doc-code-actions";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn secondary copy-inline-btn";
+    btn.setAttribute("data-copy-target", pre.id);
+    btn.innerHTML = copyButtonMarkup("Copy");
+    actions.appendChild(btn);
+    pre.insertAdjacentElement("afterend", actions);
+    bindCopyButton(btn);
+  });
+
+  Array.from(docsPage.querySelectorAll("[data-copy-target]")).forEach((btn) => {
+    bindCopyButton(btn);
+  });
+}
+
 function initDocsAgentConnect(){
   const section = $("docAgentConnect");
   if (!section) return;
@@ -768,26 +888,7 @@ function initDocsAgentConnect(){
   setTextById("mcpVsCodeConfig", content.vscodeConfig);
   setTextById("mcpAntigravityConfig", content.antigravityConfig);
   setTextById("mcpQuickPrompt", content.quickPrompt);
-
-  const copyButtons = Array.from(section.querySelectorAll("[data-copy-target]"));
-  copyButtons.forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const targetId = btn.getAttribute("data-copy-target");
-      const targetEl = targetId ? $(targetId) : null;
-      const value = String(targetEl?.textContent || "").trim();
-      if (!value) {
-        if (bannerEl) setBanner(bannerEl, "err", "Nothing to copy.");
-        return;
-      }
-
-      try {
-        await copyTextToClipboard(value);
-        if (bannerEl) setBanner(bannerEl, "ok", "Copied to clipboard.");
-      } catch {
-        if (bannerEl) setBanner(bannerEl, "err", "Failed to copy.");
-      }
-    });
-  });
+  initDocsCopyButtons();
 }
 
 function showPage(pageId){
@@ -1056,6 +1157,8 @@ function renderAnswer(data){
     <div class="card reveal" style="animation-delay:20ms;">
       <div class="cardhead">
         <span class="chip">Answer</span>
+        ${data?.provider ? `<span class="chip">Provider <span class="mono">${escapeHtml(data.provider)}</span></span>` : ""}
+        ${data?.model ? `<span class="chip">Model <span class="mono">${escapeHtml(data.model)}</span></span>` : ""}
       </div>
       <div class="preview">${escapeHtml(answerText)}</div>
     </div>
@@ -1751,11 +1854,17 @@ async function loadTenantSettings(){
       if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
       if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
       if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || "sso_plus_password";
+      if ($("tenantAnswerProvider")) $("tenantAnswerProvider").value = configuredModels.answerProvider || "";
       if ($("tenantAnswerModel")) $("tenantAnswerModel").value = configuredModels.answerModel || "";
+      if ($("tenantBooleanAskProvider")) $("tenantBooleanAskProvider").value = configuredModels.booleanAskProvider || "";
       if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").value = configuredModels.booleanAskModel || "";
+      if ($("tenantReflectProvider")) $("tenantReflectProvider").value = configuredModels.reflectProvider || "";
       if ($("tenantReflectModel")) $("tenantReflectModel").value = configuredModels.reflectModel || "";
+      if ($("tenantCompactProvider")) $("tenantCompactProvider").value = configuredModels.compactProvider || "";
       if ($("tenantCompactModel")) $("tenantCompactModel").value = configuredModels.compactModel || "";
+      if ($("tenantEmbedProvider")) $("tenantEmbedProvider").value = effectiveModels.embedProvider || "";
       if ($("tenantEmbedModel")) $("tenantEmbedModel").value = effectiveModels.embedModel || "";
+      syncGenerationModelList("tenantGenerationModels", configuredModels.answerProvider || effectiveModels.answerProvider || "");
       if ($("tenantAnswerModel")) $("tenantAnswerModel").placeholder = instanceDefaults.answerModel || "blank = instance default";
       if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").placeholder = effectiveModels.answerModel || "blank = follow ask model";
       if ($("tenantReflectModel")) $("tenantReflectModel").placeholder = instanceDefaults.reflectModel || "blank = instance default";
@@ -1795,9 +1904,13 @@ async function saveTenantSettings(){
   if ($("tenantSsoGoogle")?.checked) ssoProviders.push("google");
   if ($("tenantSsoAzure")?.checked) ssoProviders.push("azure");
   if ($("tenantSsoOkta")?.checked) ssoProviders.push("okta");
+  const answerProvider = String($("tenantAnswerProvider")?.value || "").trim();
   const answerModel = String($("tenantAnswerModel")?.value || "").trim();
+  const booleanAskProvider = String($("tenantBooleanAskProvider")?.value || "").trim();
   const booleanAskModel = String($("tenantBooleanAskModel")?.value || "").trim();
+  const reflectProvider = String($("tenantReflectProvider")?.value || "").trim();
   const reflectModel = String($("tenantReflectModel")?.value || "").trim();
+  const compactProvider = String($("tenantCompactProvider")?.value || "").trim();
   const compactModel = String($("tenantCompactModel")?.value || "").trim();
 
   saveBtn.disabled = true;
@@ -1812,9 +1925,13 @@ async function saveTenantSettings(){
         authMode,
         ssoProviders,
         models: {
+          answerProvider: answerProvider || null,
           answerModel: answerModel || null,
+          booleanAskProvider: booleanAskProvider || null,
           booleanAskModel: booleanAskModel || null,
+          reflectProvider: reflectProvider || null,
           reflectModel: reflectModel || null,
+          compactProvider: compactProvider || null,
           compactModel: compactModel || null
         }
       })
@@ -1829,11 +1946,17 @@ async function saveTenantSettings(){
       if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
       if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
       if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || authMode;
+      if ($("tenantAnswerProvider")) $("tenantAnswerProvider").value = configuredModels.answerProvider || "";
       if ($("tenantAnswerModel")) $("tenantAnswerModel").value = configuredModels.answerModel || "";
+      if ($("tenantBooleanAskProvider")) $("tenantBooleanAskProvider").value = configuredModels.booleanAskProvider || "";
       if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").value = configuredModels.booleanAskModel || "";
+      if ($("tenantReflectProvider")) $("tenantReflectProvider").value = configuredModels.reflectProvider || "";
       if ($("tenantReflectModel")) $("tenantReflectModel").value = configuredModels.reflectModel || "";
+      if ($("tenantCompactProvider")) $("tenantCompactProvider").value = configuredModels.compactProvider || "";
       if ($("tenantCompactModel")) $("tenantCompactModel").value = configuredModels.compactModel || "";
+      if ($("tenantEmbedProvider")) $("tenantEmbedProvider").value = effectiveModels.embedProvider || "";
       if ($("tenantEmbedModel")) $("tenantEmbedModel").value = effectiveModels.embedModel || "";
+      syncGenerationModelList("tenantGenerationModels", configuredModels.answerProvider || effectiveModels.answerProvider || "");
       if ($("tenantAnswerModel")) $("tenantAnswerModel").placeholder = instanceDefaults.answerModel || "blank = instance default";
       if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").placeholder = effectiveModels.answerModel || "blank = follow ask model";
       if ($("tenantReflectModel")) $("tenantReflectModel").placeholder = instanceDefaults.reflectModel || "blank = instance default";
@@ -1883,7 +2006,14 @@ window.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initDocTabs();
   initDocsAgentConnect();
+  initDocsCopyButtons();
   loadModelCatalog();
+  if ($("askProvider")) {
+    $("askProvider").onchange = () => syncGenerationModelList("askGenerationModels", $("askProvider").value || "");
+  }
+  if ($("tenantAnswerProvider")) {
+    $("tenantAnswerProvider").onchange = () => syncGenerationModelList("tenantGenerationModels", $("tenantAnswerProvider").value || "");
+  }
   $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");
   $("tabUsage").onclick = () => showPage("pageUsage");
@@ -1907,7 +2037,9 @@ window.addEventListener("DOMContentLoaded", () => {
   const auth = loadStoredAuth();
   $("apiKey").value = auth.token;
   if ($("authType")) $("authType").value = auth.type || "bearer";
-  if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = loadStoredOpenAiOverride();
+  if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = loadStoredProviderOverride("openai");
+  if ($("geminiApiKeyOverride")) $("geminiApiKeyOverride").value = loadStoredProviderOverride("gemini");
+  if ($("anthropicApiKeyOverride")) $("anthropicApiKeyOverride").value = loadStoredProviderOverride("anthropic");
 
   if ($("saveKeyBtn")) {
     $("saveKeyBtn").onclick = () => {
@@ -1973,23 +2105,29 @@ window.addEventListener("DOMContentLoaded", () => {
     setCollectionScopeOptions([]);
   };
 
-  if ($("saveOpenAiOverrideBtn")) {
-    $("saveOpenAiOverrideBtn").onclick = () => {
-      const value = $("openAiApiKeyOverride").value.trim();
-      if (!value){
-        setBanner($("settingsBanner"), "err", "Please paste an OpenAI key first.");
+  if ($("saveProviderOverridesBtn")) {
+    $("saveProviderOverridesBtn").onclick = () => {
+      const openAiValue = $("openAiApiKeyOverride")?.value?.trim() || "";
+      const geminiValue = $("geminiApiKeyOverride")?.value?.trim() || "";
+      const anthropicValue = $("anthropicApiKeyOverride")?.value?.trim() || "";
+      if (!openAiValue && !geminiValue && !anthropicValue) {
+        setBanner($("settingsBanner"), "err", "Paste at least one provider key first.");
         return;
       }
-      saveStoredOpenAiOverride(value);
-      setBanner($("settingsBanner"), "ok", "Saved OpenAI key override. AtlasRAG requests from this browser will now send X-OpenAI-API-Key.");
+      saveStoredProviderOverride("openai", openAiValue);
+      saveStoredProviderOverride("gemini", geminiValue);
+      saveStoredProviderOverride("anthropic", anthropicValue);
+      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. AtlasRAG requests from this browser will send the matching provider header when needed.");
     };
   }
 
-  if ($("clearOpenAiOverrideBtn")) {
-    $("clearOpenAiOverrideBtn").onclick = () => {
-      clearStoredOpenAiOverride();
+  if ($("clearProviderOverridesBtn")) {
+    $("clearProviderOverridesBtn").onclick = () => {
+      clearStoredProviderOverrides();
       if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = "";
-      setBanner($("settingsBanner"), "ok", "Removed saved OpenAI key override.");
+      if ($("geminiApiKeyOverride")) $("geminiApiKeyOverride").value = "";
+      if ($("anthropicApiKeyOverride")) $("anthropicApiKeyOverride").value = "";
+      setBanner($("settingsBanner"), "ok", "Removed saved provider key overrides.");
     };
   }
 
@@ -2305,7 +2443,9 @@ window.addEventListener("DOMContentLoaded", () => {
     $("askAnswerCard").innerHTML = "";
     $("askRaw").textContent = "(no output)";
     if ($("askPolicy")) $("askPolicy").value = "amvl";
+    if ($("askProvider")) $("askProvider").value = "";
     if ($("askModel")) $("askModel").value = "";
+    syncGenerationModelList("askGenerationModels", $("askProvider")?.value || "");
     clearBanner($("askBanner"));
   };
 
@@ -2319,6 +2459,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const scope = String($("askCollectionScope")?.value || "all").trim();
     const answerLength = String($("askAnswerLength")?.value || "auto").trim().toLowerCase();
     const policy = normalizePolicy($("askPolicy")?.value || "amvl");
+    const provider = String($("askProvider")?.value || "").trim();
     const model = String($("askModel")?.value || "").trim();
 
     if (!question){
@@ -2342,6 +2483,7 @@ window.addEventListener("DOMContentLoaded", () => {
         body.answerLength = answerLength;
       }
       body.policy = policy;
+      if (provider) body.provider = provider;
       if (model) body.model = model;
 
       const res = await fetch(isBooleanAsk ? "/boolean_ask" : "/ask", {
@@ -2355,12 +2497,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (res.ok && data.answer){
         const label = scope === "all" ? "all collections" : scope;
-        const modelLabel = data.model ? `, ${data.model}` : "";
+        const providerLabel = data.provider ? `, ${data.provider}` : "";
+        const modelLabel = data.model ? ` / ${data.model}` : "";
         if (isBooleanAsk) {
-          setBanner($("askBanner"), "ok", `Boolean answer generated from "${label}" (${policy.toUpperCase()}${modelLabel}).`);
+          setBanner($("askBanner"), "ok", `Boolean answer generated from "${label}" (${policy.toUpperCase()}${providerLabel}${modelLabel}).`);
         } else {
           const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
-          setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}${modelLabel}).`);
+          setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}${providerLabel}${modelLabel}).`);
         }
         renderAnswer(data);
       }else{

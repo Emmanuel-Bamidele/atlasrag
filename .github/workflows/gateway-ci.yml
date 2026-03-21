@@ -11,6 +11,9 @@ jobs:
   gateway-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      JWT_SECRET: ci_jwt_secret
+      COOKIE_SECRET: ci_cookie_secret
 
     steps:
       - name: Checkout
@@ -71,18 +74,12 @@ jobs:
           exit 1
 
       - name: Ensure e2e user
-        working-directory: gateway
-        env:
-          E2E_USERNAME: ci_admin
-          E2E_PASSWORD: ci_admin_password
-          E2E_TENANT: ci_admin
-          E2E_ROLES: admin
-          PGHOST: 127.0.0.1
-          PGPORT: "5432"
-          PGDATABASE: atlasrag
-          PGUSER: atlasrag
-          PGPASSWORD: atlasrag
-        run: npm run ci:ensure-user
+        run: |
+          docker compose --env-file .env.ci exec -T gateway node scripts/ensure_user.js \
+            --username ci_admin \
+            --password ci_admin_password \
+            --tenant ci_admin \
+            --roles admin
 
       - name: Run unit tests
         working-directory: gateway

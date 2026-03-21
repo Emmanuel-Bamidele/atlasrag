@@ -17,11 +17,28 @@ Use this if you need to choose the right usage mode quickly.
 | Usage mode | Best when | Read next |
 | --- | --- | --- |
 | Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [`self-hosting.md`](self-hosting.md) |
-| Fork and self-deploy with your own Postgres and OpenAI key | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
+| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
 | Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Direct service token](#direct-service-token) |
-| Use a shared AtlasRAG deployment with your own OpenAI key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your OpenAI key](#shared-openai-key) |
+| Use a shared AtlasRAG deployment with your own provider key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your provider key](#shared-provider-key) |
 | Keep your own product auth and place AtlasRAG behind your backend | End users should not log into AtlasRAG directly | [Backend-as-caller](#backend-as-caller) |
 | Use AtlasRAG mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](#human-jwt) |
+
+If you are still deciding what you are actually setting up, read [`setup-modes.md`](setup-modes.md) first. That guide explains the boundary between self-hosted, shared deployment, backend-held, and human-admin paths before you choose commands.
+
+## Setup Mode Rule
+
+Classify the setup mode before you give instructions:
+
+- if the user is cloning the repo and running Docker themselves, use a self-hosted path
+- if the user already has `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`, use a shared-deployment path
+- if their backend should be the only AtlasRAG caller, use backend-as-caller
+- if they are signing in interactively to manage AtlasRAG itself, use the human-admin path
+
+Important boundary rules:
+
+- `--external-postgres` is still self-hosted AtlasRAG
+- shared-deployment users normally do not edit AtlasRAG server env files on the client machine
+- service tokens are deployment-scoped and do not carry across different AtlasRAG deployments
 
 ## Recommended Runtime Model
 
@@ -34,7 +51,7 @@ Use AtlasRAG like this:
 
 Optional variant:
 
-5. if the runtime wants AtlasRAG to use its own OpenAI key, it also sends `X-OpenAI-API-Key` on supported sync requests
+5. if the runtime wants AtlasRAG to use its own provider key, it also sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests
 
 Human login is still useful for:
 
@@ -84,11 +101,11 @@ Important distinction:
 Model guidance:
 
 - use `atlasrag changemodel` for local self-hosted defaults instead of editing the env file by hand
-- `ask` and `boolean_ask` accept a per-request `model` override, and the CLI `--model` flag accepts the same numbered shortcuts used during onboarding
-- the preset list now includes GPT-4.1 / GPT-4o, GPT-5 presets, and o-series reasoning models; custom model ids are still allowed
+- `ask` and `boolean_ask` accept per-request `provider` and `model` overrides, and the CLI `--provider` / `--model` flags accept the same numbered shortcuts used during onboarding
+- the preset list now includes OpenAI, Gemini, and Anthropic generation catalogs; custom model ids are still allowed
 - use `GET /v1/models` when you need the live preset catalog and current instance defaults
-- tenant admins can persist `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` with `PATCH /v1/admin/tenant`
-- `embedModel` stays instance-wide and requires a reindex when it changes
+- tenant admins can persist `answerProvider`, `answerModel`, `booleanAskProvider`, `booleanAskModel`, `reflectProvider`, `reflectModel`, `compactProvider`, and `compactModel` with `PATCH /v1/admin/tenant`
+- `embedProvider` / `embedModel` stay instance-wide and require a reindex when they change
 
 ## Bootstrap Once
 
@@ -119,7 +136,7 @@ With a valid service token, an agent can:
 
 What an agent cannot do from nothing:
 
-- self-bootstrap from only an OpenAI key
+- self-bootstrap from only a provider key
 - create the first AtlasRAG credential anonymously
 - create the first service token without an existing admin path
 
@@ -174,20 +191,24 @@ Pattern:
 
 This is usually the cleanest product architecture.
 
-<a id="shared-openai-key"></a>
-### 4. Shared AtlasRAG, Your OpenAI Key
+<a id="shared-provider-key"></a>
+### 4. Shared AtlasRAG, Your Provider Key
 
 Best when:
 
 - AtlasRAG is already deployed and keeps its own Postgres/auth state
-- you want a request to use your OpenAI key instead of the server default
+- you want a request to use your provider key instead of the server default
 - you do not need AtlasRAG to persist your provider key server-side
 
 Pattern:
 
 1. authenticate with a service token or JWT as usual
-2. also send `X-OpenAI-API-Key: YOUR_OPENAI_KEY`
+2. also send `X-OpenAI-API-Key: YOUR_OPENAI_KEY`, `X-Gemini-API-Key: YOUR_GEMINI_KEY`, or `X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY`
 3. AtlasRAG uses that key for supported sync embedding/answer requests
+
+`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+
+Embedding provider selection remains instance-wide today. For docs, search, memory write, and memory recall, request-scoped provider-key headers only override credentials for the embedding provider that the instance is already configured to use.
 
 Supported today:
 
@@ -204,7 +225,7 @@ Current limitation:
 - `POST /v1/memory/reflect`
 - `POST /v1/memory/compact`
 
-Those two endpoints reject `X-OpenAI-API-Key` because the work continues asynchronously after the original request ends.
+Those two endpoints reject request-scoped provider-key headers because the work continues asynchronously after the original request ends.
 
 ## Service Token Lifecycle
 
@@ -265,6 +286,7 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
     "question":"What does AtlasRAG store?",
     "k":5,
     "policy":"amvl",
+    "provider":"openai",
     "answerLength":"medium"
   }'
 ```
@@ -279,6 +301,7 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
   -d '{
     "question":"Does AtlasRAG store memory for agents?",
     "k":5,
+    "provider":"openai",
     "policy":"amvl"
   }'
 ```

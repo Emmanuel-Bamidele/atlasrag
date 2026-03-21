@@ -5,6 +5,8 @@ class AtlasRAGClient {
     this.token = options.token || null;
     this.apiKey = options.apiKey || null;
     this.openAiApiKey = options.openAiApiKey || null;
+    this.geminiApiKey = options.geminiApiKey || null;
+    this.anthropicApiKey = options.anthropicApiKey || null;
     this.tenantId = options.tenantId || null;
     this.collection = options.collection || null;
     this.principalId = options.principalId || null;
@@ -20,6 +22,27 @@ class AtlasRAGClient {
 
   setOpenAiApiKey(openAiApiKey) {
     this.openAiApiKey = openAiApiKey;
+  }
+
+  setGeminiApiKey(geminiApiKey) {
+    this.geminiApiKey = geminiApiKey;
+  }
+
+  setAnthropicApiKey(anthropicApiKey) {
+    this.anthropicApiKey = anthropicApiKey;
+  }
+
+  setProviderApiKey(provider, value) {
+    const cleanProvider = String(provider || "").trim().toLowerCase();
+    if (cleanProvider === "gemini") {
+      this.geminiApiKey = value || null;
+      return;
+    }
+    if (cleanProvider === "anthropic") {
+      this.anthropicApiKey = value || null;
+      return;
+    }
+    this.openAiApiKey = value || null;
   }
 
   setTenant(tenantId) {
@@ -73,6 +96,12 @@ class AtlasRAGClient {
     }
     if (this.openAiApiKey) {
       headers["X-OpenAI-API-Key"] = this.openAiApiKey;
+    }
+    if (this.geminiApiKey) {
+      headers["X-Gemini-API-Key"] = this.geminiApiKey;
+    }
+    if (this.anthropicApiKey) {
+      headers["X-Anthropic-API-Key"] = this.anthropicApiKey;
     }
     if (options.idempotencyKey) {
       headers["Idempotency-Key"] = options.idempotencyKey;

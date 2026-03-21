@@ -6,41 +6,11 @@
 //
 
 // ai.js
-// This file talks to OpenAI to create embeddings (vectors)
-// Embeddings = numbers that represent the meaning of text
+// This file creates embeddings (vectors) for text chunks and queries.
 
-// We use the official OpenAI JS client
-const OpenAI = require("openai");
 const crypto = require("crypto");
-const { DEFAULT_EMBED_MODEL, normalizeModelId } = require("./model_config");
-
-let defaultClient = null;
-function createClient(key) {
-  const cleanKey = String(key || "").trim();
-  if (!cleanKey) {
-    throw new Error("OPENAI_API_KEY not set on server");
-  }
-  const timeoutMs = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
-  const options = { apiKey: cleanKey };
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    options.timeout = timeoutMs;
-  }
-  return new OpenAI(options);
-}
-
-function getClient(apiKey = "") {
-  const overrideKey = String(apiKey || "").trim();
-  if (overrideKey) {
-    return createClient(overrideKey);
-  }
-  if (defaultClient) return defaultClient;
-  const key = String(process.env.OPENAI_API_KEY || "").trim();
-  if (!key) {
-    throw new Error("OPENAI_API_KEY not set on server");
-  }
-  defaultClient = createClient(key);
-  return defaultClient;
-}
+const { DEFAULT_EMBED_MODEL, normalizeModelId, normalizeProviderId } = require("./model_config");
+const { embedProviderTexts } = require("./provider_clients");
 
 const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 const FALLBACK_DIM = parseInt(process.env.EMBED_FALLBACK_DIM || "1536", 10);
@@ -49,8 +19,15 @@ let fallbackWarned = false;
 const MODEL_FALLBACK_DIMS = Object.freeze({
   "text-embedding-3-large": 3072,
   "text-embedding-3-small": 1536,
-  "text-embedding-ada-002": 1536
+  "text-embedding-ada-002": 1536,
+  "gemini-embedding-001": 3072
 });
+
+function resolveEmbedProvider(options = {}) {
+  return normalizeProviderId(options?.embedProvider)
+    || normalizeProviderId(process.env.EMBED_PROVIDER)
+    || "openai";
+}
 
 function resolveEmbedModel(options = {}) {
   return normalizeModelId(options?.embedModel)
@@ -73,7 +50,7 @@ function resolveEmbedDimension(options = {}) {
 function warnFallback(reason) {
   if (fallbackWarned) return;
   fallbackWarned = true;
-  console.warn(`[embed] OpenAI embeddings unavailable, using deterministic local fallback (${reason})`);
+  console.warn(`[embed] provider embeddings unavailable, using deterministic local fallback (${reason})`);
 }
 
 function normalizeVector(values) {
@@ -131,7 +108,6 @@ function fallbackEmbeddings(texts, reason, usage, dim) {
   return vectors;
 }
 
-// embedTexts takes an array of strings and returns an array of vectors
 function normalizeEmbedOptions(batchSizeOrOptions) {
   if (typeof batchSizeOrOptions === "number") {
     return { batchSize: batchSizeOrOptions };
@@ -149,30 +125,20 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   const safeBatch = Number.isFinite(options.batchSize) && options.batchSize > 0 ? options.batchSize : 64;
   const list = Array.isArray(texts) ? texts : [];
   const fallbackDim = resolveEmbedDimension(options);
-
-  let client = null;
-  try {
-    client = getClient(options.apiKey);
-  } catch (err) {
-    if (!EMBED_FALLBACK_ON_ERROR) throw err;
-    return {
-      vectors: fallbackEmbeddings(list, String(err?.message || err || "client init failed"), usage, fallbackDim),
-      usage
-    };
-  }
+  const embedProvider = resolveEmbedProvider(options);
+  const embedModel = resolveEmbedModel(options);
 
   for (let i = 0; i < list.length; i += safeBatch) {
     const slice = list.slice(i, i + safeBatch);
-
     try {
-      // Call OpenAI embeddings API
-      const resp = await client.embeddings.create({
-        model: resolveEmbedModel(options),
-        input: slice
+      const resp = await embedProviderTexts({
+        provider: embedProvider,
+        texts: slice,
+        model: embedModel,
+        apiKey: options.apiKey,
+        taskType: options.taskType
       });
-
-      // resp.data is an array, each item has .embedding (float array)
-      out.push(...resp.data.map(x => x.embedding));
+      out.push(...resp.vectors);
       if (resp.usage) {
         usage.prompt_tokens += Number(resp.usage.prompt_tokens || 0);
         usage.total_tokens += Number(resp.usage.total_tokens || 0);
@@ -189,6 +155,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
 module.exports = {
   embedTexts,
   __testHooks: {
+    resolveEmbedProvider,
     resolveEmbedModel,
     resolveEmbedDimension
   }

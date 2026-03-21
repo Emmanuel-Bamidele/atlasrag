@@ -8,6 +8,8 @@ This guide is for teams that already have:
 
 This is the right path if you do not want AtlasRAG to own your database lifecycle.
 
+If you are not yet sure whether you should self-host AtlasRAG with your own Postgres versus use an existing shared deployment, start with [`setup-modes.md`](setup-modes.md) first.
+
 ## Important Current Behavior
 
 The stock `docker-compose.yml` and `docker-compose.prod.yml` are optimized for the bundled `postgres` service in this repo.
@@ -148,7 +150,7 @@ If you already have a secret manager, use it.
 Typical mapping:
 
 - `PGPASSWORD` from your database secret
-- `OPENAI_API_KEY` from your model-provider secret
+- one or more model-provider secrets such as `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY`
 - `JWT_SECRET` and `COOKIE_SECRET` from your application secret store
 - service tokens stored with the same care as any other internal API key
 

@@ -13,6 +13,9 @@ const {
   CONFIG_DIR,
   backupFileIfExists,
   boolFromFlag,
+  DEFAULT_ANSWER_PROVIDER,
+  DEFAULT_EMBED_PROVIDER,
+  DEFAULT_REFLECT_PROVIDER,
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
@@ -22,17 +25,24 @@ const {
   buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
-  defaultOnboardAnswerModelSelection,
+  defaultProviderSelection,
+  defaultGenerationModelSelectionForProvider,
+  defaultEmbeddingModelSelectionForProvider,
   defaultCollectionFromFolder,
   detectIngestibleFileType,
+  listEmbeddingModelPresets,
+  listGenerationModelPresets,
   extractDocumentText,
+  EMBEDDING_PROVIDER_PRESETS,
+  GENERATION_PROVIDER_PRESETS,
   maskSecret,
   mergeEnvText,
   normalizeConfiguredModel,
+  normalizeEmbeddingModelSelectionForProvider,
+  normalizeGenerationModelSelectionForProvider,
+  normalizeProviderSelection,
   parseCliArgs,
-  normalizeOnboardAnswerModelSelection,
   normalizeTcpPort,
-  ONBOARD_ANSWER_MODEL_OPTIONS,
   preferredBaseUrl,
   randomPassword,
   randomSecret,
@@ -52,7 +62,7 @@ function printHelp() {
 
 Usage:
   atlasrag onboard [--external-postgres] [--project-root PATH] [--force]
-  atlasrag changemodel [--project-root PATH] [--answer-model MODEL_OR_CHOICE] [--boolean-ask-model MODEL|inherit] [--embed-model MODEL] [--reflect-model MODEL] [--compact-model MODEL|inherit] [--restart]
+  atlasrag changemodel [--project-root PATH] [--answer-provider PROVIDER_OR_CHOICE] [--answer-model MODEL_OR_CHOICE] [--boolean-ask-provider PROVIDER|inherit] [--boolean-ask-model MODEL|inherit] [--embed-provider PROVIDER_OR_CHOICE] [--embed-model MODEL] [--reflect-provider PROVIDER_OR_CHOICE] [--reflect-model MODEL] [--compact-provider PROVIDER|inherit] [--compact-model MODEL|inherit] [--restart]
   atlasrag update [--project-root PATH]
   atlasrag uninstall [--yes]
   atlasrag start [--build]
@@ -68,8 +78,8 @@ Usage:
   atlasrag docs replace --doc-id ID [--text TEXT | --file PATH | --url URL] [--collection NAME] [--yes] [--json]
   atlasrag write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--replace] [--sync] [--yes] [--json]
   atlasrag search --q QUERY [--k 5] [--collection NAME] [--json]
-  atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--model MODEL_OR_CHOICE] [--json]
-  atlasrag boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--model MODEL_OR_CHOICE] [--json]
+  atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--provider PROVIDER_OR_CHOICE] [--model MODEL_OR_CHOICE] [--json]
+  atlasrag boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--provider PROVIDER_OR_CHOICE] [--model MODEL_OR_CHOICE] [--json]
   atlasrag config show [--show-secrets]
   atlasrag help
 
@@ -78,6 +88,8 @@ Common flags:
   --base-url URL               Override saved base URL
   --api-key KEY                Override saved service token
   --openai-key KEY             Send request-scoped X-OpenAI-API-Key
+  --gemini-key KEY             Send request-scoped X-Gemini-API-Key
+  --anthropic-key KEY          Send request-scoped X-Anthropic-API-Key
   --tenant TENANT              Override tenant scope
   --collection NAME            Override collection scope; folder writes use folder name if omitted
   --replace                    Replace matching docs before re-indexing
@@ -91,11 +103,17 @@ Onboarding / model flags:
   --admin-password PASS
   --tenant TENANT
   --gateway-port PORT
+  --provider PROVIDER_OR_CHOICE
+  --answer-provider PROVIDER_OR_CHOICE
   --answer-model MODEL_OR_CHOICE
   --model MODEL_OR_CHOICE       Alias for --answer-model during onboarding
+  --boolean-ask-provider PROVIDER
   --embed-model MODEL
+  --embed-provider PROVIDER_OR_CHOICE
+  --reflect-provider PROVIDER_OR_CHOICE
   --boolean-ask-model MODEL
   --reflect-model MODEL
+  --compact-provider PROVIDER
   --compact-model MODEL
   --external-postgres
   --pg-host HOST
@@ -103,6 +121,8 @@ Onboarding / model flags:
   --pg-database NAME
   --pg-user USER
   --pg-password PASS
+  --gemini-key KEY
+  --anthropic-key KEY
   --non-interactive            Fail instead of prompting for missing values
   --force                      Overwrite env file after creating a backup
 `);
@@ -558,42 +578,109 @@ async function resolvePromptValue({
   }
 }
 
-function formatOnboardAnswerModelPrompt() {
-  const lines = ["Default generation model"];
-  for (const option of ONBOARD_ANSWER_MODEL_OPTIONS) {
+function formatProviderPrompt(title, presets) {
+  const lines = [title];
+  for (const option of presets) {
+    const defaultLabel = option.recommended ? " (Recommended)" : "";
+    lines.push(`  ${option.key}. ${option.provider} - ${option.label}${defaultLabel}`);
+  }
+  return lines.join("\n");
+}
+
+function formatModelPrompt(title, provider, presets) {
+  const lines = [`${title} (${provider})`];
+  for (const option of presets) {
     const defaultLabel = option.recommended ? " (Recommended)" : "";
     lines.push(`  ${option.key}. ${option.model === "__custom__" ? option.label : `${option.model} - ${option.label}`}${defaultLabel}`);
   }
   return lines.join("\n");
 }
 
-async function resolveOnboardAnswerModel({ parsed, nonInteractive, existingValue }) {
-  const fallback = normalizeConfiguredModel(existingValue, DEFAULT_ANSWER_MODEL);
-  const rawFlag = getFlag(parsed, "answer-model") ?? getFlag(parsed, "model");
-  const customChoice = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.model === "__custom__");
-  if (rawFlag !== undefined && rawFlag !== true) {
-    return normalizeOnboardAnswerModelSelection(rawFlag, fallback);
+async function resolveProviderChoice({
+  parsed,
+  nonInteractive,
+  flagNames,
+  prompt,
+  existingValue,
+  kind = "generation"
+}) {
+  const presets = kind === "embedding" ? EMBEDDING_PROVIDER_PRESETS : GENERATION_PROVIDER_PRESETS;
+  for (const name of flagNames) {
+    const value = getFlag(parsed, name);
+    if (value !== undefined && value !== true) {
+      return normalizeProviderSelection(value, kind, existingValue);
+    }
   }
-  if (nonInteractive) {
-    return fallback;
-  }
-
+  const fallback = normalizeConfiguredModel(existingValue, kind === "embedding" ? DEFAULT_EMBED_PROVIDER : DEFAULT_ANSWER_PROVIDER);
+  if (nonInteractive) return fallback;
   while (true) {
     const answer = await askVisible(
-      formatOnboardAnswerModelPrompt(),
-      defaultOnboardAnswerModelSelection(fallback, DEFAULT_ANSWER_MODEL)
+      formatProviderPrompt(prompt, presets),
+      defaultProviderSelection(fallback, kind, fallback)
+    );
+    try {
+      return normalizeProviderSelection(answer, kind, fallback);
+    } catch (err) {
+      console.error(String(err.message || err));
+    }
+  }
+}
+
+function normalizeCliModelFlag(value, provider, fallback = "", kind = "generation") {
+  if (value === undefined || value === null || value === true) {
+    return normalizeConfiguredModel(fallback, "");
+  }
+  const clean = String(value || "").trim();
+  if (!clean) return normalizeConfiguredModel(fallback, "");
+  if (kind === "embedding") {
+    return normalizeEmbeddingModelSelectionForProvider(provider, clean, fallback);
+  }
+  return normalizeGenerationModelSelectionForProvider(provider, clean, fallback);
+}
+
+async function resolveProviderAwareModel({
+  parsed,
+  nonInteractive,
+  flagNames,
+  prompt,
+  provider,
+  existingValue,
+  kind = "generation"
+}) {
+  const presets = kind === "embedding" ? listEmbeddingModelPresets(provider) : listGenerationModelPresets(provider);
+  const fallback = normalizeConfiguredModel(
+    existingValue,
+    kind === "embedding"
+      ? (provider === "openai" ? DEFAULT_EMBED_MODEL : "")
+      : (provider === "openai" ? DEFAULT_ANSWER_MODEL : "")
+  );
+  for (const name of flagNames) {
+    const value = getFlag(parsed, name);
+    if (value !== undefined && value !== true) {
+      return normalizeCliModelFlag(value, provider, fallback, kind);
+    }
+  }
+  if (nonInteractive) return fallback;
+  const customChoice = presets.find((item) => item.model === "__custom__");
+  while (true) {
+    const defaultSelection = kind === "embedding"
+      ? defaultEmbeddingModelSelectionForProvider(provider, fallback, fallback)
+      : defaultGenerationModelSelectionForProvider(provider, fallback, fallback);
+    const answer = await askVisible(
+      formatModelPrompt(prompt, provider, presets),
+      defaultSelection
     );
     const clean = String(answer || "").trim();
     if (customChoice && clean === customChoice.key) {
-      const existingCustom = ONBOARD_ANSWER_MODEL_OPTIONS.some((item) => item.model === fallback) ? "" : fallback;
-      const custom = await askVisible("Custom generation model id", existingCustom);
+      const existingCustom = presets.some((item) => item.model === fallback) ? "" : fallback;
+      const custom = await askVisible(`Custom ${kind === "embedding" ? "embedding" : "generation"} model id`, existingCustom);
       const customClean = String(custom || "").trim();
       if (customClean) return customClean;
       console.error("Custom model id is required.");
       continue;
     }
     try {
-      return normalizeOnboardAnswerModelSelection(clean, fallback);
+      return normalizeCliModelFlag(clean, provider, fallback, kind);
     } catch (err) {
       console.error(String(err.message || err));
     }
@@ -639,16 +726,7 @@ async function writeEnvFile({ projectRoot, externalPostgres, updates, force }) {
   return { outputPath, backupPath };
 }
 
-function normalizeCliModelFlag(value, fallback = "") {
-  if (value === undefined || value === null || value === true) {
-    return normalizeConfiguredModel(fallback, "");
-  }
-  const clean = String(value || "").trim();
-  if (!clean) return normalizeConfiguredModel(fallback, "");
-  return normalizeOnboardAnswerModelSelection(clean, DEFAULT_ANSWER_MODEL);
-}
-
-function normalizeCliOptionalModelFlag(value, fallback = "", options = {}) {
+function normalizeCliOptionalModelFlag(value, provider, fallback = "", options = {}) {
   if (value === undefined || value === null || value === true) {
     return normalizeConfiguredModel(fallback, "");
   }
@@ -661,7 +739,7 @@ function normalizeCliOptionalModelFlag(value, fallback = "", options = {}) {
   if (!options.allowInherit && ["inherit", "default", "none", "clear"].includes(lowered)) {
     throw new Error("Use a concrete model id for this command.");
   }
-  return normalizeCliModelFlag(clean, fallback);
+  return normalizeCliModelFlag(clean, provider, fallback, options.kind || "generation");
 }
 
 function resolveLocalEnvTarget(parsed) {
@@ -710,13 +788,15 @@ async function promptOptionalModel({
   nonInteractive,
   flagNames,
   prompt,
+  provider,
   existingValue = "",
-  allowInherit = true
+  allowInherit = true,
+  kind = "generation"
 }) {
   for (const name of flagNames) {
     const value = getFlag(parsed, name);
     if (value !== undefined) {
-      return normalizeCliOptionalModelFlag(value, existingValue, { allowInherit });
+      return normalizeCliOptionalModelFlag(value, provider, existingValue, { allowInherit, kind });
     }
   }
   if (nonInteractive) {
@@ -725,7 +805,78 @@ async function promptOptionalModel({
   const current = normalizeConfiguredModel(existingValue, "");
   const defaultValue = current || (allowInherit ? "inherit" : "");
   const answer = await askVisible(`${prompt}${allowInherit ? " (type inherit to clear)" : ""}`, defaultValue);
-  return normalizeCliOptionalModelFlag(answer, existingValue, { allowInherit });
+  return normalizeCliOptionalModelFlag(answer, provider, existingValue, { allowInherit, kind });
+}
+
+function firstNonEmptyValue(values = []) {
+  for (const value of values) {
+    const clean = String(value || "").trim();
+    if (clean) return clean;
+  }
+  return "";
+}
+
+function readProviderKeyFromAssignments(assignments, provider) {
+  if (provider === "gemini") {
+    return firstNonEmptyValue([assignments.GEMINI_API_KEY, assignments.GEMINI_API]);
+  }
+  if (provider === "anthropic") {
+    return firstNonEmptyValue([assignments.ANTHROPIC_API_KEY]);
+  }
+  return firstNonEmptyValue([assignments.OPENAI_API_KEY]);
+}
+
+async function resolveProviderApiKeyPrompt({
+  parsed,
+  nonInteractive,
+  provider,
+  existingEnv,
+  saved
+}) {
+  if (provider === "gemini") {
+    return resolvePromptValue({
+      parsed,
+      flags: { nonInteractive },
+      names: ["gemini-key"],
+      prompt: "Gemini API key",
+      defaultValue: firstNonEmptyValue([
+        process.env.GEMINI_API_KEY,
+        process.env.GEMINI_API,
+        readProviderKeyFromAssignments(existingEnv, "gemini"),
+        saved.geminiApiKey || ""
+      ]),
+      secret: true,
+      required: true
+    });
+  }
+  if (provider === "anthropic") {
+    return resolvePromptValue({
+      parsed,
+      flags: { nonInteractive },
+      names: ["anthropic-key"],
+      prompt: "Anthropic API key",
+      defaultValue: firstNonEmptyValue([
+        process.env.ANTHROPIC_API_KEY,
+        readProviderKeyFromAssignments(existingEnv, "anthropic"),
+        saved.anthropicApiKey || ""
+      ]),
+      secret: true,
+      required: true
+    });
+  }
+  return resolvePromptValue({
+    parsed,
+    flags: { nonInteractive },
+    names: ["openai-key"],
+    prompt: "OpenAI API key",
+    defaultValue: firstNonEmptyValue([
+      process.env.OPENAI_API_KEY,
+      readProviderKeyFromAssignments(existingEnv, "openai"),
+      saved.openAiApiKey || ""
+    ]),
+    secret: true,
+    required: true
+  });
 }
 
 function printSummary(title, rows) {
@@ -763,6 +914,21 @@ function resolveClientConfig(parsed) {
     || saved.openAiApiKey
     || ""
   ).trim();
+  const geminiApiKey = String(
+    getFlag(parsed, "gemini-key")
+    || process.env.ATLASRAG_GEMINI_API_KEY
+    || process.env.GEMINI_API_KEY
+    || process.env.GEMINI_API
+    || saved.geminiApiKey
+    || ""
+  ).trim();
+  const anthropicApiKey = String(
+    getFlag(parsed, "anthropic-key")
+    || process.env.ATLASRAG_ANTHROPIC_API_KEY
+    || process.env.ANTHROPIC_API_KEY
+    || saved.anthropicApiKey
+    || ""
+  ).trim();
   const tenantId = String(
     getFlag(parsed, "tenant")
     || process.env.ATLASRAG_TENANT_ID
@@ -781,6 +947,8 @@ function resolveClientConfig(parsed) {
     apiKey,
     token,
     openAiApiKey,
+    geminiApiKey,
+    anthropicApiKey,
     tenantId,
     collection
   };
@@ -796,6 +964,8 @@ function buildClient(parsed, options = {}) {
     apiKey: cfg.apiKey || null,
     token: cfg.apiKey ? null : cfg.token,
     openAiApiKey: cfg.openAiApiKey || null,
+    geminiApiKey: cfg.geminiApiKey || null,
+    anthropicApiKey: cfg.anthropicApiKey || null,
     tenantId: cfg.tenantId || null,
     collection: options.ignoreCollection ? null : (cfg.collection || null)
   });
@@ -896,36 +1066,120 @@ async function handleOnboard(parsed) {
     defaultValue: saved.tenantId || "default",
     required: true
   });
-  const openAiApiKey = await resolvePromptValue({
-    parsed,
-    flags: { nonInteractive },
-    names: ["openai-key"],
-    prompt: "OpenAI API key",
-    defaultValue: process.env.OPENAI_API_KEY || saved.openAiApiKey || "",
-    secret: true,
-    required: true
-  });
-  const answerModel = await resolveOnboardAnswerModel({
+  const answerProvider = await resolveProviderChoice({
     parsed,
     nonInteractive,
-    existingValue: existingEnv.ANSWER_MODEL
+    flagNames: ["answer-provider", "provider"],
+    prompt: "Default generation provider",
+    existingValue: existingEnv.ANSWER_PROVIDER || DEFAULT_ANSWER_PROVIDER,
+    kind: "generation"
   });
-  const embedModel = normalizeConfiguredModel(
-    getFlag(parsed, "embed-model"),
-    existingEnv.EMBED_MODEL || DEFAULT_EMBED_MODEL
-  );
-  const booleanAskModel = normalizeConfiguredModel(
-    getFlag(parsed, "boolean-ask-model"),
-    existingEnv.BOOLEAN_ASK_MODEL || ""
-  );
-  const reflectModel = normalizeConfiguredModel(
-    getFlag(parsed, "reflect-model"),
-    existingEnv.REFLECT_MODEL || DEFAULT_REFLECT_MODEL
-  );
-  const compactModel = normalizeConfiguredModel(
-    getFlag(parsed, "compact-model"),
-    existingEnv.COMPACT_MODEL || reflectModel
-  );
+  const answerModel = await resolveProviderAwareModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["answer-model", "model"],
+    prompt: "Default generation model",
+    provider: answerProvider,
+    existingValue: existingEnv.ANSWER_MODEL,
+    kind: "generation"
+  });
+  const booleanAskProvider = await resolvePromptValue({
+    parsed,
+    flags: { nonInteractive },
+    names: ["boolean-ask-provider"],
+    prompt: "Boolean ask provider (type inherit to clear)",
+    defaultValue: normalizeConfiguredModel(existingEnv.BOOLEAN_ASK_PROVIDER, "") || "inherit",
+    required: false
+  }).then((value) => {
+    const clean = String(value || "").trim();
+    if (!clean || ["inherit", "default", "none", "clear"].includes(clean.toLowerCase())) return "";
+    return normalizeProviderSelection(clean, "generation", answerProvider);
+  });
+  const effectiveBooleanProvider = booleanAskProvider || answerProvider;
+  const booleanAskModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["boolean-ask-model"],
+    prompt: "Boolean ask model",
+    provider: effectiveBooleanProvider,
+    existingValue: normalizeConfiguredModel(existingEnv.BOOLEAN_ASK_MODEL, ""),
+    allowInherit: true,
+    kind: "generation"
+  });
+  const embedProvider = await resolveProviderChoice({
+    parsed,
+    nonInteractive,
+    flagNames: ["embed-provider"],
+    prompt: "Embedding provider",
+    existingValue: existingEnv.EMBED_PROVIDER || DEFAULT_EMBED_PROVIDER,
+    kind: "embedding"
+  });
+  const embedModel = await resolveProviderAwareModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["embed-model"],
+    prompt: "Embedding model",
+    provider: embedProvider,
+    existingValue: existingEnv.EMBED_MODEL || (embedProvider === "openai" ? DEFAULT_EMBED_MODEL : ""),
+    kind: "embedding"
+  });
+  const reflectProvider = await resolveProviderChoice({
+    parsed,
+    nonInteractive,
+    flagNames: ["reflect-provider"],
+    prompt: "Reflect provider",
+    existingValue: existingEnv.REFLECT_PROVIDER || DEFAULT_REFLECT_PROVIDER,
+    kind: "generation"
+  });
+  const reflectModel = await resolveProviderAwareModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["reflect-model"],
+    prompt: "Reflect model",
+    provider: reflectProvider,
+    existingValue: existingEnv.REFLECT_MODEL,
+    kind: "generation"
+  });
+  const compactProvider = await resolvePromptValue({
+    parsed,
+    flags: { nonInteractive },
+    names: ["compact-provider"],
+    prompt: "Compact provider (type inherit to clear)",
+    defaultValue: normalizeConfiguredModel(existingEnv.COMPACT_PROVIDER, "") || "inherit",
+    required: false
+  }).then((value) => {
+    const clean = String(value || "").trim();
+    if (!clean || ["inherit", "default", "none", "clear"].includes(clean.toLowerCase())) return "";
+    return normalizeProviderSelection(clean, "generation", reflectProvider);
+  });
+  const effectiveCompactProvider = compactProvider || reflectProvider;
+  const compactModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["compact-model"],
+    prompt: "Compact model",
+    provider: effectiveCompactProvider,
+    existingValue: normalizeConfiguredModel(existingEnv.COMPACT_MODEL, ""),
+    allowInherit: true,
+    kind: "generation"
+  });
+
+  const providerSet = new Set([
+    answerProvider,
+    effectiveBooleanProvider,
+    embedProvider,
+    reflectProvider,
+    effectiveCompactProvider
+  ]);
+  const openAiApiKey = providerSet.has("openai")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "openai", existingEnv, saved })
+    : readProviderKeyFromAssignments(existingEnv, "openai");
+  const geminiApiKey = providerSet.has("gemini")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "gemini", existingEnv, saved })
+    : readProviderKeyFromAssignments(existingEnv, "gemini");
+  const anthropicApiKey = providerSet.has("anthropic")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "anthropic", existingEnv, saved })
+    : readProviderKeyFromAssignments(existingEnv, "anthropic");
 
   const jwtSecret = existingEnv.JWT_SECRET || randomSecret(32);
   const cookieSecret = existingEnv.COOKIE_SECRET || randomSecret(32);
@@ -933,15 +1187,22 @@ async function handleOnboard(parsed) {
   let envUpdates = {
     ...existingEnv,
     OPENAI_API_KEY: openAiApiKey,
+    GEMINI_API_KEY: geminiApiKey,
+    ANTHROPIC_API_KEY: anthropicApiKey,
     JWT_SECRET: jwtSecret,
     COOKIE_SECRET: cookieSecret,
     PUBLIC_BASE_URL: baseUrl,
     OPENAPI_BASE_URL: baseUrl,
     GATEWAY_HOST_PORT: gatewayPort,
+    ANSWER_PROVIDER: answerProvider,
     ANSWER_MODEL: answerModel,
+    BOOLEAN_ASK_PROVIDER: booleanAskProvider,
     BOOLEAN_ASK_MODEL: booleanAskModel,
+    EMBED_PROVIDER: embedProvider,
     EMBED_MODEL: embedModel,
+    REFLECT_PROVIDER: reflectProvider,
     REFLECT_MODEL: reflectModel,
+    COMPACT_PROVIDER: compactProvider,
     COMPACT_MODEL: compactModel
   };
   let composeFile = "docker-compose.yml";
@@ -1034,6 +1295,8 @@ async function handleOnboard(parsed) {
     adminUsername,
     apiKey: saved.apiKey || "",
     openAiApiKey,
+    geminiApiKey,
+    anthropicApiKey,
     onboardingPending: true
   }));
 
@@ -1059,6 +1322,8 @@ async function handleOnboard(parsed) {
     adminUsername,
     apiKey: serviceToken,
     openAiApiKey,
+    geminiApiKey,
+    anthropicApiKey,
     onboardingPending: false
   }));
 
@@ -1109,57 +1374,147 @@ async function handleChangeModel(parsed) {
   const envPath = path.join(target.projectRoot, target.envFile);
   const existingEnv = readEnvAssignments(envPath);
 
+  const currentAnswerProvider = normalizeConfiguredModel(existingEnv.ANSWER_PROVIDER, DEFAULT_ANSWER_PROVIDER);
   const currentAnswerModel = normalizeConfiguredModel(existingEnv.ANSWER_MODEL, DEFAULT_ANSWER_MODEL);
+  const currentBooleanAskProvider = normalizeConfiguredModel(existingEnv.BOOLEAN_ASK_PROVIDER, "");
   const currentBooleanAskModel = normalizeConfiguredModel(existingEnv.BOOLEAN_ASK_MODEL, "");
+  const currentEmbedProvider = normalizeConfiguredModel(existingEnv.EMBED_PROVIDER, DEFAULT_EMBED_PROVIDER);
   const currentEmbedModel = normalizeConfiguredModel(existingEnv.EMBED_MODEL, DEFAULT_EMBED_MODEL);
+  const currentReflectProvider = normalizeConfiguredModel(existingEnv.REFLECT_PROVIDER, DEFAULT_REFLECT_PROVIDER);
   const currentReflectModel = normalizeConfiguredModel(existingEnv.REFLECT_MODEL, DEFAULT_REFLECT_MODEL);
-  const currentCompactModel = normalizeConfiguredModel(existingEnv.COMPACT_MODEL, currentReflectModel);
+  const currentCompactProvider = normalizeConfiguredModel(existingEnv.COMPACT_PROVIDER, "");
+  const currentCompactModel = normalizeConfiguredModel(existingEnv.COMPACT_MODEL, "");
 
-  const answerModel = await resolveOnboardAnswerModel({
+  const answerProvider = await resolveProviderChoice({
     parsed,
     nonInteractive,
-    existingValue: currentAnswerModel
+    flagNames: ["answer-provider", "provider"],
+    prompt: "Default generation provider",
+    existingValue: currentAnswerProvider,
+    kind: "generation"
   });
+  const answerModel = await resolveProviderAwareModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["answer-model", "model"],
+    prompt: "Default generation model",
+    provider: answerProvider,
+    existingValue: currentAnswerModel,
+    kind: "generation"
+  });
+  const booleanAskProvider = await resolvePromptValue({
+    parsed,
+    flags: { nonInteractive },
+    names: ["boolean-ask-provider"],
+    prompt: "Boolean ask provider (type inherit to clear)",
+    defaultValue: currentBooleanAskProvider || "inherit",
+    required: false
+  }).then((value) => {
+    const clean = String(value || "").trim();
+    if (!clean || ["inherit", "default", "none", "clear"].includes(clean.toLowerCase())) return "";
+    return normalizeProviderSelection(clean, "generation", answerProvider);
+  });
+  const effectiveBooleanProvider = booleanAskProvider || answerProvider;
   const booleanAskModel = await promptOptionalModel({
     parsed,
     nonInteractive,
     flagNames: ["boolean-ask-model"],
     prompt: "Boolean ask model",
+    provider: effectiveBooleanProvider,
     existingValue: currentBooleanAskModel,
-    allowInherit: true
+    allowInherit: true,
+    kind: "generation"
   });
-  const embedModel = await promptOptionalModel({
+  const embedProvider = await resolveProviderChoice({
+    parsed,
+    nonInteractive,
+    flagNames: ["embed-provider"],
+    prompt: "Embedding provider",
+    existingValue: currentEmbedProvider,
+    kind: "embedding"
+  });
+  const embedModel = await resolveProviderAwareModel({
     parsed,
     nonInteractive,
     flagNames: ["embed-model"],
     prompt: "Embedding model",
+    provider: embedProvider,
     existingValue: currentEmbedModel,
-    allowInherit: false
+    kind: "embedding"
   });
-  const reflectModel = await promptOptionalModel({
+  const reflectProvider = await resolveProviderChoice({
+    parsed,
+    nonInteractive,
+    flagNames: ["reflect-provider"],
+    prompt: "Reflect provider",
+    existingValue: currentReflectProvider,
+    kind: "generation"
+  });
+  const reflectModel = await resolveProviderAwareModel({
     parsed,
     nonInteractive,
     flagNames: ["reflect-model"],
     prompt: "Reflect model",
+    provider: reflectProvider,
     existingValue: currentReflectModel,
-    allowInherit: false
+    kind: "generation"
   });
+  const compactProvider = await resolvePromptValue({
+    parsed,
+    flags: { nonInteractive },
+    names: ["compact-provider"],
+    prompt: "Compact provider (type inherit to clear)",
+    defaultValue: currentCompactProvider || "inherit",
+    required: false
+  }).then((value) => {
+    const clean = String(value || "").trim();
+    if (!clean || ["inherit", "default", "none", "clear"].includes(clean.toLowerCase())) return "";
+    return normalizeProviderSelection(clean, "generation", reflectProvider);
+  });
+  const effectiveCompactProvider = compactProvider || reflectProvider;
   const compactModel = await promptOptionalModel({
     parsed,
     nonInteractive,
     flagNames: ["compact-model"],
     prompt: "Compact model",
+    provider: effectiveCompactProvider,
     existingValue: currentCompactModel,
-    allowInherit: true
+    allowInherit: true,
+    kind: "generation"
   });
 
-  const embedChanged = embedModel !== currentEmbedModel;
+  const embedChanged = embedModel !== currentEmbedModel || embedProvider !== currentEmbedProvider;
+  const providerSet = new Set([
+    answerProvider,
+    effectiveBooleanProvider,
+    embedProvider,
+    reflectProvider,
+    effectiveCompactProvider
+  ]);
+  const openAiApiKey = providerSet.has("openai")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "openai", existingEnv, saved: readConfig() })
+    : readProviderKeyFromAssignments(existingEnv, "openai");
+  const geminiApiKey = providerSet.has("gemini")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "gemini", existingEnv, saved: readConfig() })
+    : readProviderKeyFromAssignments(existingEnv, "gemini");
+  const anthropicApiKey = providerSet.has("anthropic")
+    ? await resolveProviderApiKeyPrompt({ parsed, nonInteractive, provider: "anthropic", existingEnv, saved: readConfig() })
+    : readProviderKeyFromAssignments(existingEnv, "anthropic");
+
   const updates = {
     ...existingEnv,
+    OPENAI_API_KEY: openAiApiKey,
+    GEMINI_API_KEY: geminiApiKey,
+    ANTHROPIC_API_KEY: anthropicApiKey,
+    ANSWER_PROVIDER: answerProvider,
     ANSWER_MODEL: answerModel,
+    BOOLEAN_ASK_PROVIDER: booleanAskProvider,
     BOOLEAN_ASK_MODEL: booleanAskModel,
+    EMBED_PROVIDER: embedProvider,
     EMBED_MODEL: embedModel,
+    REFLECT_PROVIDER: reflectProvider,
     REFLECT_MODEL: reflectModel,
+    COMPACT_PROVIDER: compactProvider,
     COMPACT_MODEL: compactModel
   };
   if (embedChanged) {
@@ -1176,11 +1531,11 @@ async function handleChangeModel(parsed) {
   const rows = [
     `project root: ${target.projectRoot}`,
     `env file: ${path.relative(target.projectRoot, outputPath)}`,
-    `answer model: ${answerModel}`,
-    `boolean ask model: ${booleanAskModel || "inherit -> answer model"}`,
-    `embed model: ${embedModel}`,
-    `reflect model: ${reflectModel}`,
-    `compact model: ${compactModel || "inherit -> reflect model"}`
+    `answer provider/model: ${answerProvider} / ${answerModel}`,
+    `boolean ask provider/model: ${booleanAskProvider || "inherit -> answer provider"} / ${booleanAskModel || "inherit -> answer model"}`,
+    `embed provider/model: ${embedProvider} / ${embedModel}`,
+    `reflect provider/model: ${reflectProvider} / ${reflectModel}`,
+    `compact provider/model: ${compactProvider || "inherit -> reflect provider"} / ${compactModel || "inherit -> reflect model"}`
   ];
   if (backupPath) {
     rows.push(`backup created: ${path.relative(target.projectRoot, backupPath)}`);
@@ -1208,10 +1563,15 @@ async function handleChangeModel(parsed) {
       projectRoot: target.projectRoot,
       envFile: target.envFile,
       models: {
+        answerProvider,
         answerModel,
+        booleanAskProvider: booleanAskProvider || null,
         booleanAskModel: booleanAskModel || null,
+        embedProvider,
         embedModel,
+        reflectProvider,
         reflectModel,
+        compactProvider: compactProvider || null,
         compactModel: compactModel || null
       },
       embedModelChanged: embedChanged,
@@ -2352,9 +2712,26 @@ async function handleAsk(parsed) {
   }
   const policy = getFlag(parsed, "policy");
   const answerLength = String(getFlag(parsed, "answer-length") || getFlag(parsed, "answerLength") || "auto");
-  const model = normalizeCliOptionalModelFlag(getFlag(parsed, "model") ?? getFlag(parsed, "answer-model"), "", { allowInherit: false });
+  const provider = (() => {
+    const raw = getFlag(parsed, "provider") ?? getFlag(parsed, "answer-provider");
+    if (raw === undefined) return "";
+    return normalizeProviderSelection(raw, "generation", DEFAULT_ANSWER_PROVIDER);
+  })();
+  const model = normalizeCliOptionalModelFlag(
+    getFlag(parsed, "model") ?? getFlag(parsed, "answer-model"),
+    provider || DEFAULT_ANSWER_PROVIDER,
+    "",
+    { allowInherit: false, kind: "generation" }
+  );
   const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.ask(question, { k, policy, answerLength, docIds, model: model || undefined });
+  const payload = await client.ask(question, {
+    k,
+    policy,
+    answerLength,
+    docIds,
+    provider: provider || undefined,
+    model: model || undefined
+  });
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2364,6 +2741,7 @@ async function handleAsk(parsed) {
   const data = payload?.data || payload;
   console.log(`Question: ${question}`);
   console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  if (data.provider) console.log(`Provider: ${data.provider}`);
   if (data.model) console.log(`Model: ${data.model}`);
   console.log("");
   console.log(data.answer || "(no answer)");
@@ -2392,9 +2770,25 @@ async function handleBooleanAsk(parsed) {
     throw new Error("boolean_ask requires --k to be a positive integer.");
   }
   const policy = getFlag(parsed, "policy");
-  const model = normalizeCliOptionalModelFlag(getFlag(parsed, "model") ?? getFlag(parsed, "boolean-ask-model"), "", { allowInherit: false });
+  const provider = (() => {
+    const raw = getFlag(parsed, "provider") ?? getFlag(parsed, "boolean-ask-provider");
+    if (raw === undefined) return "";
+    return normalizeProviderSelection(raw, "generation", DEFAULT_ANSWER_PROVIDER);
+  })();
+  const model = normalizeCliOptionalModelFlag(
+    getFlag(parsed, "model") ?? getFlag(parsed, "boolean-ask-model"),
+    provider || DEFAULT_ANSWER_PROVIDER,
+    "",
+    { allowInherit: false, kind: "generation" }
+  );
   const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.booleanAsk(question, { k, policy, docIds, model: model || undefined });
+  const payload = await client.booleanAsk(question, {
+    k,
+    policy,
+    docIds,
+    provider: provider || undefined,
+    model: model || undefined
+  });
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2404,6 +2798,7 @@ async function handleBooleanAsk(parsed) {
   const data = payload?.data || payload;
   console.log(`Question: ${question}`);
   console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  if (data.provider) console.log(`Provider: ${data.provider}`);
   if (data.model) console.log(`Model: ${data.model}`);
   console.log("");
   console.log(data.answer || "invalid");
@@ -2445,7 +2840,9 @@ function handleConfig(parsed) {
   const output = {
     ...saved,
     apiKey: showSecrets ? (saved.apiKey || "") : maskSecret(saved.apiKey || ""),
-    openAiApiKey: showSecrets ? (saved.openAiApiKey || "") : maskSecret(saved.openAiApiKey || "")
+    openAiApiKey: showSecrets ? (saved.openAiApiKey || "") : maskSecret(saved.openAiApiKey || ""),
+    geminiApiKey: showSecrets ? (saved.geminiApiKey || "") : maskSecret(saved.geminiApiKey || ""),
+    anthropicApiKey: showSecrets ? (saved.anthropicApiKey || "") : maskSecret(saved.anthropicApiKey || "")
   };
   console.log(JSON.stringify(output, null, 2));
 }

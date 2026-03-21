@@ -3,7 +3,7 @@
   "info": {
     "title": "AtlasRAG API",
     "version": "1.0.0",
-    "description": "AtlasRAG provides semantic search, RAG answers, and long-term memory APIs for multi-tenant agents. Recommended integration model: bootstrap once, store a service token, and let your backend or runtime agent call AtlasRAG directly. Use JWTs mainly for human admin sessions. If you want AtlasRAG to keep its own Postgres/auth runtime but use your OpenAI key for a request, send X-OpenAI-API-Key on supported sync routes. That override is request-scoped and is currently rejected by asynchronous memory reflect/compact flows. All /v1 endpoints return a standard response envelope: { ok, data|error, meta }. For idempotent write endpoints, send a unique Idempotency-Key per logical request."
+    "description": "AtlasRAG provides semantic search, RAG answers, and long-term memory APIs for multi-tenant agents. Recommended integration model: bootstrap once, store a service token, and let your backend or runtime agent call AtlasRAG directly. Use JWTs mainly for human admin sessions. If you want AtlasRAG to keep its own Postgres/auth runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key. Those overrides are request-scoped and are rejected by asynchronous memory reflect/compact flows. All /v1 endpoints return a standard response envelope: { ok, data|error, meta }. For idempotent write endpoints, send a unique Idempotency-Key per logical request."
   },
   "servers": [
     {
@@ -325,15 +325,50 @@
           "okta"
         ]
       },
+      "GenerationProviderId": {
+        "type": "string",
+        "enum": [
+          "openai",
+          "gemini",
+          "anthropic"
+        ]
+      },
+      "EmbeddingProviderId": {
+        "type": "string",
+        "enum": [
+          "openai",
+          "gemini"
+        ]
+      },
       "ModelId": {
         "type": "string",
-        "description": "OpenAI model id. AtlasRAG publishes its current preset catalog at GET /v1/models, but custom model ids are also allowed."
+        "description": "Provider-native model id. AtlasRAG publishes its current preset catalog at GET /v1/models, but custom model ids are also allowed."
+      },
+      "ProviderPreset": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "recommended": {
+            "type": "boolean"
+          }
+        }
       },
       "ModelPreset": {
         "type": "object",
         "properties": {
           "key": {
             "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
           },
           "model": {
             "$ref": "#/components/schemas/ModelId"
@@ -361,6 +396,9 @@
           "key": {
             "type": "string"
           },
+          "provider": {
+            "$ref": "#/components/schemas/EmbeddingProviderId"
+          },
           "model": {
             "$ref": "#/components/schemas/ModelId"
           },
@@ -384,6 +422,36 @@
       "ModelsCatalog": {
         "type": "object",
         "properties": {
+          "generationProviders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderPreset"
+            }
+          },
+          "embeddingProviders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderPreset"
+            }
+          },
+          "generationByProvider": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ModelPreset"
+              }
+            }
+          },
+          "embeddingsByProvider": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/EmbeddingModelPreset"
+              }
+            }
+          },
           "generation": {
             "type": "array",
             "items": {
@@ -406,6 +474,9 @@
                 "type": "string"
               },
               "availability": {
+                "type": "string"
+              },
+              "requestScopedKeys": {
                 "type": "string"
               }
             }
@@ -431,12 +502,26 @@
       "TenantModelOverrides": {
         "type": "object",
         "properties": {
+          "answerProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for ask generation provider. null or empty clears the override and falls back to the instance default."
+          },
           "answerModel": {
             "type": [
               "string",
               "null"
             ],
             "description": "Tenant override for ask generation. null or empty clears the override and falls back to the instance default."
+          },
+          "booleanAskProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for boolean_ask generation provider. If unset, boolean_ask follows the tenant answerProvider or instance default."
           },
           "booleanAskModel": {
             "type": [
@@ -445,12 +530,26 @@
             ],
             "description": "Tenant override for boolean_ask generation. If unset, boolean_ask follows the tenant answerModel or instance default."
           },
+          "reflectProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for reflection provider."
+          },
           "reflectModel": {
             "type": [
               "string",
               "null"
             ],
             "description": "Tenant override for reflection jobs."
+          },
+          "compactProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for compaction provider. If unset, compaction follows the tenant reflectProvider or instance default."
           },
           "compactModel": {
             "type": [
@@ -464,17 +563,32 @@
       "TenantModelResolved": {
         "type": "object",
         "properties": {
+          "answerProvider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
           "answerModel": {
             "$ref": "#/components/schemas/ModelId"
+          },
+          "booleanAskProvider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
           },
           "booleanAskModel": {
             "$ref": "#/components/schemas/ModelId"
           },
+          "embedProvider": {
+            "$ref": "#/components/schemas/EmbeddingProviderId"
+          },
           "embedModel": {
             "$ref": "#/components/schemas/ModelId"
           },
+          "reflectProvider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
           "reflectModel": {
             "$ref": "#/components/schemas/ModelId"
+          },
+          "compactProvider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
           },
           "compactModel": {
             "$ref": "#/components/schemas/ModelId"
@@ -752,6 +866,9 @@
           "model": {
             "$ref": "#/components/schemas/ModelId"
           },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
           "policy": {
             "$ref": "#/components/schemas/MemoryPolicy"
           },
@@ -812,6 +929,9 @@
           },
           "model": {
             "$ref": "#/components/schemas/ModelId"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
           },
           "k": {
             "type": "integer"
@@ -874,6 +994,9 @@
           "model": {
             "$ref": "#/components/schemas/ModelId"
           },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
           "docIds": {
             "type": "array",
             "items": {
@@ -905,6 +1028,9 @@
           },
           "model": {
             "$ref": "#/components/schemas/ModelId"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
           },
           "citations": {
             "type": "array",
@@ -1666,9 +1792,106 @@
                   "ok": true,
                   "data": {
                     "presets": {
+                      "generationProviders": [
+                        {
+                          "key": "1",
+                          "provider": "openai",
+                          "label": "OpenAI",
+                          "recommended": true
+                        },
+                        {
+                          "key": "2",
+                          "provider": "gemini",
+                          "label": "Google Gemini",
+                          "recommended": false
+                        },
+                        {
+                          "key": "3",
+                          "provider": "anthropic",
+                          "label": "Anthropic",
+                          "recommended": false
+                        }
+                      ],
+                      "embeddingProviders": [
+                        {
+                          "key": "1",
+                          "provider": "openai",
+                          "label": "OpenAI",
+                          "recommended": true
+                        },
+                        {
+                          "key": "2",
+                          "provider": "gemini",
+                          "label": "Google Gemini",
+                          "recommended": false
+                        }
+                      ],
+                      "generationByProvider": {
+                        "openai": [
+                          {
+                            "key": "1",
+                            "provider": "openai",
+                            "model": "gpt-4o",
+                            "label": "Balanced default",
+                            "family": "gpt-4o",
+                            "supportsTemperature": true,
+                            "recommended": true,
+                            "custom": false
+                          }
+                        ],
+                        "gemini": [
+                          {
+                            "key": "1",
+                            "provider": "gemini",
+                            "model": "gemini-2.5-flash",
+                            "label": "Balanced default",
+                            "family": "gemini-2.5",
+                            "supportsTemperature": true,
+                            "recommended": true,
+                            "custom": false
+                          }
+                        ],
+                        "anthropic": [
+                          {
+                            "key": "1",
+                            "provider": "anthropic",
+                            "model": "claude-sonnet-4-20250514",
+                            "label": "Balanced default",
+                            "family": "claude-4",
+                            "supportsTemperature": true,
+                            "recommended": true,
+                            "custom": false
+                          }
+                        ]
+                      },
+                      "embeddingsByProvider": {
+                        "openai": [
+                          {
+                            "key": "1",
+                            "provider": "openai",
+                            "model": "text-embedding-3-large",
+                            "label": "Best quality (default)",
+                            "dimensions": 3072,
+                            "recommended": true,
+                            "custom": false
+                          }
+                        ],
+                        "gemini": [
+                          {
+                            "key": "1",
+                            "provider": "gemini",
+                            "model": "gemini-embedding-001",
+                            "label": "Recommended",
+                            "dimensions": 3072,
+                            "recommended": true,
+                            "custom": false
+                          }
+                        ]
+                      },
                       "generation": [
                         {
                           "key": "1",
+                          "provider": "openai",
                           "model": "gpt-4o",
                           "label": "Balanced default",
                           "family": "gpt-4o",
@@ -1678,6 +1901,7 @@
                         },
                         {
                           "key": "9",
+                          "provider": "openai",
                           "model": "o1",
                           "label": "Deeper reasoning",
                           "family": "o-series",
@@ -1687,6 +1911,7 @@
                         },
                         {
                           "key": "13",
+                          "provider": "openai",
                           "model": "__custom__",
                           "label": "Enter a custom model id",
                           "family": "custom",
@@ -1698,6 +1923,7 @@
                       "embeddings": [
                         {
                           "key": "1",
+                          "provider": "openai",
                           "model": "text-embedding-3-large",
                           "label": "Best quality (default)",
                           "dimensions": 3072,
@@ -1707,16 +1933,22 @@
                       ],
                       "notes": {
                         "customModelAllowed": true,
-                        "compatibility": "AtlasRAG omits temperature automatically for reasoning-style models that do not accept it.",
-                        "availability": "Model availability depends on your OpenAI account and region."
+                        "compatibility": "AtlasRAG omits unsupported temperature parameters automatically for reasoning-style OpenAI models. Gemini and Anthropic use provider-native request formats.",
+                        "availability": "Model availability depends on your provider account, enabled APIs, and region.",
+                        "requestScopedKeys": "Use X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key to override provider credentials per request."
                       }
                     },
                     "defaults": {
                       "instance": {
+                        "answerProvider": "openai",
                         "answerModel": "gpt-4o",
+                        "booleanAskProvider": "openai",
                         "booleanAskModel": "gpt-4o",
+                        "embedProvider": "openai",
                         "embedModel": "text-embedding-3-large",
+                        "reflectProvider": "openai",
                         "reflectModel": "gpt-4o-mini",
+                        "compactProvider": "openai",
                         "compactModel": "gpt-4o-mini"
                       }
                     }
@@ -1731,7 +1963,7 @@
             }
           }
         },
-        "description": "Return AtlasRAG's curated preset model list, including the CLI numeric shortcuts, plus the current instance defaults. Custom model ids remain allowed anywhere a model field is supported."
+        "description": "Return AtlasRAG's curated provider-aware preset catalog, including the CLI numeric shortcuts, plus the current instance defaults. Custom model ids remain allowed anywhere a model field is supported."
       }
     },
     "/v1/login": {
@@ -1840,7 +2072,7 @@
             }
           }
         },
-        "description": "Read tenant auth settings and tenant-level generation model defaults (admin role required)."
+        "description": "Read tenant auth settings and tenant-level generation provider/model defaults (admin role required)."
       },
       "patch": {
         "tags": [
@@ -1861,16 +2093,20 @@
                   "okta"
                 ],
                 "models": {
+                  "answerProvider": "openai",
                   "answerModel": "gpt-4.1",
+                  "booleanAskProvider": null,
                   "booleanAskModel": null,
+                  "reflectProvider": "openai",
                   "reflectModel": "gpt-4o-mini",
+                  "compactProvider": null,
                   "compactModel": null
                 }
               }
             }
           }
         },
-        "description": "Update tenant auth settings and tenant-level generation model defaults. embedModel is intentionally instance-wide and is not updated here.",
+        "description": "Update tenant auth settings and tenant-level generation provider/model defaults. embedProvider and embedModel are intentionally instance-wide and are not updated here.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2386,7 +2622,8 @@
                 "answerLength": "auto",
                 "policy": "amvl",
                 "collection": "default",
-                "model": "gpt-4.1"
+                "provider": "gemini",
+                "model": "gemini-2.5-flash"
               }
             }
           }
@@ -2414,7 +2651,7 @@
             }
           }
         },
-        "description": "Retrieve relevant chunks and generate a grounded answer with citations."
+        "description": "Retrieve relevant chunks and generate a grounded answer with citations. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
       }
     },
     "/v1/boolean_ask": {
@@ -2435,7 +2672,8 @@
                 "k": 4,
                 "policy": "amvl",
                 "collection": "default",
-                "model": "gpt-4o-mini"
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-20250514"
               }
             }
           }
@@ -2463,7 +2701,7 @@
             }
           }
         },
-        "description": "Retrieve relevant chunks and return a grounded answer constrained to true, false, or invalid, including supporting chunks."
+        "description": "Retrieve relevant chunks and return a grounded answer constrained to true, false, or invalid, including supporting chunks. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
       }
     },
     "/v1/memory/write": {

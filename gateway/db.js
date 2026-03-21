@@ -37,7 +37,7 @@ if (Number.isFinite(DB_STATEMENT_TIMEOUT_MS) && DB_STATEMENT_TIMEOUT_MS > 0) {
 }
 
 const pool = new Pool(poolConfig);
-const TENANT_SELECT_FIELDS = "tenant_id, name, auth_mode, sso_providers, answer_model, boolean_ask_model, reflect_model, compact_model, created_at";
+const TENANT_SELECT_FIELDS = "tenant_id, name, auth_mode, sso_providers, answer_provider, answer_model, boolean_ask_provider, boolean_ask_model, reflect_provider, reflect_model, compact_provider, compact_model, created_at";
 
 const MEMORY_ITEM_SELECT_COLUMNS = `id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, tier, value_last_update_ts, tier_last_update_ts, reuse_count, last_used_at, utility_ema,
@@ -1283,9 +1283,13 @@ async function setTenantSsoProviders(tenantId, providers) {
 async function setTenantSettings(tenantId, {
   authMode,
   ssoProviders,
+  answerProvider,
   answerModel,
+  booleanAskProvider,
   booleanAskModel,
+  reflectProvider,
   reflectModel,
+  compactProvider,
   compactModel
 }) {
   await ensureTenant(tenantId);
@@ -1299,17 +1303,33 @@ async function setTenantSettings(tenantId, {
     params.push(ssoProviders);
     updates.push(`sso_providers = $${params.length}`);
   }
+  if (answerProvider !== undefined) {
+    params.push(answerProvider);
+    updates.push(`answer_provider = $${params.length}`);
+  }
   if (answerModel !== undefined) {
     params.push(answerModel);
     updates.push(`answer_model = $${params.length}`);
+  }
+  if (booleanAskProvider !== undefined) {
+    params.push(booleanAskProvider);
+    updates.push(`boolean_ask_provider = $${params.length}`);
   }
   if (booleanAskModel !== undefined) {
     params.push(booleanAskModel);
     updates.push(`boolean_ask_model = $${params.length}`);
   }
+  if (reflectProvider !== undefined) {
+    params.push(reflectProvider);
+    updates.push(`reflect_provider = $${params.length}`);
+  }
   if (reflectModel !== undefined) {
     params.push(reflectModel);
     updates.push(`reflect_model = $${params.length}`);
+  }
+  if (compactProvider !== undefined) {
+    params.push(compactProvider);
+    updates.push(`compact_provider = $${params.length}`);
   }
   if (compactModel !== undefined) {
     params.push(compactModel);

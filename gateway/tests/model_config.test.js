@@ -4,6 +4,7 @@ const {
   buildPublicModelCatalog,
   buildResponsesCreateParams,
   GENERATION_MODEL_PRESETS,
+  GENERATION_PROVIDER_PRESETS,
   resolveEnvModelDefaults,
   resolveTenantModelSettings,
   parseTenantModelSettingsInput
@@ -31,71 +32,114 @@ function withEnv(updates, fn) {
 
 function testTenantModelInheritance() {
   const resolved = resolveTenantModelSettings({
-    answer_model: "gpt-4.1",
+    answer_provider: "gemini",
+    answer_model: "gemini-2.5-pro",
+    boolean_ask_provider: null,
     boolean_ask_model: null,
-    reflect_model: "gpt-4o-mini",
+    reflect_provider: "anthropic",
+    reflect_model: "claude-sonnet-4-20250514",
+    compact_provider: null,
     compact_model: null
   }, {
+    ANSWER_PROVIDER: "openai",
     ANSWER_MODEL: "gpt-4o",
+    BOOLEAN_ASK_PROVIDER: "",
     BOOLEAN_ASK_MODEL: "",
+    EMBED_PROVIDER: "openai",
     EMBED_MODEL: "text-embedding-3-large",
+    REFLECT_PROVIDER: "openai",
     REFLECT_MODEL: "gpt-4o-mini",
+    COMPACT_PROVIDER: "",
     COMPACT_MODEL: ""
   });
 
-  assert.equal(resolved.effective.answerModel, "gpt-4.1");
-  assert.equal(resolved.effective.booleanAskModel, "gpt-4.1");
-  assert.equal(resolved.effective.reflectModel, "gpt-4o-mini");
-  assert.equal(resolved.effective.compactModel, "gpt-4o-mini");
+  assert.equal(resolved.effective.answerProvider, "gemini");
+  assert.equal(resolved.effective.answerModel, "gemini-2.5-pro");
+  assert.equal(resolved.effective.booleanAskProvider, "gemini");
+  assert.equal(resolved.effective.booleanAskModel, "gemini-2.5-pro");
+  assert.equal(resolved.effective.reflectProvider, "anthropic");
+  assert.equal(resolved.effective.reflectModel, "claude-sonnet-4-20250514");
+  assert.equal(resolved.effective.compactProvider, "anthropic");
+  assert.equal(resolved.effective.compactModel, "claude-sonnet-4-20250514");
+  assert.equal(resolved.effective.embedProvider, "openai");
   assert.equal(resolved.effective.embedModel, "text-embedding-3-large");
 }
 
 function testEmbedFallbackStaysCompatible() {
   const resolved = resolveEnvModelDefaults({
+    ANSWER_PROVIDER: "",
     ANSWER_MODEL: "",
+    BOOLEAN_ASK_PROVIDER: "",
     BOOLEAN_ASK_MODEL: "",
+    EMBED_PROVIDER: "",
     EMBED_MODEL: "",
+    REFLECT_PROVIDER: "",
     REFLECT_MODEL: "",
+    COMPACT_PROVIDER: "",
     COMPACT_MODEL: ""
   });
 
+  assert.equal(resolved.answerProvider, "openai");
+  assert.equal(resolved.embedProvider, "openai");
   assert.equal(resolved.embedModel, "text-embedding-3-small");
 }
 
 function testTenantModelInputParsing() {
   const parsed = parseTenantModelSettingsInput({
     models: {
-      answerModel: " gpt-4.1 ",
+      answerProvider: " gemini ",
+      answerModel: " gemini-2.5-pro ",
+      booleanAskProvider: "",
       booleanAskModel: "",
-      reflectModel: "gpt-4o-mini",
+      reflectProvider: "anthropic",
+      reflectModel: "claude-sonnet-4-20250514",
+      compactProvider: null,
       compactModel: null
     }
   });
 
-  assert.equal(parsed.answerModel, "gpt-4.1");
+  assert.equal(parsed.answerProvider, "gemini");
+  assert.equal(parsed.answerModel, "gemini-2.5-pro");
+  assert.equal(parsed.booleanAskProvider, null);
   assert.equal(parsed.booleanAskModel, null);
-  assert.equal(parsed.reflectModel, "gpt-4o-mini");
+  assert.equal(parsed.reflectProvider, "anthropic");
+  assert.equal(parsed.reflectModel, "claude-sonnet-4-20250514");
+  assert.equal(parsed.compactProvider, null);
   assert.equal(parsed.compactModel, null);
   assert.throws(
     () => parseTenantModelSettingsInput({ models: { embedModel: "text-embedding-3-large" } }),
+    /instance-wide/
+  );
+  assert.throws(
+    () => parseTenantModelSettingsInput({ models: { embedProvider: "gemini" } }),
     /instance-wide/
   );
 }
 
 function testAnswerModelResolvers() {
   withEnv({
+    ANSWER_PROVIDER: "openai",
     ANSWER_MODEL: "gpt-4o",
-    BOOLEAN_ASK_MODEL: ""
+    BOOLEAN_ASK_PROVIDER: "",
+    BOOLEAN_ASK_MODEL: "",
+    EMBED_PROVIDER: "openai",
+    EMBED_MODEL: "text-embedding-3-large",
+    REFLECT_PROVIDER: "openai",
+    REFLECT_MODEL: "gpt-4o-mini",
+    COMPACT_PROVIDER: "",
+    COMPACT_MODEL: ""
   }, () => {
-    assert.equal(answerHooks.resolveAnswerModel({ model: "gpt-4.1" }), "gpt-4.1");
+    assert.equal(answerHooks.resolveAnswerProvider({ provider: "gemini" }), "gemini");
+    assert.equal(answerHooks.resolveAnswerModel({ provider: "gemini", model: "gemini-2.5-pro" }), "gemini-2.5-pro");
     assert.equal(answerHooks.resolveAnswerModel({}), "gpt-4o");
-    assert.equal(answerHooks.resolveBooleanAskModel({ answerModel: "gpt-4.1" }), "gpt-4.1");
-    assert.equal(answerHooks.resolveBooleanAskModel({ model: "gpt-4o-mini" }), "gpt-4o-mini");
+    assert.equal(answerHooks.resolveBooleanAskProvider({ provider: "anthropic" }), "anthropic");
+    assert.equal(answerHooks.resolveBooleanAskModel({ provider: "anthropic", model: "claude-opus-4-20250514" }), "claude-opus-4-20250514");
   });
 }
 
 function testResponsesCompatibility() {
   const gpt41 = buildResponsesCreateParams({
+    provider: "openai",
     model: "gpt-4.1",
     input: "hello",
     temperature: 0.2
@@ -103,18 +147,20 @@ function testResponsesCompatibility() {
   assert.equal(gpt41.temperature, 0.2);
 
   const o1 = buildResponsesCreateParams({
+    provider: "openai",
     model: "o1",
     input: "hello",
     temperature: 0.2
   });
   assert.equal(Object.prototype.hasOwnProperty.call(o1, "temperature"), false);
 
-  const gpt52 = buildResponsesCreateParams({
-    model: "gpt-5.2",
+  const gemini = buildResponsesCreateParams({
+    provider: "gemini",
+    model: "gemini-2.5-flash",
     input: "hello",
     temperature: 0.2
   });
-  assert.equal(Object.prototype.hasOwnProperty.call(gpt52, "temperature"), false);
+  assert.equal(gemini.temperature, 0.2);
 }
 
 function testPublicModelCatalog() {
@@ -124,24 +170,32 @@ function testPublicModelCatalog() {
     generationModels,
     GENERATION_MODEL_PRESETS.map((item) => item.model)
   );
-  assert.equal(generationModels.includes("o1"), true);
-  assert.equal(generationModels.includes("o3"), true);
-  assert.equal(generationModels.includes("o4-mini"), true);
-  assert.equal(generationModels[generationModels.length - 1], "__custom__");
+  assert.deepEqual(
+    catalog.generationProviders.map((item) => item.provider),
+    GENERATION_PROVIDER_PRESETS.map((item) => item.provider)
+  );
+  assert.equal(Array.isArray(catalog.generationByProvider.gemini), true);
+  assert.equal(Array.isArray(catalog.generationByProvider.anthropic), true);
+  assert.equal(catalog.generationByProvider.gemini.some((item) => item.model === "gemini-2.5-pro"), true);
+  assert.equal(catalog.generationByProvider.anthropic.some((item) => item.model === "claude-sonnet-4-20250514"), true);
 }
 
 function testEmbedAndReflectResolvers() {
   withEnv({
-    EMBED_MODEL: "text-embedding-3-large",
-    REFLECT_MODEL: "gpt-4o-mini",
+    EMBED_PROVIDER: "gemini",
+    EMBED_MODEL: "gemini-embedding-001",
+    REFLECT_PROVIDER: "anthropic",
+    REFLECT_MODEL: "claude-sonnet-4-20250514",
+    COMPACT_PROVIDER: "",
     COMPACT_MODEL: ""
   }, () => {
-    assert.equal(aiHooks.resolveEmbedModel({}), "text-embedding-3-large");
+    assert.equal(aiHooks.resolveEmbedProvider({}), "gemini");
+    assert.equal(aiHooks.resolveEmbedModel({}), "gemini-embedding-001");
     assert.equal(aiHooks.resolveEmbedDimension({}), 3072);
-    assert.equal(aiHooks.resolveEmbedModel({ embedModel: "text-embedding-3-small" }), "text-embedding-3-small");
-    assert.equal(aiHooks.resolveEmbedDimension({ embedModel: "text-embedding-3-small" }), 1536);
-    assert.equal(reflectHooks.resolveReflectModel({}), "gpt-4o-mini");
-    assert.equal(reflectHooks.resolveCompactModel({ reflectModel: "gpt-4.1-mini" }), "gpt-4.1-mini");
+    assert.equal(reflectHooks.resolveReflectProvider({}), "anthropic");
+    assert.equal(reflectHooks.resolveReflectModel({}), "claude-sonnet-4-20250514");
+    assert.equal(reflectHooks.resolveCompactProvider({}), "anthropic");
+    assert.equal(reflectHooks.resolveCompactModel({ reflectProvider: "gemini", reflectModel: "gemini-2.5-flash" }), "gemini-2.5-flash");
   });
 }
 

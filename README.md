@@ -22,13 +22,13 @@ License: MIT
 - C++ vector core for fast vector operations.
 - Node gateway for auth, API routing, RAG answer generation, memory workflows, and docs.
 - Postgres for persistent metadata, auth records, jobs, tenant settings, and memory state.
-- Optional OpenAI-backed embeddings/answer generation with fallbacks when unavailable.
+- Optional provider-backed embeddings and answer generation with fallbacks when unavailable. OpenAI remains the default. Gemini is also supported for generation and embeddings, and Anthropic is supported for generation.
 
 ## Recommended Integration Model
 
 - Human admins use username/password or SSO to manage the instance.
 - Apps, backends, workers, and agents should use a service token.
-- If you want AtlasRAG to keep its own Postgres/auth/runtime but use your own OpenAI key, send `X-OpenAI-API-Key` on supported sync requests.
+- If you want AtlasRAG to keep its own Postgres/auth/runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`.
 - If you already have your own application auth, keep it there and let your backend call AtlasRAG server-to-server.
 - AtlasRAG can run against your existing Postgres by wiring `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` into the gateway runtime environment or a custom Compose file.
 
@@ -39,11 +39,13 @@ If you are not sure which path to use, choose based on the kind of deployment an
 | Usage mode | Best when | Read first |
 | --- | --- | --- |
 | Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [Self-hosting guide](docs/self-hosting.md) |
-| Fork and self-deploy with your own Postgres and OpenAI key | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [Bring your own Postgres](docs/bring-your-own-postgres.md) |
+| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [Bring your own Postgres](docs/bring-your-own-postgres.md) |
 | Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Apps, backends, and agents](docs/agents.md) |
-| Use a shared AtlasRAG deployment with your own OpenAI key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your OpenAI key](docs/agents.md#shared-openai-key) |
+| Use a shared AtlasRAG deployment with your own provider key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your provider key](docs/agents.md#shared-provider-key) |
 | Keep your own product auth and place AtlasRAG behind your backend | End users should not log into AtlasRAG directly | [Backend-as-caller](docs/agents.md#backend-as-caller) |
 | Use AtlasRAG mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](docs/agents.md#human-jwt) |
+
+If you are still deciding what you are actually setting up, start with [Setup Modes](docs/setup-modes.md) before choosing a self-hosted or shared-deployment path.
 
 ## Quickstart
 
@@ -52,13 +54,24 @@ If you are not sure which path to use, choose based on the kind of deployment an
 - Docker with the Compose plugin
 - Node.js 18+ if you want to use the AtlasRAG CLI
 - Git if you want the installer to clone or refresh the repo for you
-- An OpenAI API key for normal retrieval/answer quality
+- At least one provider API key for normal retrieval and answer quality. OpenAI remains the default out of the box.
 
-`OPENAI_API_KEY` is strongly recommended. The server can fall back in some paths, but quality will be lower.
+`OPENAI_API_KEY` is the default quickstart path. `GEMINI_API_KEY` and `ANTHROPIC_API_KEY` are also supported, and `GEMINI_API` is accepted as an alias for `GEMINI_API_KEY`.
 
 ### AtlasRAG CLI (recommended)
 
 AtlasRAG ships with a CLI for onboarding, stack operations, and basic API usage.
+
+### Install
+
+Use the CLI when you want AtlasRAG to feel like one command surface: install it, run the local stack, point apps at it, maintain it over time, and keep a working command reference close by.
+
+The CLI covers:
+
+- install and update the local `atlasrag` command
+- onboard the first local stack and bootstrap the first admin and service token
+- start, stop, and diagnose the local Docker services
+- run `write`, `search`, `ask`, and `boolean_ask` directly from the terminal
 
 Install from a local checkout:
 
@@ -84,6 +97,127 @@ Or the one-line remote version:
 irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.ps1 | iex
 ```
 
+What the installer creates:
+
+- macOS/Linux wrapper: `~/.atlasrag/bin/atlasrag`
+- Windows wrappers: `%USERPROFILE%\.atlasrag\bin\atlasrag.ps1` and `atlasrag.cmd`
+- a PATH update so new terminals can find `atlasrag`
+
+If your current terminal still says `atlasrag: command not found`, open a new shell or add the install bin directory to PATH manually.
+
+### Container
+
+On the local self-hosted path, the CLI manages the AtlasRAG container stack for you. The default path uses the bundled Postgres service from `docker-compose.yml`. If you already manage your own Postgres, use `atlasrag onboard --external-postgres` and the CLI will write `.env.external-postgres` and use `docker-compose.external-postgres.yml` instead.
+
+That choice only changes which Postgres database this self-hosted AtlasRAG instance uses. It does not make the instance part of another AtlasRAG deployment or platform.
+
+Start with the onboarding wizard:
+
+```bash
+atlasrag onboard
+```
+
+The wizard prompts for:
+
+- gateway port
+- admin username
+- admin password
+- tenant id
+- default generation provider
+- default generation model for that provider
+- optional boolean_ask provider/model override
+- embedding provider and embedding model
+- reflect provider/model and optional compact provider/model override
+- whichever provider API keys are needed for the providers you selected
+- optional external Postgres values if you choose the BYO Postgres path
+
+For the normal first-run path, you can usually press `Enter` at:
+
+- `Gateway port [3000]:` to keep `3000`
+- `Tenant id [default]:` to keep `default`
+
+During onboarding, the CLI also:
+
+- writes the local env file
+- saves the local project/base URL context in `~/.atlasrag/config.json`
+- starts the Docker stack
+- runs the bootstrap helper for you
+- creates the first admin and the first service token
+- updates `~/.atlasrag/config.json` with the saved service token
+
+If you want the external Postgres path directly:
+
+```bash
+atlasrag onboard --external-postgres
+```
+
+If the Docker stack is already up but setup has not finished yet, finish setup on that running stack with:
+
+```bash
+atlasrag bootstrap --username your-username --tenant default
+```
+
+Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
+
+If onboarding stops early after the stack starts, `atlasrag doctor` will still show the saved base URL and will mark the API key as pending bootstrap instead of treating the local setup as completely unknown.
+
+If you are using AtlasRAG from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
+
+Useful local container commands:
+
+```bash
+atlasrag status
+atlasrag start --build
+atlasrag stop --down
+atlasrag logs
+atlasrag doctor
+```
+
+### Hosting
+
+Once CLI setup is complete, AtlasRAG becomes a running local service your own app, backend, worker, or agent can call. The normal runtime inputs are the saved base URL and service token.
+
+If you are wiring your own app, backend, worker, or agent on the same machine, export the saved values into your runtime env:
+
+```bash
+export ATLASRAG_BASE_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export ATLASRAG_COLLECTION="default"
+```
+
+If you want request-scoped provider usage on supported sync routes, also export one or more of:
+
+```bash
+export OPENAI_API_KEY="YOUR_OPENAI_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_KEY"
+export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"
+```
+
+The token is shown during onboarding. If you need to inspect it again locally, run:
+
+```bash
+atlasrag config show --show-secrets
+```
+
+Do not commit those values to git.
+
+If AtlasRAG is already deployed online behind nginx or another public proxy, use the CLI as a remote client instead of onboarding locally:
+
+```bash
+export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
+atlasrag search --q "remote test" --collection cli-smoke --k 3
+atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
+atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
+```
+
+In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
+
+Service tokens are scoped to the AtlasRAG deployment that minted them. A token from your local self-hosted instance will not work against a different AtlasRAG deployment, and a token from a shared or hosted deployment will not work against your separate local instance unless that exact deployment issued it.
+
+### Maintenance
+
 Later, update an installed AtlasRAG CLI checkout with:
 
 ```bash
@@ -101,62 +235,6 @@ atlasrag uninstall
 
 This removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under `~/.atlasrag` when that checkout exists, and for managed local self-hosted installs it also runs `docker compose down -v` to clear the local AtlasRAG containers and volumes.
 
-Then run the onboarding wizard:
-
-```bash
-atlasrag onboard
-```
-
-The wizard prompts for:
-
-- gateway port
-- admin username
-- admin password
-- OpenAI API key
-- tenant id
-- default generation model (current presets are `1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`)
-- optional external Postgres values if you choose the BYO Postgres path
-
-For the normal first-run path, you can usually press `Enter` at:
-
-- `Gateway port [3000]:` to keep `3000`
-- `Tenant id [default]:` to keep `default`
-
-During onboarding, the CLI also:
-
-- writes the local env file
-- saves the local project/base URL context in `~/.atlasrag/config.json`
-- starts the Docker stack
-- runs the bootstrap helper for you
-- creates the first admin and the first service token
-- updates `~/.atlasrag/config.json` with the saved service token
-
-The default bundled Postgres path and the `--external-postgres` path are both self-hosted AtlasRAG deployments. That choice only changes which Postgres database this AtlasRAG instance uses. It does not make the instance part of another AtlasRAG deployment or platform.
-
-If the Docker stack is already up but setup has not finished yet, complete setup on that running stack with:
-
-```bash
-atlasrag bootstrap --username your-username --tenant default
-```
-
-Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
-
-If onboarding stops early after the stack starts, `atlasrag doctor` will still show the saved base URL and will mark the API key as pending bootstrap instead of treating the local setup as completely unknown.
-
-If you are using AtlasRAG from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
-
-After onboarding, you can run:
-
-```bash
-atlasrag status
-atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
-atlasrag search --q "memory for agents" --collection local-demo --k 5
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
-atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
-atlasrag logs
-atlasrag doctor
-```
-
 To change local self-hosted model defaults later:
 
 ```bash
@@ -164,42 +242,44 @@ atlasrag changemodel
 
 # non-interactive example
 atlasrag changemodel \
+  --answer-provider openai \
   --answer-model 2 \
   --boolean-ask-model inherit \
+  --embed-provider openai \
   --embed-model text-embedding-3-large \
+  --reflect-provider openai \
   --reflect-model gpt-4o-mini \
   --compact-model inherit \
   --restart
 ```
 
-`atlasrag changemodel` edits the local AtlasRAG env file. `--answer-model` accepts the same numbered choices as onboarding so you do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer model, and `--compact-model inherit` makes compaction follow the reflect model.
+`atlasrag changemodel` edits the local AtlasRAG env file. The CLI now prompts for the provider first, then shows the numbered model choices for that provider so users do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer provider/model, and `--compact-model inherit` makes compaction follow the reflect provider/model.
 
-The current numbered generation choices are:
-- `1 = gpt-4o`
-- `2 = gpt-4.1`
-- `3 = gpt-4o-mini`
-- `4 = gpt-4.1-mini`
-- `5 = gpt-4.1-nano`
-- `6 = gpt-5.2`
-- `7 = gpt-5-mini`
-- `8 = gpt-5-nano`
-- `9 = o1`
-- `10 = o3`
-- `11 = o3-mini`
-- `12 = o4-mini`
-- `13 = custom`
+Provider picker choices are:
+- generation providers: `1 = openai`, `2 = gemini`, `3 = anthropic`
+- embedding providers: `1 = openai`, `2 = gemini`
 
-`atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` accept the same numbered shortcuts, and explicit model ids still work anywhere.
+When the provider is OpenAI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` still accept the familiar numbered shortcuts (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`). When you also pass `--provider`, the same numbering becomes provider-specific for that provider's catalog. Explicit model ids still work anywhere.
 
 Model env keys for self-hosted installs:
 
 ```env
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+ANSWER_PROVIDER=openai
 ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
+EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
+REFLECT_PROVIDER=openai
 REFLECT_MODEL=gpt-4o-mini
+COMPACT_PROVIDER=
 COMPACT_MODEL=gpt-4o-mini
 ```
+
+`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because AtlasRAG still needs a provider-native embedding endpoint for indexing and retrieval.
 
 You can also discover the preset catalog over HTTP:
 
@@ -207,13 +287,35 @@ You can also discover the preset catalog over HTTP:
 curl http://localhost:3000/v1/models
 ```
 
-The response lists the current preset generation models, embedding presets, and instance defaults. Model availability still depends on your OpenAI account and region.
+The response lists generation providers, embedding providers, provider-specific preset catalogs, and the current instance defaults. Model availability still depends on your provider account, enabled APIs, and region.
 
 `EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `atlasrag changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
 
 Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
 On startup, AtlasRAG now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
 Reasoning-style models such as `o1`, `o3`, `o4-mini`, and the GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. AtlasRAG omits unsupported `temperature` parameters automatically for those models.
+
+Common maintenance checks:
+
+```bash
+atlasrag doctor
+atlasrag status --json
+atlasrag logs --service gateway
+atlasrag config show
+```
+
+If `atlasrag` is not found, open a new terminal or add `~/.atlasrag/bin` to PATH manually. If the stack is running but setup was not saved yet, run `atlasrag bootstrap --username your-username --tenant default`. If gateway readiness times out, inspect `atlasrag logs --service gateway` and the written env file.
+
+### Commands
+
+After onboarding, you can run:
+
+```bash
+atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
+atlasrag search --q "memory for agents" --collection local-demo --k 5
+atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
+```
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
@@ -255,22 +357,29 @@ atlasrag collections delete --collection customer-support --yes
 
 Use `docs replace` or `write --replace` when the content behind a single `docId` has changed. Use `write --folder --sync` when the local folder should become the source of truth for the whole collection, including deleting docs that are no longer present in that folder. There is not a separate collection-rename command; collection maintenance is done by listing, replacing, syncing, and deleting docs.
 
-If you are wiring your own app, backend, worker, or agent on the same machine, export the saved values into your runtime env:
+### Examples
+
+Local bundled stack:
 
 ```bash
-export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+./scripts/install.sh
+atlasrag onboard
+atlasrag status
+atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
+atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
+atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
 ```
 
-The token is shown during onboarding. If you need to inspect it again locally, run:
+Local external Postgres:
 
 ```bash
-atlasrag config show --show-secrets
+atlasrag onboard --external-postgres
+atlasrag doctor
+atlasrag write --doc-id policies --collection compliance --file ./docs/policies.md
+atlasrag search --q "policies" --collection compliance --json
 ```
 
-Do not commit those values to git.
-
-If AtlasRAG is already deployed online behind nginx or another public proxy, use the CLI as a remote client instead of onboarding locally:
+Remote live deployment:
 
 ```bash
 export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
@@ -280,10 +389,6 @@ atlasrag search --q "remote test" --collection cli-smoke --k 3
 atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
 atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
 ```
-
-In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
-
-Service tokens are scoped to the AtlasRAG deployment that minted them. A token from your local self-hosted instance will not work against a different AtlasRAG deployment, and a token from a shared or hosted deployment will not work against your separate local instance unless that exact deployment issued it.
 
 Use the CLI when you want the fastest path from install to a working local deployment. Use the manual Docker steps below if you want to see and control each setup step explicitly.
 
@@ -300,7 +405,7 @@ Update at least:
 - `POSTGRES_PASSWORD`
 - `JWT_SECRET`
 - `COOKIE_SECRET`
-- `OPENAI_API_KEY`
+- one or more provider keys: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`
 
 ### 2. Start The Stack
 
@@ -352,15 +457,17 @@ export ATLASRAG_BASE_URL="http://localhost:3000"
 export ATLASRAG_API_KEY="<paste service token here>"
 ```
 
-### 3b. Optional Third Mode: Your OpenAI Key, Shared AtlasRAG Deployment
+### 3b. Optional Third Mode: Your Provider Key, Shared AtlasRAG Deployment
 
-If you are using an AtlasRAG deployment that already has its own Postgres and auth, but you want requests to use your OpenAI key instead of the server default, send:
+If you are using an AtlasRAG deployment that already has its own Postgres and auth, but you want requests to use your provider key instead of the server default, send the matching request-scoped header:
 
 ```bash
 -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}"
+-H "X-Gemini-API-Key: ${GEMINI_API_KEY}"
+-H "X-Anthropic-API-Key: ${ANTHROPIC_API_KEY}"
 ```
 
-This is request-scoped. It does not create a tenant-level provider setting or store your OpenAI key in Postgres.
+This is request-scoped. It does not create a tenant-level provider setting or store your provider key in Postgres.
 
 Supported sync request paths:
 
@@ -374,7 +481,11 @@ Supported sync request paths:
 
 Current limitation:
 
-- `POST /v1/memory/reflect` and `POST /v1/memory/compact` reject `X-OpenAI-API-Key` because those jobs continue asynchronously after the request ends.
+- `POST /v1/memory/reflect` and `POST /v1/memory/compact` reject request-scoped provider-key headers because those jobs continue asynchronously after the request ends.
+
+`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+
+Embedding provider selection remains instance-wide today. Request-scoped provider headers for docs, search, memory write, and memory recall only override credentials for the embedding provider that the instance is already configured to use.
 
 If you only want a human admin login and do not want a service token yet, use the older bootstrap command instead:
 
@@ -413,11 +524,12 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
     "question":"What does AtlasRAG store?",
     "k":3,
     "policy":"amvl",
+    "provider":"openai",
     "model":"gpt-4.1"
   }'
 ```
 
-`model` is optional. Use it when one request should use a different generation model without changing the tenant default.
+`provider` and `model` are optional. Use them when one request should use a different generation provider/model without changing the tenant default.
 
 ### 6. Ask A Strict True/False Question
 
@@ -435,7 +547,7 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
 
 This endpoint returns only `true`, `false`, or `invalid`. `invalid` means the input was not a grounded true/false question for the retrieved sources. The response also includes `supportingChunks` when you need the exact chunk text used for the decision.
 
-Admins can set tenant-level generation defaults through `GET/PATCH /v1/admin/tenant` with `models.answerModel`, `models.booleanAskModel`, `models.reflectModel`, and `models.compactModel`. `embedModel` stays instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+Admins can set tenant-level generation defaults through `GET/PATCH /v1/admin/tenant` with `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` stay instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
 
 ### 7. Optional: Log In As A Human Admin
 
@@ -513,6 +625,8 @@ AtlasRAG does not require a bundled Postgres container in production. If your st
 - `PGUSER`
 - `PGPASSWORD`
 - `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - `JWT_SECRET`
 - `COOKIE_SECRET`
 

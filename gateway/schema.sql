@@ -17,9 +17,13 @@ CREATE TABLE IF NOT EXISTS tenants (
   name TEXT,
   auth_mode TEXT DEFAULT 'sso_plus_password',
   sso_providers TEXT[],
+  answer_provider TEXT,
   answer_model TEXT,
+  boolean_ask_provider TEXT,
   boolean_ask_model TEXT,
+  reflect_provider TEXT,
   reflect_model TEXT,
+  compact_provider TEXT,
   compact_model TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -212,9 +216,13 @@ CREATE INDEX IF NOT EXISTS tenant_usage_rollups_idx
 -- Idempotent migrations for existing databases
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS auth_mode TEXT DEFAULT 'sso_plus_password';
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS sso_providers TEXT[];
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS answer_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS answer_model TEXT;
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS boolean_ask_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS boolean_ask_model TEXT;
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS reflect_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS reflect_model TEXT;
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS compact_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS compact_model TEXT;
 UPDATE tenants SET auth_mode = 'sso_plus_password' WHERE auth_mode IS NULL;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS failed_attempts INT DEFAULT 0;
