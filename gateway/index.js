@@ -7,7 +7,7 @@ const net = require("net");
 
 const { embedTexts } = require("./ai");
 const { chunkText } = require("./chunk");
-const { sendCmd, buildVset, buildVsearchIn, buildVdel, parseVsearchReply } = require("./tcp");
+const { sendCmd, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
   saveChunk,
@@ -1689,6 +1689,42 @@ async function getVectorCount() {
   return Number(stats.vectors || 0);
 }
 
+async function getVectorStats() {
+  const reply = await sendCmd("STATS");
+  const stats = JSON.parse(reply);
+  return {
+    vectors: Number(stats.vectors || 0),
+    vectorDims: Number(stats.vector_dims || 0)
+  };
+}
+
+async function clearVectorStore() {
+  await sendCmd(buildVclear());
+}
+
+function shouldReindexStoredVectors({ mode, totalChunks, vectorCount, vectorDims, expectedVectorDim }) {
+  const normalizedMode = normalizeReindexMode(mode);
+  if (normalizedMode === "off") {
+    return { shouldReindex: false, clearFirst: false, reason: "disabled" };
+  }
+  if (normalizedMode === "always") {
+    return { shouldReindex: true, clearFirst: vectorCount > 0, reason: "forced" };
+  }
+
+  const dimsMismatch = expectedVectorDim > 0 && vectorDims > 0 && vectorDims !== expectedVectorDim;
+  const countMismatch = vectorCount !== totalChunks;
+  if (vectorCount > 0 && !dimsMismatch && !countMismatch) {
+    return { shouldReindex: false, clearFirst: false, reason: "up_to_date" };
+  }
+  if (dimsMismatch) {
+    return { shouldReindex: true, clearFirst: vectorCount > 0, reason: "dimension_mismatch" };
+  }
+  if (countMismatch) {
+    return { shouldReindex: true, clearFirst: vectorCount > 0, reason: "count_mismatch" };
+  }
+  return { shouldReindex: true, clearFirst: vectorCount > 0, reason: "missing_vectors" };
+}
+
 async function reindexChunkBatch(rows) {
   if (!rows.length) return;
   const texts = rows.map(r => r.text);
@@ -1699,6 +1735,12 @@ async function reindexChunkBatch(rows) {
     const cmd = buildVset(chunkId, vectors[i]);
     await sendCmd(cmd);
   }
+}
+
+async function resolveExpectedEmbedVectorDim() {
+  const { vectors } = await embedTexts(["atlasrag vector dimension probe"]);
+  const dim = Array.isArray(vectors) && vectors[0] ? Number(vectors[0].length || 0) : 0;
+  return Number.isFinite(dim) && dim > 0 ? dim : 0;
 }
 
 async function reindexAllChunks() {
@@ -1717,16 +1759,37 @@ async function reindexAllChunks() {
   }
 
   await waitForVectorStore();
+  const expectedVectorDim = await resolveExpectedEmbedVectorDim();
+  let decision = shouldReindexStoredVectors({
+    mode,
+    totalChunks,
+    vectorCount: 0,
+    vectorDims: 0,
+    expectedVectorDim
+  });
 
   if (mode === "auto") {
     try {
-      const vectors = await getVectorCount();
-      if (vectors > 0) {
-        console.log(`[reindex] Vector store already has ${vectors} vectors; skipping auto reindex.`);
+      const { vectors, vectorDims } = await getVectorStats();
+      decision = shouldReindexStoredVectors({
+        mode,
+        totalChunks,
+        vectorCount: vectors,
+        vectorDims,
+        expectedVectorDim
+      });
+      if (!decision.shouldReindex) {
+        console.log(`[reindex] Vector store already has ${vectors} vectors with dim ${vectorDims}; skipping auto reindex.`);
         return;
+      }
+      if (decision.reason === "dimension_mismatch") {
+        console.log(`[reindex] Vector dimension mismatch detected (store=${vectorDims}, expected=${expectedVectorDim}); rebuilding vectors.`);
+      } else if (decision.reason === "count_mismatch") {
+        console.log(`[reindex] Vector count mismatch detected (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
       }
     } catch (err) {
       console.warn("[reindex] Failed to read vector stats; continuing with reindex.");
+      decision = { shouldReindex: true, clearFirst: true, reason: "stats_unavailable" };
     }
   }
 
@@ -1734,6 +1797,11 @@ async function reindexAllChunks() {
   const fetchSize = Number.isFinite(REINDEX_FETCH_SIZE) && REINDEX_FETCH_SIZE > 0 ? REINDEX_FETCH_SIZE : 256;
   const logEvery = Number.isFinite(REINDEX_LOG_EVERY) && REINDEX_LOG_EVERY > 0 ? REINDEX_LOG_EVERY : 500;
   const sleepMs = Number.isFinite(REINDEX_SLEEP_MS) && REINDEX_SLEEP_MS > 0 ? REINDEX_SLEEP_MS : 0;
+
+  if (decision.clearFirst) {
+    console.log("[reindex] Clearing vector store before rebuild...");
+    await clearVectorStore();
+  }
 
   console.log(`[reindex] Starting reindex of ${totalChunks} chunks...`);
   let processed = 0;
@@ -7540,6 +7608,7 @@ module.exports = {
     normalizeMemoryPolicy,
     getMemoryPolicy,
     resolveMemoryPolicyConfig,
+    shouldReindexStoredVectors,
     normalizeTier,
     resolveTierThresholds,
     resolveTierForValue,

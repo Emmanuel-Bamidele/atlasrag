@@ -106,6 +106,10 @@ function buildVdel(id) {
   return `VDEL ${id}`;
 }
 
+function buildVclear() {
+  return "VCLEAR";
+}
+
 // Parse VSEARCH reply:
 // "id1 score1|id2 score2|id3 score3"
 function parseVsearchReply(line) {
@@ -138,5 +142,6 @@ module.exports = {
   buildVsearch,
   buildVsearchIn,
   buildVdel,
+  buildVclear,
   parseVsearchReply
 };

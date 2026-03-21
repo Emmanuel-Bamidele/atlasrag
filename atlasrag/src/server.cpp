@@ -96,6 +96,7 @@ static std::atomic<long long> g_del_count{0};             // DEL commands
 // NEW vector command counters
 static std::atomic<long long> g_vset_count{0};            // VSET commands
 static std::atomic<long long> g_vdel_count{0};            // VDEL commands
+static std::atomic<long long> g_vclear_count{0};          // VCLEAR commands
 static std::atomic<long long> g_vsearch_count{0};         // VSEARCH commands
 
 // Controls whether vector operations are written to WAL (durability vs speed)
@@ -159,6 +160,7 @@ static std::string handle_command(
     json += "\"vector_dims\":" + std::to_string(vdb.dims()) + ",";
     json += "\"vset_count\":" + std::to_string(g_vset_count.load()) + ",";
     json += "\"vdel_count\":" + std::to_string(g_vdel_count.load()) + ",";
+    json += "\"vclear_count\":" + std::to_string(g_vclear_count.load()) + ",";
     json += "\"vsearch_count\":" + std::to_string(g_vsearch_count.load());
 
     json += "}";
@@ -300,6 +302,22 @@ static std::string handle_command(
     }
 
     return removed ? "1\n" : "0\n";
+  }
+
+  // --------------------------------
+  // VCLEAR
+  // --------------------------------
+  if (cmd == "VCLEAR" && parts.size() == 1) {
+
+    g_vclear_count.fetch_add(1);
+
+    vdb.clear();
+
+    if (g_vector_wal_enabled) {
+      wal.append_line("VCLEAR");
+    }
+
+    return "OK\n";
   }
 
   // --------------------------------

@@ -67,7 +67,21 @@ public:
     std::unique_lock lock(mu_);
 
     // erase returns number of items erased (0 or 1)
-    return vectors_.erase(id) > 0;
+    bool removed = vectors_.erase(id) > 0;
+    if (removed && vectors_.empty()) {
+      dims_ = 0;
+    }
+    return removed;
+  }
+
+  // -------------------------
+  // clear()
+  // -------------------------
+  void clear()
+  {
+    std::unique_lock lock(mu_);
+    vectors_.clear();
+    dims_ = 0;
   }
 
   // -------------------------
@@ -130,6 +144,9 @@ public:
 
       const std::string& id = item.first;          // map key
       const std::vector<float>& vec = item.second; // map value
+      if (vec.size() != query.size()) {
+        continue;
+      }
 
       float vnorm = norm(vec);
       if (vnorm == 0.0f) {
@@ -189,6 +206,9 @@ public:
       if (it == vectors_.end()) continue;
 
       const std::vector<float>& vec = it->second;
+      if (vec.size() != query.size()) {
+        continue;
+      }
       float vnorm = norm(vec);
       if (vnorm == 0.0f) {
         scores.push_back({id, 0.0f});

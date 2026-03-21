@@ -1661,7 +1661,7 @@ BOOLEAN_ASK_MODEL=
 EMBED_MODEL=text-embedding-3-large
 REFLECT_MODEL=gpt-4o-mini
 COMPACT_MODEL=gpt-4o-mini</pre>
-                  <p class="hint"><span class="mono">EMBED_MODEL</span> is instance-wide. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it.</p>
+                  <p class="hint"><span class="mono">EMBED_MODEL</span> is instance-wide. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, AtlasRAG also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
                 </div>
               </div>
             </details>

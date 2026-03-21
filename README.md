@@ -189,6 +189,7 @@ COMPACT_MODEL=gpt-4o-mini
 `EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `atlasrag changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
 
 Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
+On startup, AtlasRAG now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 

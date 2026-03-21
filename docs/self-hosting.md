@@ -102,6 +102,7 @@ COMPACT_MODEL=gpt-4o-mini
 
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
 `EMBED_MODEL` is instance-wide. Because AtlasRAG stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
+On startup, AtlasRAG also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
 
 Useful optional values:
 

@@ -98,7 +98,9 @@ function testEmbedAndReflectResolvers() {
     COMPACT_MODEL: ""
   }, () => {
     assert.equal(aiHooks.resolveEmbedModel({}), "text-embedding-3-large");
+    assert.equal(aiHooks.resolveEmbedDimension({}), 3072);
     assert.equal(aiHooks.resolveEmbedModel({ embedModel: "text-embedding-3-small" }), "text-embedding-3-small");
+    assert.equal(aiHooks.resolveEmbedDimension({ embedModel: "text-embedding-3-small" }), 1536);
     assert.equal(reflectHooks.resolveReflectModel({}), "gpt-4o-mini");
     assert.equal(reflectHooks.resolveCompactModel({ reflectModel: "gpt-4.1-mini" }), "gpt-4.1-mini");
   });

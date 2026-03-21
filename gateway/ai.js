@@ -46,11 +46,28 @@ const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 const FALLBACK_DIM = parseInt(process.env.EMBED_FALLBACK_DIM || "1536", 10);
 const EMBED_FALLBACK_ON_ERROR = process.env.EMBED_FALLBACK_ON_ERROR !== "0";
 let fallbackWarned = false;
+const MODEL_FALLBACK_DIMS = Object.freeze({
+  "text-embedding-3-large": 3072,
+  "text-embedding-3-small": 1536,
+  "text-embedding-ada-002": 1536
+});
 
 function resolveEmbedModel(options = {}) {
   return normalizeModelId(options?.embedModel)
     || normalizeModelId(process.env.EMBED_MODEL)
     || DEFAULT_EMBED_MODEL;
+}
+
+function resolveEmbedDimension(options = {}) {
+  const explicit = Number(options?.fallbackDim);
+  if (Number.isFinite(explicit) && explicit > 8) {
+    return Math.floor(explicit);
+  }
+  if (Number.isFinite(FALLBACK_DIM) && FALLBACK_DIM > 8 && process.env.EMBED_FALLBACK_DIM) {
+    return Math.floor(FALLBACK_DIM);
+  }
+  const model = resolveEmbedModel(options);
+  return MODEL_FALLBACK_DIMS[model] || 1536;
 }
 
 function warnFallback(reason) {
@@ -78,8 +95,7 @@ function estimateTokensFromText(text) {
   return Math.max(1, Math.ceil(chars / 4));
 }
 
-function fallbackEmbedding(text) {
-  const dim = Number.isFinite(FALLBACK_DIM) && FALLBACK_DIM > 8 ? Math.floor(FALLBACK_DIM) : 1536;
+function fallbackEmbedding(text, dim) {
   const vector = new Array(dim).fill(0);
   const tokens = String(text || "")
     .toLowerCase()
@@ -101,7 +117,7 @@ function fallbackEmbedding(text) {
   return normalizeVector(vector);
 }
 
-function fallbackEmbeddings(texts, reason, usage) {
+function fallbackEmbeddings(texts, reason, usage, dim) {
   warnFallback(reason);
   let estimatedPromptTokens = 0;
   for (const text of texts) {
@@ -110,7 +126,7 @@ function fallbackEmbeddings(texts, reason, usage) {
   usage.prompt_tokens += estimatedPromptTokens;
   usage.total_tokens += estimatedPromptTokens;
   usage.estimated = true;
-  const vectors = texts.map((text) => fallbackEmbedding(text));
+  const vectors = texts.map((text) => fallbackEmbedding(text, dim));
   usage.fallback = true;
   return vectors;
 }
@@ -132,6 +148,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   const options = normalizeEmbedOptions(batchSizeOrOptions);
   const safeBatch = Number.isFinite(options.batchSize) && options.batchSize > 0 ? options.batchSize : 64;
   const list = Array.isArray(texts) ? texts : [];
+  const fallbackDim = resolveEmbedDimension(options);
 
   let client = null;
   try {
@@ -139,7 +156,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   } catch (err) {
     if (!EMBED_FALLBACK_ON_ERROR) throw err;
     return {
-      vectors: fallbackEmbeddings(list, String(err?.message || err || "client init failed"), usage),
+      vectors: fallbackEmbeddings(list, String(err?.message || err || "client init failed"), usage, fallbackDim),
       usage
     };
   }
@@ -162,7 +179,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
       }
     } catch (err) {
       if (!EMBED_FALLBACK_ON_ERROR) throw err;
-      out.push(...fallbackEmbeddings(slice, String(err?.message || err || "request failed"), usage));
+      out.push(...fallbackEmbeddings(slice, String(err?.message || err || "request failed"), usage, fallbackDim));
     }
   }
 
@@ -172,6 +189,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
 module.exports = {
   embedTexts,
   __testHooks: {
-    resolveEmbedModel
+    resolveEmbedModel,
+    resolveEmbedDimension
   }
 };
