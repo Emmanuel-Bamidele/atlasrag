@@ -321,6 +321,77 @@
           "okta"
         ]
       },
+      "ModelId": {
+        "type": "string",
+        "description": "OpenAI model id."
+      },
+      "TenantModelOverrides": {
+        "type": "object",
+        "properties": {
+          "answerModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for ask generation. null or empty clears the override and falls back to the instance default."
+          },
+          "booleanAskModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for boolean_ask generation. If unset, boolean_ask follows the tenant answerModel or instance default."
+          },
+          "reflectModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for reflection jobs."
+          },
+          "compactModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tenant override for compaction jobs. If unset, compaction follows the tenant reflectModel or instance default."
+          }
+        }
+      },
+      "TenantModelResolved": {
+        "type": "object",
+        "properties": {
+          "answerModel": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "booleanAskModel": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "embedModel": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "reflectModel": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "compactModel": {
+            "$ref": "#/components/schemas/ModelId"
+          }
+        }
+      },
+      "TenantModelSettings": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "$ref": "#/components/schemas/TenantModelOverrides"
+          },
+          "instanceDefaults": {
+            "$ref": "#/components/schemas/TenantModelResolved"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/TenantModelResolved"
+          }
+        }
+      },
       "TenantSettings": {
         "type": "object",
         "properties": {
@@ -341,6 +412,9 @@
             "items": {
               "$ref": "#/components/schemas/TenantSsoProvider"
             }
+          },
+          "models": {
+            "$ref": "#/components/schemas/TenantModelSettings"
           }
         }
       },
@@ -363,6 +437,9 @@
             "items": {
               "$ref": "#/components/schemas/TenantSsoProvider"
             }
+          },
+          "models": {
+            "$ref": "#/components/schemas/TenantModelOverrides"
           }
         }
       },
@@ -569,6 +646,9 @@
             ],
             "description": "Controls answer depth. auto adapts based on retrieved source detail."
           },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
           "policy": {
             "$ref": "#/components/schemas/MemoryPolicy"
           },
@@ -626,6 +706,9 @@
               "long"
             ],
             "description": "Effective answer length used by generation."
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
           },
           "k": {
             "type": "integer"
@@ -685,6 +768,9 @@
           "k": {
             "type": "integer"
           },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
           "docIds": {
             "type": "array",
             "items": {
@@ -713,6 +799,9 @@
           },
           "answer": {
             "$ref": "#/components/schemas/BooleanAskAnswer"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
           },
           "citations": {
             "type": "array",
@@ -1550,7 +1639,7 @@
             }
           }
         },
-        "description": "Read tenant authentication policy (admin role required)."
+        "description": "Read tenant auth settings and tenant-level generation model defaults (admin role required)."
       },
       "patch": {
         "tags": [
@@ -1569,11 +1658,18 @@
                 "ssoProviders": [
                   "google",
                   "okta"
-                ]
+                ],
+                "models": {
+                  "answerModel": "gpt-4.1",
+                  "booleanAskModel": null,
+                  "reflectModel": "gpt-4o-mini",
+                  "compactModel": null
+                }
               }
             }
           }
         },
+        "description": "Update tenant auth settings and tenant-level generation model defaults. embedModel is intentionally instance-wide and is not updated here.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2088,7 +2184,8 @@
                 "k": 4,
                 "answerLength": "auto",
                 "policy": "amvl",
-                "collection": "default"
+                "collection": "default",
+                "model": "gpt-4.1"
               }
             }
           }
@@ -2136,7 +2233,8 @@
                 "question": "Is AtlasRAG designed for agent memory retrieval?",
                 "k": 4,
                 "policy": "amvl",
-                "collection": "default"
+                "collection": "default",
+                "model": "gpt-4o-mini"
               }
             }
           }

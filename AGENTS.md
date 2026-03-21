@@ -29,6 +29,14 @@ If this repository is available locally and the goal is to run or test AtlasRAG 
 - For folder ingest, `atlasrag write --folder ./some-folder` uses the folder name as the collection if `--collection` is omitted.
 - When a caller needs a grounded binary decision instead of a freeform answer, use `atlasrag boolean_ask`. The API, SDK, and UI responses include `supportingChunks` when the caller needs the exact evidence text.
 
+## Model Rules
+
+- For local self-hosted defaults, use `atlasrag changemodel` instead of telling the user to edit the env file by hand.
+- `atlasrag onboard` and `atlasrag changemodel` support numbered generation-model choices for the common defaults.
+- `ask` and `boolean_ask` also accept a per-request `model` override through the API and CLI when the caller wants a different generation model for one request. On the CLI, `--model` accepts the same common numbered shortcuts too.
+- Tenant-level admin settings can override `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` via `/v1/admin/tenant`.
+- `embedModel` is instance-wide, not tenant-specific. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space.
+
 ## Local CLI Examples
 
 ```bash

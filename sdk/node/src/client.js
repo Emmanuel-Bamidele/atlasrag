@@ -234,6 +234,17 @@ class AtlasRAGClient {
     });
   }
 
+  async getTenantSettings() {
+    return this.request("/v1/admin/tenant");
+  }
+
+  async updateTenantSettings(data) {
+    return this.request("/v1/admin/tenant", {
+      method: "PATCH",
+      body: data
+    });
+  }
+
   async getJob(id) {
     return this.request(`/v1/jobs/${id}`);
   }

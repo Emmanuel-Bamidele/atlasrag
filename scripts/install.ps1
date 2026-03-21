@@ -166,6 +166,7 @@ Write-Host "Open a new terminal if \`"atlasrag\`" is not available yet."
 Write-Host "Recommended next commands:"
 Write-Host "  atlasrag doctor"
 Write-Host "  atlasrag update"
+Write-Host "  atlasrag changemodel"
 Write-Host "  atlasrag onboard"
 Write-Host '  atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."'
 Write-Host '  atlasrag ask --question "What does AtlasRAG store?"'

@@ -2,6 +2,7 @@
 // Generate semantic/procedural/summary memories from artifact text.
 
 const OpenAI = require("openai");
+const { DEFAULT_REFLECT_MODEL, normalizeModelId } = require("./model_config");
 
 let defaultClient = null;
 function createClient(key) {
@@ -31,11 +32,21 @@ function getClient(apiKey = "") {
   return defaultClient;
 }
 
-const DEFAULT_MODEL = process.env.REFLECT_MODEL || "gpt-4o-mini";
 const DEFAULT_MAX_ITEMS = parseInt(process.env.REFLECT_MAX_ITEMS || "5", 10);
-const COMPACT_MODEL = process.env.COMPACT_MODEL || DEFAULT_MODEL;
 let reflectFallbackWarned = false;
 let compactFallbackWarned = false;
+
+function resolveReflectModel(options = {}) {
+  return normalizeModelId(options?.model ?? options?.reflectModel)
+    || normalizeModelId(process.env.REFLECT_MODEL)
+    || DEFAULT_REFLECT_MODEL;
+}
+
+function resolveCompactModel(options = {}) {
+  return normalizeModelId(options?.model ?? options?.compactModel ?? options?.reflectModel)
+    || normalizeModelId(process.env.COMPACT_MODEL)
+    || resolveReflectModel(options);
+}
 
 function normalizeTypes(types) {
   const allowed = new Set(["semantic", "procedural", "summary"]);
@@ -111,7 +122,7 @@ function buildFallbackReflection({ text, types, maxItems }) {
   return { semantic, procedural, summary, usage: null };
 }
 
-async function reflectMemories({ text, types, maxItems, apiKey }) {
+async function reflectMemories({ text, types, maxItems, apiKey, reflectModel }) {
   const selected = normalizeTypes(types);
   const limit = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : DEFAULT_MAX_ITEMS;
   const input = buildPrompt(text, selected, limit);
@@ -119,7 +130,7 @@ async function reflectMemories({ text, types, maxItems, apiKey }) {
   let resp = null;
   try {
     resp = await getClient(apiKey).responses.create({
-      model: DEFAULT_MODEL,
+      model: resolveReflectModel({ reflectModel }),
       input,
       temperature: 0.2,
       text: { format: { type: "json_object" } }
@@ -166,12 +177,12 @@ function buildFallbackCompaction(text) {
   };
 }
 
-async function summarizeMemories({ text, apiKey }) {
+async function summarizeMemories({ text, apiKey, compactModel, reflectModel }) {
   const input = buildCompactPrompt(text);
   let resp = null;
   try {
     resp = await getClient(apiKey).responses.create({
-      model: COMPACT_MODEL,
+      model: resolveCompactModel({ compactModel, reflectModel }),
       input,
       temperature: 0.2,
       text: { format: { type: "json_object" } }
@@ -200,4 +211,11 @@ async function summarizeMemories({ text, apiKey }) {
   };
 }
 
-module.exports = { reflectMemories, summarizeMemories };
+module.exports = {
+  reflectMemories,
+  summarizeMemories,
+  __testHooks: {
+    resolveReflectModel,
+    resolveCompactModel
+  }
+};

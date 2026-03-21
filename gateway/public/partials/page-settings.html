@@ -151,9 +151,49 @@
                 </div>
               </div>
 
+              <div class="row" style="margin-top:16px;">
+                <div class="field">
+                  <label for="tenantAnswerModel">Ask model</label>
+                  <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
+                  <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default.</div>
+                </div>
+                <div class="field">
+                  <label for="tenantBooleanAskModel">Boolean ask model</label>
+                  <input id="tenantBooleanAskModel" list="tenantGenerationModels" placeholder="blank = follow ask model">
+                  <div class="hint">Optional tenant override for <span class="mono">boolean_ask</span>. Leave blank to follow the tenant ask model.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantReflectModel">Reflect model</label>
+                  <input id="tenantReflectModel" list="tenantGenerationModels" placeholder="blank = instance default">
+                  <div class="hint">Optional tenant override for reflection jobs.</div>
+                </div>
+                <div class="field">
+                  <label for="tenantCompactModel">Compact model</label>
+                  <input id="tenantCompactModel" list="tenantGenerationModels" placeholder="blank = follow reflect model">
+                  <div class="hint">Optional tenant override for compaction jobs. Leave blank to follow the tenant reflect model.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div class="field">
+                  <label for="tenantEmbedModel">Embedding model</label>
+                  <input id="tenantEmbedModel" readonly>
+                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">atlasrag changemodel</span>. Changing the embedding model requires a reindex on restart.</div>
+                </div>
+              </div>
+
+              <datalist id="tenantGenerationModels">
+                <option value="gpt-4o"></option>
+                <option value="gpt-4.1"></option>
+                <option value="gpt-4o-mini"></option>
+              </datalist>
+
               <div class="actions">
                 <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
-                <button class="btn" id="tenantAuthSaveBtn">Save auth mode</button>
+                <button class="btn" id="tenantAuthSaveBtn">Save tenant settings</button>
               </div>
 
               <div class="banner" id="tenantAuthBanner"></div>

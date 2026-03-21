@@ -12,6 +12,7 @@
 // We use the official OpenAI JS client
 const OpenAI = require("openai");
 const crypto = require("crypto");
+const { DEFAULT_EMBED_MODEL, normalizeModelId } = require("./model_config");
 
 let defaultClient = null;
 function createClient(key) {
@@ -45,6 +46,12 @@ const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 const FALLBACK_DIM = parseInt(process.env.EMBED_FALLBACK_DIM || "1536", 10);
 const EMBED_FALLBACK_ON_ERROR = process.env.EMBED_FALLBACK_ON_ERROR !== "0";
 let fallbackWarned = false;
+
+function resolveEmbedModel(options = {}) {
+  return normalizeModelId(options?.embedModel)
+    || normalizeModelId(process.env.EMBED_MODEL)
+    || DEFAULT_EMBED_MODEL;
+}
 
 function warnFallback(reason) {
   if (fallbackWarned) return;
@@ -143,7 +150,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
     try {
       // Call OpenAI embeddings API
       const resp = await client.embeddings.create({
-        model: "text-embedding-3-small", // good default
+        model: resolveEmbedModel(options),
         input: slice
       });
 
@@ -162,4 +169,9 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   return { vectors: out, usage };
 }
 
-module.exports = { embedTexts };
+module.exports = {
+  embedTexts,
+  __testHooks: {
+    resolveEmbedModel
+  }
+};

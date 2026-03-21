@@ -178,6 +178,7 @@ If this is a new shell, make sure this path is available:
 Recommended next commands:
   atlasrag doctor
   atlasrag update
+  atlasrag changemodel
   atlasrag onboard
   atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."
   atlasrag ask --question "What does AtlasRAG store?"

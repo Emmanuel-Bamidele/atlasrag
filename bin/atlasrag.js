@@ -13,19 +13,26 @@ const {
   CONFIG_DIR,
   backupFileIfExists,
   boolFromFlag,
+  DEFAULT_ANSWER_MODEL,
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_REFLECT_MODEL,
   buildInstallBinDir,
   buildInstallRepoDir,
   buildShellPathLine,
   buildBaseUrlCandidates,
   buildComposeContext,
   createOnboardConfig,
+  defaultOnboardAnswerModelSelection,
   defaultCollectionFromFolder,
   detectIngestibleFileType,
   extractDocumentText,
   maskSecret,
   mergeEnvText,
+  normalizeConfiguredModel,
   parseCliArgs,
+  normalizeOnboardAnswerModelSelection,
   normalizeTcpPort,
+  ONBOARD_ANSWER_MODEL_OPTIONS,
   preferredBaseUrl,
   randomPassword,
   randomSecret,
@@ -45,6 +52,7 @@ function printHelp() {
 
 Usage:
   atlasrag onboard [--external-postgres] [--project-root PATH] [--force]
+  atlasrag changemodel [--project-root PATH] [--answer-model MODEL_OR_CHOICE] [--boolean-ask-model MODEL|inherit] [--embed-model MODEL] [--reflect-model MODEL] [--compact-model MODEL|inherit] [--restart]
   atlasrag update [--project-root PATH]
   atlasrag uninstall [--yes]
   atlasrag start [--build]
@@ -60,8 +68,8 @@ Usage:
   atlasrag docs replace --doc-id ID [--text TEXT | --file PATH | --url URL] [--collection NAME] [--yes] [--json]
   atlasrag write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--replace] [--sync] [--yes] [--json]
   atlasrag search --q QUERY [--k 5] [--collection NAME] [--json]
-  atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--json]
-  atlasrag boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--json]
+  atlasrag ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--model MODEL_OR_CHOICE] [--json]
+  atlasrag boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--model MODEL_OR_CHOICE] [--json]
   atlasrag config show [--show-secrets]
   atlasrag help
 
@@ -74,14 +82,21 @@ Common flags:
   --collection NAME            Override collection scope; folder writes use folder name if omitted
   --replace                    Replace matching docs before re-indexing
   --sync                       Reconcile a folder collection to exactly match local files
+  --restart                    Restart the local AtlasRAG stack after changing local settings
   --yes                        Skip destructive action confirmation prompts
   --json                       Print JSON output where supported
 
-Onboarding flags:
+Onboarding / model flags:
   --admin-user USER
   --admin-password PASS
   --tenant TENANT
   --gateway-port PORT
+  --answer-model MODEL_OR_CHOICE
+  --model MODEL_OR_CHOICE       Alias for --answer-model during onboarding
+  --embed-model MODEL
+  --boolean-ask-model MODEL
+  --reflect-model MODEL
+  --compact-model MODEL
   --external-postgres
   --pg-host HOST
   --pg-port PORT
@@ -543,6 +558,47 @@ async function resolvePromptValue({
   }
 }
 
+function formatOnboardAnswerModelPrompt() {
+  const lines = ["Default generation model"];
+  for (const option of ONBOARD_ANSWER_MODEL_OPTIONS) {
+    const defaultLabel = option.key === "1" ? " (Recommended)" : "";
+    lines.push(`  ${option.key}. ${option.model === "__custom__" ? option.label : `${option.model} - ${option.label}`}${defaultLabel}`);
+  }
+  return lines.join("\n");
+}
+
+async function resolveOnboardAnswerModel({ parsed, nonInteractive, existingValue }) {
+  const fallback = normalizeConfiguredModel(existingValue, DEFAULT_ANSWER_MODEL);
+  const rawFlag = getFlag(parsed, "answer-model") ?? getFlag(parsed, "model");
+  if (rawFlag !== undefined && rawFlag !== true) {
+    return normalizeOnboardAnswerModelSelection(rawFlag, fallback);
+  }
+  if (nonInteractive) {
+    return fallback;
+  }
+
+  while (true) {
+    const answer = await askVisible(
+      formatOnboardAnswerModelPrompt(),
+      defaultOnboardAnswerModelSelection(fallback, DEFAULT_ANSWER_MODEL)
+    );
+    const clean = String(answer || "").trim();
+    if (clean === "4") {
+      const existingCustom = ONBOARD_ANSWER_MODEL_OPTIONS.some((item) => item.model === fallback) ? "" : fallback;
+      const custom = await askVisible("Custom generation model id", existingCustom);
+      const customClean = String(custom || "").trim();
+      if (customClean) return customClean;
+      console.error("Custom model id is required.");
+      continue;
+    }
+    try {
+      return normalizeOnboardAnswerModelSelection(clean, fallback);
+    } catch (err) {
+      console.error(String(err.message || err));
+    }
+  }
+}
+
 function ensureFileExists(filePath, label) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`${label} not found: ${filePath}`);
@@ -580,6 +636,95 @@ async function writeEnvFile({ projectRoot, externalPostgres, updates, force }) {
     // Best effort only.
   }
   return { outputPath, backupPath };
+}
+
+function normalizeCliModelFlag(value, fallback = "") {
+  if (value === undefined || value === null || value === true) {
+    return normalizeConfiguredModel(fallback, "");
+  }
+  const clean = String(value || "").trim();
+  if (!clean) return normalizeConfiguredModel(fallback, "");
+  return normalizeOnboardAnswerModelSelection(clean, DEFAULT_ANSWER_MODEL);
+}
+
+function normalizeCliOptionalModelFlag(value, fallback = "", options = {}) {
+  if (value === undefined || value === null || value === true) {
+    return normalizeConfiguredModel(fallback, "");
+  }
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  const lowered = clean.toLowerCase();
+  if (options.allowInherit && ["inherit", "default", "none", "clear"].includes(lowered)) {
+    return "";
+  }
+  if (!options.allowInherit && ["inherit", "default", "none", "clear"].includes(lowered)) {
+    throw new Error("Use a concrete model id for this command.");
+  }
+  return normalizeCliModelFlag(clean, fallback);
+}
+
+function resolveLocalEnvTarget(parsed) {
+  const saved = readConfig();
+  const projectRoot = resolveProjectRoot(saved, getFlag(parsed, "project-root"));
+  const seen = new Set();
+  const candidates = [];
+
+  const pushCandidate = (envFile, composeFile) => {
+    const envName = String(envFile || "").trim();
+    const composeName = String(composeFile || "").trim();
+    if (!envName || !composeName) return;
+    const key = `${envName}::${composeName}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ envFile: envName, composeFile: composeName });
+  };
+
+  if (saved.projectRoot && path.resolve(saved.projectRoot) === path.resolve(projectRoot)) {
+    pushCandidate(saved.envFile || ".env", saved.composeFile || "docker-compose.yml");
+  }
+  pushCandidate(".env", "docker-compose.yml");
+  pushCandidate(".env.external-postgres", "docker-compose.external-postgres.yml");
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(projectRoot, candidate.envFile))) {
+      return {
+        projectRoot,
+        envFile: candidate.envFile,
+        composeFile: candidate.composeFile,
+        externalPostgres: candidate.envFile === ".env.external-postgres"
+      };
+    }
+  }
+
+  return {
+    projectRoot,
+    envFile: ".env",
+    composeFile: "docker-compose.yml",
+    externalPostgres: false
+  };
+}
+
+async function promptOptionalModel({
+  parsed,
+  nonInteractive,
+  flagNames,
+  prompt,
+  existingValue = "",
+  allowInherit = true
+}) {
+  for (const name of flagNames) {
+    const value = getFlag(parsed, name);
+    if (value !== undefined) {
+      return normalizeCliOptionalModelFlag(value, existingValue, { allowInherit });
+    }
+  }
+  if (nonInteractive) {
+    return normalizeConfiguredModel(existingValue, "");
+  }
+  const current = normalizeConfiguredModel(existingValue, "");
+  const defaultValue = current || (allowInherit ? "inherit" : "");
+  const answer = await askVisible(`${prompt}${allowInherit ? " (type inherit to clear)" : ""}`, defaultValue);
+  return normalizeCliOptionalModelFlag(answer, existingValue, { allowInherit });
 }
 
 function printSummary(title, rows) {
@@ -759,6 +904,27 @@ async function handleOnboard(parsed) {
     secret: true,
     required: true
   });
+  const answerModel = await resolveOnboardAnswerModel({
+    parsed,
+    nonInteractive,
+    existingValue: existingEnv.ANSWER_MODEL
+  });
+  const embedModel = normalizeConfiguredModel(
+    getFlag(parsed, "embed-model"),
+    existingEnv.EMBED_MODEL || DEFAULT_EMBED_MODEL
+  );
+  const booleanAskModel = normalizeConfiguredModel(
+    getFlag(parsed, "boolean-ask-model"),
+    existingEnv.BOOLEAN_ASK_MODEL || ""
+  );
+  const reflectModel = normalizeConfiguredModel(
+    getFlag(parsed, "reflect-model"),
+    existingEnv.REFLECT_MODEL || DEFAULT_REFLECT_MODEL
+  );
+  const compactModel = normalizeConfiguredModel(
+    getFlag(parsed, "compact-model"),
+    existingEnv.COMPACT_MODEL || reflectModel
+  );
 
   const jwtSecret = existingEnv.JWT_SECRET || randomSecret(32);
   const cookieSecret = existingEnv.COOKIE_SECRET || randomSecret(32);
@@ -770,7 +936,12 @@ async function handleOnboard(parsed) {
     COOKIE_SECRET: cookieSecret,
     PUBLIC_BASE_URL: baseUrl,
     OPENAPI_BASE_URL: baseUrl,
-    GATEWAY_HOST_PORT: gatewayPort
+    GATEWAY_HOST_PORT: gatewayPort,
+    ANSWER_MODEL: answerModel,
+    BOOLEAN_ASK_MODEL: booleanAskModel,
+    EMBED_MODEL: embedModel,
+    REFLECT_MODEL: reflectModel,
+    COMPACT_MODEL: compactModel
   };
   let composeFile = "docker-compose.yml";
   let envFile = ".env";
@@ -929,6 +1100,126 @@ async function handleOnboard(parsed) {
     summaryRows.push(`Host health is still settling at ${baseUrl}; retry \`atlasrag status\` in a few seconds if needed.`);
   }
   printSummary("AtlasRAG is ready.", summaryRows);
+}
+
+async function handleChangeModel(parsed) {
+  const nonInteractive = boolFromFlag(getFlag(parsed, "non-interactive"), false);
+  const target = resolveLocalEnvTarget(parsed);
+  const envPath = path.join(target.projectRoot, target.envFile);
+  const existingEnv = readEnvAssignments(envPath);
+
+  const currentAnswerModel = normalizeConfiguredModel(existingEnv.ANSWER_MODEL, DEFAULT_ANSWER_MODEL);
+  const currentBooleanAskModel = normalizeConfiguredModel(existingEnv.BOOLEAN_ASK_MODEL, "");
+  const currentEmbedModel = normalizeConfiguredModel(existingEnv.EMBED_MODEL, DEFAULT_EMBED_MODEL);
+  const currentReflectModel = normalizeConfiguredModel(existingEnv.REFLECT_MODEL, DEFAULT_REFLECT_MODEL);
+  const currentCompactModel = normalizeConfiguredModel(existingEnv.COMPACT_MODEL, currentReflectModel);
+
+  const answerModel = await resolveOnboardAnswerModel({
+    parsed,
+    nonInteractive,
+    existingValue: currentAnswerModel
+  });
+  const booleanAskModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["boolean-ask-model"],
+    prompt: "Boolean ask model",
+    existingValue: currentBooleanAskModel,
+    allowInherit: true
+  });
+  const embedModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["embed-model"],
+    prompt: "Embedding model",
+    existingValue: currentEmbedModel,
+    allowInherit: false
+  });
+  const reflectModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["reflect-model"],
+    prompt: "Reflect model",
+    existingValue: currentReflectModel,
+    allowInherit: false
+  });
+  const compactModel = await promptOptionalModel({
+    parsed,
+    nonInteractive,
+    flagNames: ["compact-model"],
+    prompt: "Compact model",
+    existingValue: currentCompactModel,
+    allowInherit: true
+  });
+
+  const embedChanged = embedModel !== currentEmbedModel;
+  const updates = {
+    ...existingEnv,
+    ANSWER_MODEL: answerModel,
+    BOOLEAN_ASK_MODEL: booleanAskModel,
+    EMBED_MODEL: embedModel,
+    REFLECT_MODEL: reflectModel,
+    COMPACT_MODEL: compactModel
+  };
+  if (embedChanged) {
+    updates.REINDEX_ON_START = "force";
+  }
+
+  const { outputPath, backupPath } = await writeEnvFile({
+    projectRoot: target.projectRoot,
+    externalPostgres: target.externalPostgres,
+    updates,
+    force: boolFromFlag(getFlag(parsed, "yes"), false) || boolFromFlag(getFlag(parsed, "force"), false)
+  });
+
+  const rows = [
+    `project root: ${target.projectRoot}`,
+    `env file: ${path.relative(target.projectRoot, outputPath)}`,
+    `answer model: ${answerModel}`,
+    `boolean ask model: ${booleanAskModel || "inherit -> answer model"}`,
+    `embed model: ${embedModel}`,
+    `reflect model: ${reflectModel}`,
+    `compact model: ${compactModel || "inherit -> reflect model"}`
+  ];
+  if (backupPath) {
+    rows.push(`backup created: ${path.relative(target.projectRoot, backupPath)}`);
+  }
+  if (embedChanged) {
+    rows.push("Embedding model changed: REINDEX_ON_START was set to force so the next gateway restart rebuilds vectors from stored chunks.");
+  }
+
+  if (boolFromFlag(getFlag(parsed, "restart"), false)) {
+    ensureNodeVersion();
+    ensureDockerAvailable();
+    const composeCtx = buildComposeContext(target.projectRoot, {
+      composeFile: target.composeFile,
+      envFile: target.envFile
+    });
+    await runCompose(composeCtx, ["up", "-d"], { capture: false });
+    rows.push("Restarted the local AtlasRAG stack.");
+  } else {
+    rows.push(`next: atlasrag start --project-root "${target.projectRoot}"`);
+  }
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify({
+      ok: true,
+      projectRoot: target.projectRoot,
+      envFile: target.envFile,
+      models: {
+        answerModel,
+        booleanAskModel: booleanAskModel || null,
+        embedModel,
+        reflectModel,
+        compactModel: compactModel || null
+      },
+      embedModelChanged: embedChanged,
+      restartRequested: boolFromFlag(getFlag(parsed, "restart"), false)
+    }, null, 2));
+    return;
+  }
+
+  printSummary("Model settings updated.", rows);
 }
 
 function resolveComposeFromSaved(parsed) {
@@ -2060,8 +2351,9 @@ async function handleAsk(parsed) {
   }
   const policy = getFlag(parsed, "policy");
   const answerLength = String(getFlag(parsed, "answer-length") || getFlag(parsed, "answerLength") || "auto");
+  const model = normalizeCliOptionalModelFlag(getFlag(parsed, "model") ?? getFlag(parsed, "answer-model"), "", { allowInherit: false });
   const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.ask(question, { k, policy, answerLength, docIds });
+  const payload = await client.ask(question, { k, policy, answerLength, docIds, model: model || undefined });
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2071,6 +2363,7 @@ async function handleAsk(parsed) {
   const data = payload?.data || payload;
   console.log(`Question: ${question}`);
   console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  if (data.model) console.log(`Model: ${data.model}`);
   console.log("");
   console.log(data.answer || "(no answer)");
   const citations = Array.isArray(data.citations) ? data.citations : [];
@@ -2098,8 +2391,9 @@ async function handleBooleanAsk(parsed) {
     throw new Error("boolean_ask requires --k to be a positive integer.");
   }
   const policy = getFlag(parsed, "policy");
+  const model = normalizeCliOptionalModelFlag(getFlag(parsed, "model") ?? getFlag(parsed, "boolean-ask-model"), "", { allowInherit: false });
   const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.booleanAsk(question, { k, policy, docIds });
+  const payload = await client.booleanAsk(question, { k, policy, docIds, model: model || undefined });
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2109,6 +2403,7 @@ async function handleBooleanAsk(parsed) {
   const data = payload?.data || payload;
   console.log(`Question: ${question}`);
   console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  if (data.model) console.log(`Model: ${data.model}`);
   console.log("");
   console.log(data.answer || "invalid");
   const citations = Array.isArray(data.citations) ? data.citations : [];
@@ -2166,6 +2461,10 @@ async function main() {
       return;
     case "onboard":
       await handleOnboard(parsed);
+      return;
+    case "changemodel":
+    case "change-model":
+      await handleChangeModel(parsed);
       return;
     case "update":
       await handleUpdate(parsed);

@@ -81,6 +81,13 @@ Important distinction:
 - Docker is not required on the client machine for this remote path
 - service tokens are scoped to the AtlasRAG deployment that minted them; a token from one self-hosted or shared deployment will not authenticate against a different deployment
 
+Model guidance:
+
+- use `atlasrag changemodel` for local self-hosted defaults instead of editing the env file by hand
+- `ask` and `boolean_ask` accept a per-request `model` override, and the CLI `--model` flag accepts the same common numbered shortcuts used during onboarding
+- tenant admins can persist `answerModel`, `booleanAskModel`, `reflectModel`, and `compactModel` with `PATCH /v1/admin/tenant`
+- `embedModel` stays instance-wide and requires a reindex when it changes
+
 ## Bootstrap Once
 
 If the instance has not been bootstrapped yet:

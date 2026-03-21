@@ -37,6 +37,7 @@ if (Number.isFinite(DB_STATEMENT_TIMEOUT_MS) && DB_STATEMENT_TIMEOUT_MS > 0) {
 }
 
 const pool = new Pool(poolConfig);
+const TENANT_SELECT_FIELDS = "tenant_id, name, auth_mode, sso_providers, answer_model, boolean_ask_model, reflect_model, compact_model, created_at";
 
 const MEMORY_ITEM_SELECT_COLUMNS = `id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, tier, value_last_update_ts, tier_last_update_ts, reuse_count, last_used_at, utility_ema,
@@ -1242,7 +1243,7 @@ async function getUserByUsername(username) {
 
 async function getTenantById(tenantId) {
   const res = await pool.query(
-    `SELECT tenant_id, name, auth_mode, sso_providers, created_at
+    `SELECT ${TENANT_SELECT_FIELDS}
      FROM tenants
      WHERE tenant_id = $1`,
     [tenantId]
@@ -1261,7 +1262,7 @@ async function setTenantAuthMode(tenantId, authMode) {
     `UPDATE tenants
      SET auth_mode = $2
      WHERE tenant_id = $1
-     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+     RETURNING ${TENANT_SELECT_FIELDS}`,
     [tenantId, authMode]
   );
   return res.rows[0] || null;
@@ -1273,13 +1274,20 @@ async function setTenantSsoProviders(tenantId, providers) {
     `UPDATE tenants
      SET sso_providers = $2
      WHERE tenant_id = $1
-     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+     RETURNING ${TENANT_SELECT_FIELDS}`,
     [tenantId, providers]
   );
   return res.rows[0] || null;
 }
 
-async function setTenantSettings(tenantId, { authMode, ssoProviders }) {
+async function setTenantSettings(tenantId, {
+  authMode,
+  ssoProviders,
+  answerModel,
+  booleanAskModel,
+  reflectModel,
+  compactModel
+}) {
   await ensureTenant(tenantId);
   const updates = [];
   const params = [tenantId];
@@ -1291,6 +1299,22 @@ async function setTenantSettings(tenantId, { authMode, ssoProviders }) {
     params.push(ssoProviders);
     updates.push(`sso_providers = $${params.length}`);
   }
+  if (answerModel !== undefined) {
+    params.push(answerModel);
+    updates.push(`answer_model = $${params.length}`);
+  }
+  if (booleanAskModel !== undefined) {
+    params.push(booleanAskModel);
+    updates.push(`boolean_ask_model = $${params.length}`);
+  }
+  if (reflectModel !== undefined) {
+    params.push(reflectModel);
+    updates.push(`reflect_model = $${params.length}`);
+  }
+  if (compactModel !== undefined) {
+    params.push(compactModel);
+    updates.push(`compact_model = $${params.length}`);
+  }
   if (updates.length === 0) {
     return getTenantById(tenantId);
   }
@@ -1298,7 +1322,7 @@ async function setTenantSettings(tenantId, { authMode, ssoProviders }) {
     `UPDATE tenants
      SET ${updates.join(", ")}
      WHERE tenant_id = $1
-     RETURNING tenant_id, name, auth_mode, sso_providers, created_at`,
+     RETURNING ${TENANT_SELECT_FIELDS}`,
     params
   );
   return res.rows[0] || null;

@@ -9,6 +9,7 @@
 // This file generates an answer using retrieved chunks (RAG = Retrieval-Augmented Generation).
 
 const OpenAI = require("openai");
+const { DEFAULT_ANSWER_MODEL, normalizeModelId } = require("./model_config");
 
 let defaultClient = null;
 function createClient(key) {
@@ -43,6 +44,18 @@ const MIN_SOURCE_CHARS = 40;
 const ANSWER_LENGTHS = new Set(["auto", "short", "medium", "long"]);
 const BOOLEAN_ASK_ANSWERS = new Set(["true", "false", "invalid"]);
 let fallbackWarned = false;
+
+function resolveAnswerModel(options = {}) {
+  return normalizeModelId(options?.model ?? options?.answerModel)
+    || normalizeModelId(process.env.ANSWER_MODEL)
+    || DEFAULT_ANSWER_MODEL;
+}
+
+function resolveBooleanAskModel(options = {}) {
+  return normalizeModelId(options?.model ?? options?.booleanAskModel ?? options?.answerModel)
+    || normalizeModelId(process.env.BOOLEAN_ASK_MODEL)
+    || resolveAnswerModel(options);
+}
 
 function normalizeAnswerLength(value, fallback = "auto") {
   const clean = String(value || "").trim().toLowerCase();
@@ -319,7 +332,7 @@ async function generateAnswer(question, chunks, options = {}) {
   try {
     // Use Responses API with GPT-4o
     resp = await getClient(options?.apiKey).responses.create({
-      model: "gpt-4o",
+      model: resolveAnswerModel(options),
       input,
       temperature: 0.2
     });
@@ -405,7 +418,7 @@ async function generateBooleanAskAnswer(question, chunks, options = {}) {
   let resp = null;
   try {
     resp = await getClient(options?.apiKey).responses.create({
-      model: "gpt-4o",
+      model: resolveBooleanAskModel(options),
       input,
       temperature: 0
     });
@@ -439,6 +452,8 @@ module.exports = {
   __testHooks: {
     normalizeBooleanAskAnswer,
     sanitizeChunkText,
-    sanitizeChunks
+    sanitizeChunks,
+    resolveAnswerModel,
+    resolveBooleanAskModel
   }
 };

@@ -90,6 +90,19 @@ Edit at least these values:
 - `COOKIE_SECRET`
 - `OPENAI_API_KEY`
 
+Model settings you can change in the env:
+
+```env
+ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_MODEL=
+EMBED_MODEL=text-embedding-3-large
+REFLECT_MODEL=gpt-4o-mini
+COMPACT_MODEL=gpt-4o-mini
+```
+
+`BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
+`EMBED_MODEL` is instance-wide. Because AtlasRAG stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
+
 Useful optional values:
 
 - `PUBLIC_BASE_URL`
@@ -174,9 +187,14 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
   -d '{
     "question":"What does AtlasRAG store?",
     "k":3,
-    "policy":"amvl"
+    "policy":"amvl",
+    "model":"gpt-4.1"
   }'
 ```
+
+`model` is optional and overrides the tenant or instance ask model for that single request.
+
+On the CLI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` also accept the common numbered shortcuts `1`, `2`, `3`, and `4` for the default model menu.
 
 ### 8. Ask A Strict True/False Question
 
@@ -193,6 +211,29 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
 ```
 
 This returns only `true`, `false`, or `invalid`. Use it when the caller needs a grounded binary answer instead of a freeform response, and inspect `supportingChunks` when the caller needs the exact evidence text.
+
+### 8a. Tenant-Level Generation Defaults
+
+Admins can read or update tenant-level generation defaults with:
+
+```bash
+curl -sS "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+curl -sS -X PATCH "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "models": {
+      "answerModel": "gpt-4.1",
+      "booleanAskModel": null,
+      "reflectModel": "gpt-4o-mini",
+      "compactModel": null
+    }
+  }'
+```
+
+Those settings are tenant-scoped. `embedModel` is not part of this API because it remains an instance-wide self-hosted env setting.
 
 ### 9. Optional: Bring Your Own OpenAI Key To A Shared AtlasRAG Deployment
 

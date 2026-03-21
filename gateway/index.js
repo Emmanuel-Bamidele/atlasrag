@@ -66,6 +66,12 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
+const {
+  normalizeModelId,
+  resolveTenantModelSettings,
+  parseTenantModelSettingsInput,
+  hasTenantModelSettingsInput
+} = require("./model_config");
 const { estimateTokensFromText } = require("./memory_value");
 const {
   isBelowMinAgeForLifecycle,
@@ -834,6 +840,30 @@ function resolveTenantId(req) {
     throw new Error("tenantId mismatch");
   }
   return tenantId;
+}
+
+async function getEffectiveTenantModels(tenantId) {
+  const tenant = tenantId ? await getTenantById(tenantId) : null;
+  return resolveTenantModelSettings(tenant).effective;
+}
+
+function buildTenantSettingsPayload(tenantId, tenant) {
+  const resolved = resolveTenantModelSettings(tenant);
+  return {
+    id: tenantId,
+    name: tenant?.name || null,
+    authMode: normalizeAuthMode(tenant?.auth_mode),
+    ssoProviders: resolveSsoProviders(tenant),
+    models: resolved
+  };
+}
+
+function resolveAskModelOverride(body = {}) {
+  return normalizeModelId(body?.model ?? body?.answerModel ?? body?.answer_model) || "";
+}
+
+function resolveBooleanAskModelOverride(body = {}) {
+  return normalizeModelId(body?.model ?? body?.booleanAskModel ?? body?.boolean_ask_model ?? body?.answerModel ?? body?.answer_model) || "";
 }
 
 function resolvePrincipalId(req) {
@@ -2698,7 +2728,11 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   const texts = chunks.map(c => c.text);
   const embedStart = Date.now();
-  const { vectors, usage } = await embedTexts(texts, { apiKey: options?.apiKey });
+  const effectiveModels = options?.models || await getEffectiveTenantModels(tenantId);
+  const { vectors, usage } = await embedTexts(texts, {
+    apiKey: options?.apiKey,
+    embedModel: options?.embedModel || effectiveModels.embedModel
+  });
   recordEmbeddingUsage(tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
     tenantId,
@@ -2891,7 +2925,7 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -2899,7 +2933,8 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     source: telemetry?.source || "search_query"
   });
   const policyConfig = resolveMemoryPolicyConfig(policy);
-  const { vectors: [qvec], usage } = await embedTexts([query], { apiKey });
+  const effectiveModels = embedModel ? { embedModel } : await getEffectiveTenantModels(tenantId);
+  const { vectors: [qvec], usage } = await embedTexts([query], { apiKey, embedModel: effectiveModels.embedModel });
   recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
   const cleanDocIds = Array.isArray(docIds) ? docIds : [];
@@ -3150,7 +3185,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
-async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource }) {
+async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -3170,6 +3205,7 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     candidateTypes: ["artifact"],
     policy,
     apiKey,
+    embedModel,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -3298,7 +3334,8 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, apiKey, model, models }) {
+  const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const {
     telemetryContext,
     usedItems,
@@ -3314,6 +3351,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     telemetry,
     policy,
     apiKey,
+    embedModel: effectiveModels.embedModel,
     operation: "answer_question",
     retrievalSource: "answer_retrieval_query"
   });
@@ -3321,6 +3359,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   const injectedMemoryIds = new Set();
   const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
     apiKey,
+    model: model || effectiveModels.answerModel,
     answerLength,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
@@ -3377,11 +3416,13 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     answer,
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
-    answerLength: resolvedAnswerLength || answerLength || "auto"
+    answerLength: resolvedAnswerLength || answerLength || "auto",
+    model: model || effectiveModels.answerModel
   };
 }
 
-async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey }) {
+async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, model, models }) {
+  const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const {
     telemetryContext,
     usedItems,
@@ -3397,6 +3438,7 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     telemetry,
     policy,
     apiKey,
+    embedModel: effectiveModels.embedModel,
     operation: "answer_boolean_ask",
     retrievalSource: "answer_boolean_ask_retrieval_query"
   });
@@ -3404,6 +3446,7 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
   const injectedMemoryIds = new Set();
   const { answer, citations, usage } = await generateBooleanAskAnswer(question, chunks, {
     apiKey,
+    model: model || effectiveModels.booleanAskModel,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
       const seen = new Set();
@@ -3459,7 +3502,8 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     answer,
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
-    supportingChunks: mapSupportingChunks(chunks)
+    supportingChunks: mapSupportingChunks(chunks),
+    model: model || effectiveModels.booleanAskModel
   };
 }
 
@@ -3485,8 +3529,12 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   }
 
   const texts = chunks.map(c => c.text);
-  const { vectors, usage } = await embedTexts(texts, { apiKey: options?.apiKey });
   const parsed = parseNamespacedDocId(namespaceId);
+  const effectiveModels = options?.models || await getEffectiveTenantModels(parsed?.tenantId);
+  const { vectors, usage } = await embedTexts(texts, {
+    apiKey: options?.apiKey,
+    embedModel: options?.embedModel || effectiveModels.embedModel
+  });
   recordEmbeddingUsage(parsed?.tenantId, usage, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
     tenantId: parsed?.tenantId,
@@ -3826,7 +3874,13 @@ async function runReflectionJob(jobId, tenantId) {
       text = text.slice(0, MAX_REFLECT_CHARS);
     }
 
-    const reflection = await reflectMemories({ text, types, maxItems });
+    const tenantModels = await getEffectiveTenantModels(tenantId);
+    const reflection = await reflectMemories({
+      text,
+      types,
+      maxItems,
+      reflectModel: tenantModels.reflectModel
+    });
     recordGenerationUsage(tenantId, reflection?.usage, buildTelemetryContext({
       requestId: `job:${jobId}`,
       tenantId,
@@ -4072,7 +4126,12 @@ async function runCompactionJob(jobId, tenantId) {
     }
 
     const combined = parts.join("\n\n---\n\n");
-    const summary = await summarizeMemories({ text: combined });
+    const tenantModels = await getEffectiveTenantModels(tenantId);
+    const summary = await summarizeMemories({
+      text: combined,
+      reflectModel: tenantModels.reflectModel,
+      compactModel: tenantModels.compactModel
+    });
     recordGenerationUsage(tenantId, summary?.usage, buildTelemetryContext({
       requestId: `job:${jobId}`,
       tenantId,
@@ -4401,10 +4460,12 @@ async function promoteMemoryItem(item, options = {}) {
   let text = await loadMemoryTextSnippet(item, MAX_REFLECT_CHARS);
   if (!text.trim()) return { created: 0, skipped: "empty" };
 
+  const tenantModels = await getEffectiveTenantModels(item.tenant_id);
   const reflection = await reflectMemories({
     text,
     types: ["semantic", "procedural"],
-    maxItems: MEMORY_PROMOTION_MAX_ITEMS
+    maxItems: MEMORY_PROMOTION_MAX_ITEMS,
+    reflectModel: tenantModels.reflectModel
   });
   recordGenerationUsage(item.tenant_id, reflection?.usage, buildTelemetryContext({
     requestId: options.requestId || null,
@@ -4586,7 +4647,12 @@ async function compactLowValueGroup(seed, options = {}) {
   if (!parts.length) return { created: 0, skipped: "empty" };
 
   const combined = parts.join("\n\n---\n\n");
-  const summary = await summarizeMemories({ text: combined });
+  const tenantModels = await getEffectiveTenantModels(seed.tenant_id);
+  const summary = await summarizeMemories({
+    text: combined,
+    reflectModel: tenantModels.reflectModel,
+    compactModel: tenantModels.compactModel
+  });
   recordGenerationUsage(seed.tenant_id, summary?.usage, buildTelemetryContext({
     requestId: options.requestId || null,
     tenantId: seed.tenant_id,
@@ -5456,14 +5522,8 @@ app.get(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async (
   try {
     tenantId = resolveTenantId(req);
     const tenant = await getTenantById(tenantId);
-    const authMode = normalizeAuthMode(tenant?.auth_mode);
     sendOk(res, {
-      tenant: {
-        id: tenantId,
-        name: tenant?.name || null,
-        authMode,
-        ssoProviders: resolveSsoProviders(tenant)
-      }
+      tenant: buildTenantSettingsPayload(tenantId, tenant)
     }, tenantId, null);
   } catch (err) {
     sendError(res, 500, "Failed to load tenant settings", "TENANT_SETTINGS_FAILED", tenantId, null);
@@ -5488,13 +5548,21 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
       return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
     }
 
-    if (rawMode === undefined && !providersInput.provided) {
-      return sendError(res, 400, "Provide authMode and/or ssoProviders", "INVALID_INPUT", tenantId, null);
+    let modelInput;
+    try {
+      modelInput = parseTenantModelSettingsInput(req.body || {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    if (rawMode === undefined && !providersInput.provided && !hasTenantModelSettingsInput(modelInput)) {
+      return sendError(res, 400, "Provide authMode, ssoProviders, and/or models", "INVALID_INPUT", tenantId, null);
     }
 
     const current = await getTenantById(tenantId);
-    const prevAuthMode = normalizeAuthMode(current?.auth_mode);
-    const prevProviders = Array.isArray(current?.sso_providers) ? current.sso_providers : null;
+    const prevPayload = buildTenantSettingsPayload(tenantId, current);
+    const prevAuthMode = prevPayload.authMode;
+    const prevProviders = prevPayload.ssoProviders;
     const nextAuthMode = authMode || prevAuthMode;
     const nextProviders = providersInput.provided ? providersInput.value : current?.sso_providers ?? null;
     if (nextAuthMode === "sso_only" && Array.isArray(nextProviders) && nextProviders.length === 0) {
@@ -5503,27 +5571,33 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
 
     const tenant = await setTenantSettings(tenantId, {
       authMode: rawMode === undefined ? undefined : authMode,
-      ssoProviders: providersInput.provided ? providersInput.value : undefined
+      ssoProviders: providersInput.provided ? providersInput.value : undefined,
+      answerModel: modelInput.answerModel,
+      booleanAskModel: modelInput.booleanAskModel,
+      reflectModel: modelInput.reflectModel,
+      compactModel: modelInput.compactModel
     });
-    const updatedAuthMode = normalizeAuthMode(tenant?.auth_mode || authMode);
-    const updatedProviders = Array.isArray(tenant?.sso_providers) ? tenant.sso_providers : null;
+    const nextPayload = buildTenantSettingsPayload(tenantId, tenant);
+    const updatedAuthMode = nextPayload.authMode;
+    const updatedProviders = nextPayload.ssoProviders;
     await recordAudit(req, tenantId, {
-      action: "tenant.auth_policy.update",
+      action: "tenant.settings.update",
       targetType: "tenant",
       targetId: tenantId,
       metadata: {
-        before: { authMode: prevAuthMode, ssoProviders: prevProviders },
-        after: { authMode: updatedAuthMode, ssoProviders: updatedProviders }
+        before: {
+          authMode: prevAuthMode,
+          ssoProviders: prevProviders,
+          models: prevPayload.models
+        },
+        after: {
+          authMode: updatedAuthMode,
+          ssoProviders: updatedProviders,
+          models: nextPayload.models
+        }
       }
     });
-    sendOk(res, {
-      tenant: {
-        id: tenantId,
-        name: tenant?.name || null,
-        authMode: updatedAuthMode,
-        ssoProviders: resolveSsoProviders(tenant)
-      }
-    }, tenantId, null);
+    sendOk(res, { tenant: nextPayload }, tenantId, null);
   } catch (err) {
     sendError(res, 500, "Failed to update tenant settings", "TENANT_SETTINGS_UPDATE_FAILED", tenantId, null);
   }
@@ -6180,6 +6254,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const model = resolveAskModelOverride(req.body);
 
     const result = await answerQuestion({
       tenantId,
@@ -6191,6 +6266,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      model,
       apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6207,6 +6283,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       citations: citationIds,
       sources: result.citations,
       answerLength: result.answerLength,
+      model: result.model,
       tenantId,
       collection
     });
@@ -6236,6 +6313,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const model = resolveAskModelOverride(req.body);
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -6246,6 +6324,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      model,
       apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6260,6 +6339,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       citations: result.citations,
       chunksUsed: result.chunksUsed,
       answerLength: result.answerLength,
+      model: result.model,
       k
     }, tenantId, collection);
   } catch (e) {
@@ -6282,6 +6362,7 @@ async function handleBooleanAskLegacy(req, res) {
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const model = resolveBooleanAskModelOverride(req.body);
 
     const result = await answerBooleanAskQuestion({
       tenantId,
@@ -6292,6 +6373,7 @@ async function handleBooleanAskLegacy(req, res) {
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
+      model,
       apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6308,6 +6390,7 @@ async function handleBooleanAskLegacy(req, res) {
       citations: citationIds,
       sources: result.citations,
       supportingChunks: result.supportingChunks,
+      model: result.model,
       tenantId,
       collection
     });
@@ -6333,6 +6416,7 @@ async function handleBooleanAskV1(req, res) {
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const openAiApiKey = resolveOpenAiApiKeyOverride(req);
+    const model = resolveBooleanAskModelOverride(req.body);
     const result = await answerBooleanAskQuestion({
       tenantId,
       collection,
@@ -6342,6 +6426,7 @@ async function handleBooleanAskV1(req, res) {
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
+      model,
       apiKey: openAiApiKey,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6356,6 +6441,7 @@ async function handleBooleanAskV1(req, res) {
       citations: result.citations,
       supportingChunks: result.supportingChunks,
       chunksUsed: result.chunksUsed,
+      model: result.model,
       k
     }, tenantId, collection);
   } catch (e) {

@@ -88,6 +88,7 @@ Later, update an installed AtlasRAG CLI checkout with:
 
 ```bash
 atlasrag update
+atlasrag changemodel
 ```
 
 For the managed install under `~/.atlasrag`, `atlasrag update` can recover from a force-pushed `origin/main` as long as the checkout is clean.
@@ -113,6 +114,7 @@ The wizard prompts for:
 - admin password
 - OpenAI API key
 - tenant id
+- default generation model (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = custom`)
 - optional external Postgres values if you choose the BYO Postgres path
 
 For the normal first-run path, you can usually press `Enter` at:
@@ -154,6 +156,39 @@ atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --colle
 atlasrag logs
 atlasrag doctor
 ```
+
+To change local self-hosted model defaults later:
+
+```bash
+atlasrag changemodel
+
+# non-interactive example
+atlasrag changemodel \
+  --answer-model 2 \
+  --boolean-ask-model inherit \
+  --embed-model text-embedding-3-large \
+  --reflect-model gpt-4o-mini \
+  --compact-model inherit \
+  --restart
+```
+
+`atlasrag changemodel` edits the local AtlasRAG env file. `--answer-model` accepts the same numbered choices as onboarding so you do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer model, and `--compact-model inherit` makes compaction follow the reflect model.
+
+`atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` accept the same common numbered choices too: `1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = custom`.
+
+Model env keys for self-hosted installs:
+
+```env
+ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_MODEL=
+EMBED_MODEL=text-embedding-3-large
+REFLECT_MODEL=gpt-4o-mini
+COMPACT_MODEL=gpt-4o-mini
+```
+
+`EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `atlasrag changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
+
+Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
@@ -352,9 +387,12 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
   -d '{
     "question":"What does AtlasRAG store?",
     "k":3,
-    "policy":"amvl"
+    "policy":"amvl",
+    "model":"gpt-4.1"
   }'
 ```
+
+`model` is optional. Use it when one request should use a different generation model without changing the tenant default.
 
 ### 6. Ask A Strict True/False Question
 
@@ -371,6 +409,8 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
 ```
 
 This endpoint returns only `true`, `false`, or `invalid`. `invalid` means the input was not a grounded true/false question for the retrieved sources. The response also includes `supportingChunks` when you need the exact chunk text used for the decision.
+
+Admins can set tenant-level generation defaults through `GET/PATCH /v1/admin/tenant` with `models.answerModel`, `models.booleanAskModel`, `models.reflectModel`, and `models.compactModel`. `embedModel` stays instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
 
 ### 7. Optional: Log In As A Human Admin
 

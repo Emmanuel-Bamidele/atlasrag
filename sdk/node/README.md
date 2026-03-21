@@ -110,20 +110,28 @@ await client.login(process.env.ATLASRAG_USER, process.env.ATLASRAG_PASS);
 - `memoryCleanup(data)`
 - `memoryCompact(data)`
 - `feedback(data)`
+- `getTenantSettings()`
+- `updateTenantSettings(data)`
 - `getJob(id)`
 
 ## Tenant settings (admin)
 
-Admins can manage tenant login policy via `/v1/admin/tenant`:
+Admins can manage tenant auth settings and tenant-level generation-model defaults via `/v1/admin/tenant`:
 
 ```js
 // Read current tenant settings
-const settings = await client.request("/v1/admin/tenant");
+const settings = await client.getTenantSettings();
 
-// Update auth mode
-await client.request("/v1/admin/tenant", {
-  method: "PATCH",
-  body: { authMode: "sso_only", ssoProviders: ["google"] }
+// Update auth mode and tenant generation defaults
+await client.updateTenantSettings({
+  authMode: "sso_only",
+  ssoProviders: ["google"],
+  models: {
+    answerModel: "gpt-4.1",
+    booleanAskModel: null,
+    reflectModel: "gpt-4o-mini",
+    compactModel: null
+  }
 });
 ```
 
@@ -136,13 +144,28 @@ Memory writes and reflect support access control via `visibility` (`tenant`, `pr
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
 Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
-Ask, boolean_ask, and memory recall requests also accept `policy` to choose retrieval mode per request.
+Ask and boolean_ask requests also accept `model` for a per-request generation override. Memory recall requests accept `policy` to choose retrieval mode per request.
 Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
 Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
 Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
+Tenant settings accept `models.answerModel`, `models.booleanAskModel`, `models.reflectModel`, and `models.compactModel`. `embedModel` is instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+
+Per-request model override example:
+
+```js
+const answer = await client.ask("What does AtlasRAG store?", {
+  collection: "default",
+  model: "gpt-4.1"
+});
+
+const check = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
+  collection: "default",
+  model: "gpt-4o-mini"
+});
+```
 
 ## Examples
 

@@ -9,13 +9,19 @@ const {
   buildInstallRepoDir,
   buildShellPathLine,
   createOnboardConfig,
+  DEFAULT_ANSWER_MODEL,
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_REFLECT_MODEL,
   detectIngestibleFileType,
+  defaultOnboardAnswerModelSelection,
   defaultCollectionFromFolder,
   detectProjectRoot,
   extractDocumentText,
   isIngestibleTextPath,
     isProbablyTextBuffer,
     mergeEnvText,
+    normalizeConfiguredModel,
+    normalizeOnboardAnswerModelSelection,
     removePathEntry,
     normalizeTcpPort,
     parseCliArgs,
@@ -85,6 +91,19 @@ function testParseCliArgs() {
   assert.equal(booleanAskParsed.command, "boolean_ask");
   assert.equal(booleanAskParsed.flags.question, "Does AtlasRAG store memory?");
   assert.equal(booleanAskParsed.flags.json, true);
+
+  const changeModelParsed = parseCliArgs([
+    "changemodel",
+    "--answer-model",
+    "2",
+    "--boolean-ask-model",
+    "inherit",
+    "--restart"
+  ]);
+  assert.equal(changeModelParsed.command, "changemodel");
+  assert.equal(changeModelParsed.flags["answer-model"], "2");
+  assert.equal(changeModelParsed.flags["boolean-ask-model"], "inherit");
+  assert.equal(changeModelParsed.flags.restart, true);
 }
 
 function testMergeEnvText() {
@@ -223,6 +242,23 @@ function testBaseUrlHelpers() {
   assert.equal(preferredBaseUrl("https://atlasrag.com"), "https://atlasrag.com");
 }
 
+function testModelHelpers() {
+  assert.equal(DEFAULT_ANSWER_MODEL, "gpt-4o");
+  assert.equal(DEFAULT_EMBED_MODEL, "text-embedding-3-large");
+  assert.equal(DEFAULT_REFLECT_MODEL, "gpt-4o-mini");
+  assert.equal(normalizeConfiguredModel("", "gpt-4o"), "gpt-4o");
+  assert.equal(normalizeConfiguredModel(" gpt-4.1 ", "gpt-4o"), "gpt-4.1");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-4o"), "1");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-4.1"), "2");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-4o-mini"), "3");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-5.2"), "gpt-5.2");
+  assert.equal(normalizeOnboardAnswerModelSelection("1"), "gpt-4o");
+  assert.equal(normalizeOnboardAnswerModelSelection("2"), "gpt-4.1");
+  assert.equal(normalizeOnboardAnswerModelSelection("3"), "gpt-4o-mini");
+  assert.equal(normalizeOnboardAnswerModelSelection("gpt-5.2"), "gpt-5.2");
+  assert.throws(() => normalizeOnboardAnswerModelSelection("4"), /Custom model id is required/);
+}
+
 function testInstallHelpers() {
   const installHome = resolveInstallHome({ ATLASRAG_HOME: "/tmp/custom-atlasrag" }, "/Users/tester");
   assert.equal(installHome, path.resolve("/tmp/custom-atlasrag"));
@@ -270,6 +306,7 @@ async function main() {
   await testDocumentExtraction();
   testNormalizeTcpPort();
   testBaseUrlHelpers();
+  testModelHelpers();
   testInstallHelpers();
   console.log("cli helper tests passed");
 }

@@ -19,7 +19,7 @@
                         <a href="#doc-setup-modes">Setup by usage mode</a>
                         <a href="#doc-quickstart">Quickstart</a>
                         <a href="#doc-auth">Authentication</a>
-                        <a href="#doc-tenant-auth">Tenant auth mode</a>
+                        <a href="#doc-tenant-auth">Tenant settings</a>
                         <a href="#doc-security">Security</a>
                         <a href="#doc-api-ref">API Reference</a>
                         <a href="#doc-agent-integrations">AI assistant connections</a>
@@ -203,7 +203,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
             </details>
 
             <details class="details section" id="doc-tenant-auth">
-              <summary>Tenant auth mode</summary>
+              <summary>Tenant settings</summary>
               <div class="section-body">
                 <p>
                   Admins can set per-tenant login policy: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, or
@@ -213,21 +213,35 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   You can also restrict which SSO providers are allowed by supplying <span class="mono">ssoProviders</span>
                   (<span class="mono">google</span>, <span class="mono">azure</span>, <span class="mono">okta</span>).
                 </p>
+                <p>
+                  The same admin endpoint also stores tenant-level generation defaults for <span class="mono">ask</span>,
+                  <span class="mono">boolean_ask</span>, reflection, and compaction under <span class="mono">models</span>.
+                  The embedding model is instance-wide and is changed in the self-hosted env or with <span class="mono">atlasrag changemodel</span>.
+                </p>
                 <div class="doc-block">
-                  <div class="doc-label">Get auth mode (admin)</div>
+                  <div class="doc-label">Get tenant settings (admin)</div>
                   <pre class="doc-code">curl -X GET http://localhost:3000/v1/admin/tenant \
   -H "Authorization: Bearer YOUR_ADMIN_JWT"</pre>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Set auth mode (admin)</div>
+                  <div class="doc-label">Set auth + model defaults (admin)</div>
                   <pre class="doc-code">curl -X PATCH http://localhost:3000/v1/admin/tenant \
   -H "Authorization: Bearer YOUR_ADMIN_JWT" \
   -H "Content-Type: application/json" \
-  -d '{ "authMode": "sso_only", "ssoProviders": ["google"] }'</pre>
+  -d '{
+    "authMode": "sso_only",
+    "ssoProviders": ["google"],
+    "models": {
+      "answerModel": "gpt-4.1",
+      "booleanAskModel": null,
+      "reflectModel": "gpt-4o-mini",
+      "compactModel": null
+    }
+  }'</pre>
                 </div>
               </div>
             </details>
-            <p class="hint">Valid values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>.</p>
+            <p class="hint">Valid authMode values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>. Set a model field to <span class="mono">null</span> to clear the tenant override and fall back to the instance default.</p>
 
             <details class="details section" id="doc-security">
               <summary>Security</summary>
@@ -319,7 +333,7 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                   <li><span class="mono">/v1/memory/event</span> task outcome signals</li>
                   <li><span class="mono">/v1/metrics</span> Prometheus metrics (per tenant)</li>
                   <li><span class="mono">/v1/jobs/:id</span> job status</li>
-                  <li><span class="mono">/v1/admin/tenant</span> tenant auth mode (admin)</li>
+                  <li><span class="mono">/v1/admin/tenant</span> tenant auth + generation model settings (admin)</li>
                   <li><span class="mono">/v1/admin/service-tokens</span> issue API keys (admin)</li>
                 </ul>
                 <div class="doc-block">
@@ -370,6 +384,12 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                         <td>No</td>
                         <td><span class="mono">auto</span> (default), <span class="mono">short</span>, <span class="mono">medium</span>, <span class="mono">long</span>.</td>
                       </tr>
+                      <tr>
+                        <td><span class="mono">model</span></td>
+                        <td>string</td>
+                        <td>No</td>
+                        <td>Optional per-request generation override. If omitted, AtlasRAG uses the tenant default or instance default.</td>
+                      </tr>
                     </tbody>
                   </table>
                   <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used.</p>
@@ -415,6 +435,12 @@ X-OpenAI-API-Key: YOUR_OPENAI_KEY</pre>
                         <td>enum</td>
                         <td>No</td>
                         <td>Memory/retrieval policy: <span class="mono">amvl</span> (default), <span class="mono">ttl</span>, or <span class="mono">lru</span>.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">model</span></td>
+                        <td>string</td>
+                        <td>No</td>
+                        <td>Optional per-request generation override for the true/false/invalid classifier.</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1137,8 +1163,10 @@ irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/in
                 <div class="doc-block">
                   <div class="doc-label">Update or remove later</div>
                   <pre class="doc-code">atlasrag update
+atlasrag changemodel
 atlasrag uninstall</pre>
                   <p class="hint"><span class="mono">atlasrag update</span> updates the managed checkout under <span class="mono">~/.atlasrag</span>. If the remote <span class="mono">main</span> branch was force-pushed, the CLI can still recover as long as that managed checkout is clean.</p>
+                  <p class="hint"><span class="mono">atlasrag changemodel</span> updates the local self-hosted env file, supports numbered generation-model choices, and if the embedding model changes it sets <span class="mono">REINDEX_ON_START=force</span> for the next restart.</p>
                   <p class="hint"><span class="mono">atlasrag uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.atlasrag</span> when that checkout exists, and for managed local self-hosted installs it also clears the local AtlasRAG Docker containers and volumes.</p>
                 </div>
                 <div class="doc-block">
@@ -1163,7 +1191,7 @@ atlasrag uninstall</pre>
                 <div class="doc-block">
                   <div class="doc-label">Bundled Postgres (default)</div>
                   <pre class="doc-code">atlasrag onboard</pre>
-                  <p class="hint">This prompts for admin username, admin password, tenant id, gateway port, and your OpenAI key. It writes <span class="mono">.env</span> and uses <span class="mono">docker-compose.yml</span>.</p>
+                  <p class="hint">This prompts for admin username, admin password, tenant id, gateway port, your OpenAI key, and a numbered default generation-model choice. It writes <span class="mono">.env</span> and uses <span class="mono">docker-compose.yml</span>.</p>
                   <p class="hint">For a normal first run, press <span class="mono">Enter</span> at <span class="mono">Gateway port [3000]:</span> to keep port <span class="mono">3000</span>, and press <span class="mono">Enter</span> at <span class="mono">Tenant id [default]:</span> to keep tenant <span class="mono">default</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -1179,6 +1207,7 @@ atlasrag uninstall</pre>
   --admin-password change_me \
   --tenant default \
   --gateway-port 3000 \
+  --answer-model 1 \
   --openai-key "$OPENAI_API_KEY"</pre>
                 </div>
                 <div class="doc-block">
@@ -1196,6 +1225,19 @@ atlasrag uninstall</pre>
   --pg-database atlasrag \
   --pg-user atlasrag \
   --pg-password change_me</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Change local self-hosted models later</div>
+                  <pre class="doc-code">atlasrag changemodel
+
+atlasrag changemodel \
+  --answer-model 2 \
+  --boolean-ask-model inherit \
+  --embed-model text-embedding-3-large \
+  --reflect-model gpt-4o-mini \
+  --compact-model inherit \
+  --restart</pre>
+                  <p class="hint">Common generation choices are <span class="mono">1 = gpt-4o</span>, <span class="mono">2 = gpt-4.1</span>, <span class="mono">3 = gpt-4o-mini</span>, and <span class="mono">4 = custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">atlasrag ask --model ...</span> and <span class="mono">atlasrag boolean_ask --model ...</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What you get at the end</div>
@@ -1564,9 +1606,10 @@ atlasrag search --q "tenant auth mode" --collection default --json</pre>
                 <div class="doc-block">
                   <div class="doc-label">Ask and boolean_ask examples</div>
                   <pre class="doc-code">atlasrag ask --question "What does AtlasRAG store?" --collection local-demo --k 3
-atlasrag ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short
+atlasrag ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short --model 2
 atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo --k 3
-atlasrag boolean_ask --question "Is password login enabled?" --collection default --policy amvl</pre>
+atlasrag boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model gpt-4o-mini</pre>
+                  <p class="hint"><span class="mono">--model</span> is optional. If you omit it, AtlasRAG uses the tenant or instance default model. On the CLI you can also use the common numbered shortcuts <span class="mono">1</span>, <span class="mono">2</span>, <span class="mono">3</span>, and <span class="mono">4</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Useful write flags</div>
@@ -1610,6 +1653,15 @@ ATLASRAG_OPENAI_API_KEY
 OPENAI_API_KEY
 ATLASRAG_TENANT_ID
 ATLASRAG_COLLECTION</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Self-hosted model env keys</div>
+                  <pre class="doc-code">ANSWER_MODEL=gpt-4o
+BOOLEAN_ASK_MODEL=
+EMBED_MODEL=text-embedding-3-large
+REFLECT_MODEL=gpt-4o-mini
+COMPACT_MODEL=gpt-4o-mini</pre>
+                  <p class="hint"><span class="mono">EMBED_MODEL</span> is instance-wide. Changing it requires a reindex because AtlasRAG stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it.</p>
                 </div>
               </div>
             </details>

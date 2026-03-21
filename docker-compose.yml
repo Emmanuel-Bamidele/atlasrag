@@ -38,6 +38,11 @@ services:
       TCP_PORT: "6379"
 
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANSWER_MODEL: ${ANSWER_MODEL:-gpt-4o}
+      BOOLEAN_ASK_MODEL: ${BOOLEAN_ASK_MODEL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-3-large}
+      REFLECT_MODEL: ${REFLECT_MODEL:-gpt-4o-mini}
+      COMPACT_MODEL: ${COMPACT_MODEL:-gpt-4o-mini}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_AUDIENCE: ${JWT_AUDIENCE}

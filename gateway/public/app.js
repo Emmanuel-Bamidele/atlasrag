@@ -1714,9 +1714,22 @@ async function loadTenantSettings(){
     const data = await res.json();
     if (res.ok && data.ok && data.data?.tenant){
       const tenant = data.data.tenant;
+      const models = tenant.models || {};
+      const configuredModels = models.configured || {};
+      const instanceDefaults = models.instanceDefaults || {};
+      const effectiveModels = models.effective || {};
       if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
       if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
       if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || "sso_plus_password";
+      if ($("tenantAnswerModel")) $("tenantAnswerModel").value = configuredModels.answerModel || "";
+      if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").value = configuredModels.booleanAskModel || "";
+      if ($("tenantReflectModel")) $("tenantReflectModel").value = configuredModels.reflectModel || "";
+      if ($("tenantCompactModel")) $("tenantCompactModel").value = configuredModels.compactModel || "";
+      if ($("tenantEmbedModel")) $("tenantEmbedModel").value = effectiveModels.embedModel || "";
+      if ($("tenantAnswerModel")) $("tenantAnswerModel").placeholder = instanceDefaults.answerModel || "blank = instance default";
+      if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").placeholder = effectiveModels.answerModel || "blank = follow ask model";
+      if ($("tenantReflectModel")) $("tenantReflectModel").placeholder = instanceDefaults.reflectModel || "blank = instance default";
+      if ($("tenantCompactModel")) $("tenantCompactModel").placeholder = effectiveModels.reflectModel || "blank = follow reflect model";
       const providersRaw = tenant.ssoProviders;
       const providers = Array.isArray(providersRaw) ? providersRaw : ["google", "azure", "okta"];
       const allowed = new Set(providers);
@@ -1752,6 +1765,10 @@ async function saveTenantSettings(){
   if ($("tenantSsoGoogle")?.checked) ssoProviders.push("google");
   if ($("tenantSsoAzure")?.checked) ssoProviders.push("azure");
   if ($("tenantSsoOkta")?.checked) ssoProviders.push("okta");
+  const answerModel = String($("tenantAnswerModel")?.value || "").trim();
+  const booleanAskModel = String($("tenantBooleanAskModel")?.value || "").trim();
+  const reflectModel = String($("tenantReflectModel")?.value || "").trim();
+  const compactModel = String($("tenantCompactModel")?.value || "").trim();
 
   saveBtn.disabled = true;
   const originalLabel = saveBtn.textContent;
@@ -1761,15 +1778,37 @@ async function saveTenantSettings(){
     const res = await fetch("/v1/admin/tenant", {
       method: "PATCH",
       headers: apiHeaders(),
-      body: JSON.stringify({ authMode, ssoProviders })
+      body: JSON.stringify({
+        authMode,
+        ssoProviders,
+        models: {
+          answerModel: answerModel || null,
+          booleanAskModel: booleanAskModel || null,
+          reflectModel: reflectModel || null,
+          compactModel: compactModel || null
+        }
+      })
     });
     const data = await res.json();
     if (res.ok && data.ok && data.data?.tenant){
       const tenant = data.data.tenant;
+      const models = tenant.models || {};
+      const configuredModels = models.configured || {};
+      const instanceDefaults = models.instanceDefaults || {};
+      const effectiveModels = models.effective || {};
       if ($("tenantAuthTenantId")) $("tenantAuthTenantId").value = tenant.id || "";
       if ($("tenantAuthTenantName")) $("tenantAuthTenantName").value = tenant.name || "";
       if ($("tenantAuthMode")) $("tenantAuthMode").value = tenant.authMode || authMode;
-      setBanner(banner, "ok", "Tenant auth mode updated.");
+      if ($("tenantAnswerModel")) $("tenantAnswerModel").value = configuredModels.answerModel || "";
+      if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").value = configuredModels.booleanAskModel || "";
+      if ($("tenantReflectModel")) $("tenantReflectModel").value = configuredModels.reflectModel || "";
+      if ($("tenantCompactModel")) $("tenantCompactModel").value = configuredModels.compactModel || "";
+      if ($("tenantEmbedModel")) $("tenantEmbedModel").value = effectiveModels.embedModel || "";
+      if ($("tenantAnswerModel")) $("tenantAnswerModel").placeholder = instanceDefaults.answerModel || "blank = instance default";
+      if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").placeholder = effectiveModels.answerModel || "blank = follow ask model";
+      if ($("tenantReflectModel")) $("tenantReflectModel").placeholder = instanceDefaults.reflectModel || "blank = instance default";
+      if ($("tenantCompactModel")) $("tenantCompactModel").placeholder = effectiveModels.reflectModel || "blank = follow reflect model";
+      setBanner(banner, "ok", "Tenant settings updated.");
     }else{
       const msg = data?.error?.message || data?.error || "Failed to update tenant settings.";
       setBanner(banner, "err", msg);
@@ -2235,6 +2274,7 @@ window.addEventListener("DOMContentLoaded", () => {
     $("askAnswerCard").innerHTML = "";
     $("askRaw").textContent = "(no output)";
     if ($("askPolicy")) $("askPolicy").value = "amvl";
+    if ($("askModel")) $("askModel").value = "";
     clearBanner($("askBanner"));
   };
 
@@ -2248,6 +2288,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const scope = String($("askCollectionScope")?.value || "all").trim();
     const answerLength = String($("askAnswerLength")?.value || "auto").trim().toLowerCase();
     const policy = normalizePolicy($("askPolicy")?.value || "amvl");
+    const model = String($("askModel")?.value || "").trim();
 
     if (!question){
       setBanner($("askBanner"), "err", "Please enter a question.");
@@ -2270,6 +2311,7 @@ window.addEventListener("DOMContentLoaded", () => {
         body.answerLength = answerLength;
       }
       body.policy = policy;
+      if (model) body.model = model;
 
       const res = await fetch(isBooleanAsk ? "/boolean_ask" : "/ask", {
         method:"POST",
@@ -2282,11 +2324,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (res.ok && data.answer){
         const label = scope === "all" ? "all collections" : scope;
+        const modelLabel = data.model ? `, ${data.model}` : "";
         if (isBooleanAsk) {
-          setBanner($("askBanner"), "ok", `Boolean answer generated from "${label}" (${policy.toUpperCase()}).`);
+          setBanner($("askBanner"), "ok", `Boolean answer generated from "${label}" (${policy.toUpperCase()}${modelLabel}).`);
         } else {
           const lengthLabel = String(data.answerLength || answerLength || "auto").toUpperCase();
-          setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}).`);
+          setBanner($("askBanner"), "ok", `Answer generated from "${label}" (${lengthLabel}, ${policy.toUpperCase()}${modelLabel}).`);
         }
         renderAnswer(data);
       }else{

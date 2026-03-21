@@ -7,6 +7,15 @@ const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const CONFIG_DIR = path.join(os.homedir(), ".atlasrag");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const DEFAULT_INSTALL_HOME = path.join(os.homedir(), ".atlasrag");
+const DEFAULT_ANSWER_MODEL = "gpt-4o";
+const DEFAULT_EMBED_MODEL = "text-embedding-3-large";
+const DEFAULT_REFLECT_MODEL = "gpt-4o-mini";
+const ONBOARD_ANSWER_MODEL_OPTIONS = Object.freeze([
+  Object.freeze({ key: "1", model: "gpt-4o", label: "Balanced default" }),
+  Object.freeze({ key: "2", model: "gpt-4.1", label: "Stronger text output" }),
+  Object.freeze({ key: "3", model: "gpt-4o-mini", label: "Fastest / lowest cost" }),
+  Object.freeze({ key: "4", model: "__custom__", label: "Enter a custom model id" })
+]);
 const SHELL_PATH_BLOCK_START = "# >>> atlasrag >>>";
 const SHELL_PATH_BLOCK_END = "# <<< atlasrag <<<";
 const INGESTIBLE_TEXT_EXTENSIONS = new Set([
@@ -58,6 +67,7 @@ const BOOLEAN_FLAGS = new Set([
   "json",
   "non-interactive",
   "replace",
+  "restart",
   "show-secrets",
   "sync",
   "yes"
@@ -226,6 +236,28 @@ function removePathEntry(pathValue, targetPath, platform = process.platform) {
     .filter(Boolean)
     .filter((part) => normalizePathForCompare(part, platform) !== target)
     .join(separator);
+}
+
+function normalizeConfiguredModel(value, fallback = "") {
+  const clean = String(value || "").trim();
+  if (!clean) return String(fallback || "").trim();
+  return clean;
+}
+
+function defaultOnboardAnswerModelSelection(value, fallback = DEFAULT_ANSWER_MODEL) {
+  const clean = normalizeConfiguredModel(value, fallback);
+  const match = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.model === clean);
+  return match ? match.key : clean;
+}
+
+function normalizeOnboardAnswerModelSelection(value, fallback = DEFAULT_ANSWER_MODEL) {
+  const clean = normalizeConfiguredModel(value, fallback);
+  const match = ONBOARD_ANSWER_MODEL_OPTIONS.find((item) => item.key === clean || item.model === clean);
+  if (!match) return clean;
+  if (match.model === "__custom__") {
+    throw new Error("Custom model id is required.");
+  }
+  return match.model;
 }
 
 function ensureConfigDir() {
@@ -505,9 +537,13 @@ function createOnboardConfig({
 
 module.exports = {
   DEFAULT_INSTALL_HOME,
+  DEFAULT_ANSWER_MODEL,
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_REFLECT_MODEL,
   PACKAGE_ROOT,
   CONFIG_DIR,
   CONFIG_FILE,
+  ONBOARD_ANSWER_MODEL_OPTIONS,
   SHELL_PATH_BLOCK_END,
   SHELL_PATH_BLOCK_START,
   backupFileIfExists,
@@ -521,6 +557,7 @@ module.exports = {
   defaultCollectionFromFolder,
   detectIngestibleFileType,
   detectProjectRoot,
+  defaultOnboardAnswerModelSelection,
   extractDocumentText,
   formatEnvValue,
   INGESTIBLE_BINARY_EXTENSIONS,
@@ -531,6 +568,8 @@ module.exports = {
   mergeEnvText,
   normalizeExtractedText,
   normalizeCommandName,
+  normalizeConfiguredModel,
+  normalizeOnboardAnswerModelSelection,
   normalizePathForCompare,
   normalizeTcpPort,
   parseCliArgs,
