@@ -6,6 +6,8 @@ Current public scope: single-node self-hosted deployment. You run it in your own
 
 License: MIT
 
+[Quickstart](QUICKSTART.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Support](SUPPORT.md)
+
 ## Main Surfaces
 
 - `gateway/`: Node.js/Express gateway, auth, APIs, public docs UI, and background jobs.
