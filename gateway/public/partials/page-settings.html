@@ -7,73 +7,75 @@
           </div>
           <div class="doc-panels" data-doc-panels="settings">
             <div class="doc-panel active" data-doc-panel="auth">
-              <div class="row">
-                <div class="field">
-                  <label for="authType">Auth type</label>
-                  <select id="authType">
-                    <option value="bearer">JWT (Bearer)</option>
-                    <option value="api_key">Service token (API key)</option>
-                  </select>
-                  <div class="hint">Use service tokens for apps, agents, and server-to-server integrations. JWTs are mainly for human admin sessions.</div>
-                </div>
-                <div class="field">
-                  <label for="apiKey">Access token / API key</label>
-                  <input id="apiKey" placeholder="paste JWT or API key">
-                  <div class="hint">Saved locally in your browser (<span class="mono">localStorage</span>).</div>
-                </div>
-              </div>
 
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="loginUser">Login (username)</label>
-                  <input id="loginUser" placeholder="username">
-                  <div class="hint">Use /login for one-time admin setup or browser sessions. Agents should usually use a service token instead.</div>
+              <!-- Service token — primary auth method -->
+              <div class="field">
+                <label for="apiKey">Service token</label>
+                <div style="position:relative;">
+                  <input id="apiKey" type="password" autocomplete="off"
+                    placeholder="Paste your service token — saves automatically">
+                  <span id="apiKeySavedBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--good);pointer-events:none;">Saved</span>
                 </div>
-                <div class="field">
-                  <label for="loginPass">Login (password)</label>
-                  <input id="loginPass" type="password" placeholder="password">
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="openAiApiKeyOverride">OpenAI key override (optional)</label>
-                  <input id="openAiApiKeyOverride" type="password" placeholder="sk-...">
-                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-OpenAI-API-Key</span> on matching requests.</div>
-                </div>
-                <div class="field">
-                  <label for="geminiApiKeyOverride">Gemini key override (optional)</label>
-                  <input id="geminiApiKeyOverride" type="password" placeholder="AIza...">
-                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-Gemini-API-Key</span> on matching requests.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="anthropicApiKeyOverride">Anthropic key override (optional)</label>
-                  <input id="anthropicApiKeyOverride" type="password" placeholder="sk-ant-...">
-                  <div class="hint">Saved locally in your browser and sent as <span class="mono">X-Anthropic-API-Key</span> on matching requests.</div>
-                </div>
-              </div>
-
-              <div class="field" style="margin-top:12px;">
-                <label>Tips</label>
                 <div class="hint">
-                  - Recommended flow: run <span class="mono">node scripts/bootstrap_instance.js</span> once, then store the returned service token in your app or agent env.<br>
-                  - Optional shared-deployment mode: keep AtlasRAG auth the same, but send your own provider keys with requests.<br>
-                  - Index at least one document before searching or asking.<br>
-                  - If you see Unauthorized, your token is invalid, expired, or revoked.<br>
-                  - Health check only verifies gateway to TCP reachability.<br>
-                  - API keys are created by admins via <span class="mono">POST /v1/admin/service-tokens</span>.
+                  Stored in <span class="mono">localStorage</span> — never sent to any server except your own AtlasRAG instance.
+                  Token is masked. <button id="apiKeyToggleBtn" type="button" style="background:none;border:none;color:var(--accent-2);cursor:pointer;font-size:11px;padding:0;font-family:var(--sans);">Show</button>
                 </div>
               </div>
 
-              <div class="actions">
-                <button class="btn secondary" id="loginBtn">Login and Save Token</button>
-                <button class="btn danger" id="clearKeyBtn">Forget Token</button>
-                <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
-                <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
+              <div class="actions" style="margin-top:10px;">
+                <button class="btn danger" id="clearKeyBtn">Forget token</button>
               </div>
+
+              <!-- Provider key overrides -->
+              <details class="details" style="margin-top:16px;">
+                <summary>Provider key overrides <span style="color:var(--muted);font-size:12px;font-weight:400;">(optional)</span></summary>
+                <div class="row" style="margin-top:12px;">
+                  <div class="field">
+                    <label for="openAiApiKeyOverride">OpenAI</label>
+                    <input id="openAiApiKeyOverride" type="password" autocomplete="off" placeholder="sk-...">
+                    <div class="hint">Sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
+                  </div>
+                  <div class="field">
+                    <label for="geminiApiKeyOverride">Gemini</label>
+                    <input id="geminiApiKeyOverride" type="password" autocomplete="off" placeholder="AIza...">
+                    <div class="hint">Sent as <span class="mono">X-Gemini-API-Key</span>.</div>
+                  </div>
+                </div>
+                <div class="row" style="margin-top:12px;">
+                  <div class="field">
+                    <label for="anthropicApiKeyOverride">Anthropic</label>
+                    <input id="anthropicApiKeyOverride" type="password" autocomplete="off" placeholder="sk-ant-...">
+                    <div class="hint">Sent as <span class="mono">X-Anthropic-API-Key</span>.</div>
+                  </div>
+                </div>
+                <div class="actions" style="margin-top:12px;">
+                  <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
+                  <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
+                </div>
+              </details>
+
+              <!-- Admin: login with username/password -->
+              <details class="details" style="margin-top:12px;">
+                <summary>Admin login <span style="color:var(--muted);font-size:12px;font-weight:400;">(username + password)</span></summary>
+                <!-- authType hidden input keeps app.js save logic working -->
+                <select id="authType" style="display:none;">
+                  <option value="bearer">JWT (Bearer)</option>
+                  <option value="api_key">Service token (API key)</option>
+                </select>
+                <div class="row" style="margin-top:12px;">
+                  <div class="field">
+                    <label for="loginUser">Username</label>
+                    <input id="loginUser" placeholder="username" autocomplete="username">
+                  </div>
+                  <div class="field">
+                    <label for="loginPass">Password</label>
+                    <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
+                  </div>
+                </div>
+                <div class="actions" style="margin-top:12px;">
+                  <button class="btn secondary" id="loginBtn">Login and save token</button>
+                </div>
+              </details>
 
               <div class="banner" id="settingsBanner"></div>
             </div>

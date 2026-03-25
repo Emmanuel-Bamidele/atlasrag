@@ -15,12 +15,56 @@ Use this guide to classify the setup before you touch Docker, env files, or serv
 
 | Mode | You run AtlasRAG yourself? | You edit AtlasRAG server env files? | You run Docker/Compose? | Where the first service token comes from |
 | --- | --- | --- | --- | --- |
+| **AtlasRAG Hosted** | **No** | **No** | **No** | **Dashboard sign-up → create project** |
 | Self-host: bundled stack | Yes | Yes, `.env` | Yes | Your own bootstrap step |
 | Self-host: BYO Postgres | Yes | Yes, `.env.external-postgres` or equivalent runtime env | Yes | Your own bootstrap step |
 | Use an existing AtlasRAG deployment | No | No | No on the client machine | Existing AtlasRAG admin path |
 | Existing deployment + your provider key | No | No | No on the client machine | Same shared-deployment token path |
 | Backend-as-caller | Maybe, but only on the server side | Only on the backend / AtlasRAG server side | Only where AtlasRAG runs | Same token path as the deployment you use |
 | Human admin | Maybe, if you self-host | Only where AtlasRAG runs | Only where AtlasRAG runs | Human login first, then mint machine tokens |
+
+## AtlasRAG Hosted
+
+Choose this when:
+
+- you do not want to run Docker, Postgres, or any server yourself
+- you want a working API token in under five minutes
+- you are building an app, agent, or prototype that calls AtlasRAG
+
+What you are setting up:
+
+- a Dashboard account
+- one or more projects (each gets its own isolated tenant and token)
+- credit balance for AI generation
+
+What you are not setting up:
+
+- any server, Docker container, or Compose file
+- `.env` files or bootstrap scripts
+- your own Postgres database
+
+How to get your first token:
+
+1. Sign up at the AtlasRAG hosted instance (Google, GitHub, or email)
+2. Click **Dashboard** → **New Project**
+3. Copy the token shown at creation — it is only displayed once
+
+What you save for later:
+
+```bash
+ATLASRAG_BASE_URL=https://YOUR_HOSTED_DOMAIN
+ATLASRAG_API_KEY=atrg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Important:
+
+- tokens from the hosted service start with `atrg_`
+- AI generation (`/ask`, `/boolean_ask`) requires a credit balance; top up from the Dashboard
+- non-generation endpoints (index, search, memory write/recall) are not credit-gated
+
+Read next:
+
+- [`hosted.md`](hosted.md)
 
 ## Self-Host: Bundled Stack
 
@@ -270,6 +314,7 @@ Read next:
 
 Use this rule:
 
+- If you signed up on the AtlasRAG hosted service and got a token from the Dashboard, you are in hosted mode.
 - If you are cloning the repo and running Docker yourself, you are in a self-hosted mode.
 - If somebody already gave you `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`, you are in a shared-deployment mode.
 - If your backend is the only thing that should know the AtlasRAG token, choose backend-as-caller.

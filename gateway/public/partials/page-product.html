@@ -78,11 +78,257 @@
               </div>
             </section>
 
-            <section class="product-quickstart" aria-label="Start building immediately">
+            <!-- ── HOSTED API SECTION ───────────────────────────────────────────── -->
+            <section class="product-hosted" aria-label="Use the hosted API">
+              <div class="product-hosted-head">
+                <p class="product-card-eyebrow">Hosted API</p>
+                <h3>Get a token, add credit, start calling.</h3>
+                <p>No servers to run. Sign up, create a project in the Dashboard, add credit, and you're calling the API in minutes.</p>
+                <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? AtlasRAG is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
+              </div>
+
+              <div class="product-hosted-steps">
+                <div class="product-hosted-step">
+                  <span class="product-flow-number">01</span>
+                  <h4>Sign up &amp; create a project</h4>
+                  <p>Sign in with Google, GitHub, or email. Click <strong>Dashboard → New Project</strong>. Copy the token shown — it's only displayed once.</p>
+                  <div class="product-hosted-token-preview">
+                    <span class="product-hosted-token-prefix">atrg_</span><span class="product-hosted-token-body">••••••••••••••••••••••••••••••••</span>
+                  </div>
+                </div>
+                <div class="product-hosted-step">
+                  <span class="product-flow-number">02</span>
+                  <h4>Add credit for AI generation</h4>
+                  <p>Dashboard → <strong>+ Add Credit</strong>. Choose an amount, pay via Stripe. Indexing and search are free — only <code class="mono">/ask</code> and <code class="mono">/boolean_ask</code> deduct credit.</p>
+                  <div class="product-hosted-credit-badges">
+                    <span class="product-hosted-badge free">Indexing — free</span>
+                    <span class="product-hosted-badge free">Search — free</span>
+                    <span class="product-hosted-badge paid">Ask — uses credit</span>
+                  </div>
+                </div>
+                <div class="product-hosted-step">
+                  <span class="product-flow-number">03</span>
+                  <h4>Wire up your environment</h4>
+                  <p>Set two env vars in your app, agent, or script. That's the entire setup — no Docker, no Postgres, no config files.</p>
+                  <div class="product-qs-code" style="margin-top:auto;">
+                    <pre class="doc-code" id="hostedEnvVars">ATLASRAG_BASE_URL=https://your-host
+ATLASRAG_API_KEY=atrg_your_token</pre>
+                  </div>
+                </div>
+              </div>
+
+              <div class="product-hosted-code-section">
+                <div class="product-hosted-code-head">
+                  <span>API examples</span>
+                  <div class="doc-tabs doc-tabs-compact product-hosted-lang-tabs" data-doc-tabs="hostedExamples">
+                    <button class="doc-tab active" data-doc-tab="curl"   type="button">cURL</button>
+                    <button class="doc-tab"        data-doc-tab="python" type="button">Python</button>
+                    <button class="doc-tab"        data-doc-tab="node"   type="button">Node.js</button>
+                    <button class="doc-tab"        data-doc-tab="js"     type="button">JavaScript</button>
+                  </div>
+                </div>
+
+                <div class="doc-panels" data-doc-panels="hostedExamples">
+
+                  <!-- cURL -->
+                  <div class="doc-panel active" data-doc-panel="curl">
+                    <div class="product-hosted-code-grid">
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Index a document</div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedCurlIndex">curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
+  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+  -H "Idempotency-Key: doc-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId":      "welcome",
+    "collection": "default",
+    "text":       "AtlasRAG stores memory for agents."
+  }'</pre>
+                        </div>
+                      </div>
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedCurlAsk">curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
+  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What does AtlasRAG store?",
+    "k":        5,
+    "policy":   "amvl"
+  }'</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Python -->
+                  <div class="doc-panel" data-doc-panel="python">
+                    <div class="product-hosted-code-grid">
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Index a document</div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedPyIndex">import os, requests
+
+BASE = os.environ["ATLASRAG_BASE_URL"]
+KEY  = os.environ["ATLASRAG_API_KEY"]
+HDR  = {
+    "Authorization": f"Bearer {KEY}",
+    "Content-Type":  "application/json",
+}
+
+requests.post(
+    f"{BASE}/v1/docs",
+    headers={**HDR, "Idempotency-Key": "doc-001"},
+    json={
+        "docId":      "welcome",
+        "collection": "default",
+        "text":       "AtlasRAG stores memory for agents.",
+    },
+).raise_for_status()</pre>
+                        </div>
+                      </div>
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedPyAsk">r = requests.post(
+    f"{BASE}/v1/ask",
+    headers=HDR,
+    json={
+        "question": "What does AtlasRAG store?",
+        "k":        5,
+        "policy":   "amvl",
+    },
+)
+r.raise_for_status()
+print(r.json()["data"]["answer"])</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Node.js -->
+                  <div class="doc-panel" data-doc-panel="node">
+                    <div class="product-hosted-code-grid">
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Index a document</div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedNodeIndex">const BASE = process.env.ATLASRAG_BASE_URL;
+const KEY  = process.env.ATLASRAG_API_KEY;
+
+async function ar(path, body, extra = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    method:  "POST",
+    headers: {
+      "Authorization": `Bearer ${KEY}`,
+      "Content-Type":  "application/json",
+      ...extra,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+await ar("/v1/docs",
+  { docId: "welcome", collection: "default",
+    text: "AtlasRAG stores memory for agents." },
+  { "Idempotency-Key": "doc-001" }
+);</pre>
+                        </div>
+                      </div>
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedNodeAsk">const { data } = await ar("/v1/ask", {
+  question: "What does AtlasRAG store?",
+  k:        5,
+  policy:   "amvl",
+});
+
+console.log(data.answer);</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- JavaScript (browser) -->
+                  <div class="doc-panel" data-doc-panel="js">
+                    <div class="product-hosted-code-grid">
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Index a document</div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedJsIndex">const BASE = "https://your-host";
+const KEY  = "atrg_your_token"; // keep server-side in prod
+
+await fetch(`${BASE}/v1/docs`, {
+  method:  "POST",
+  headers: {
+    "Authorization":  `Bearer ${KEY}`,
+    "Content-Type":   "application/json",
+    "Idempotency-Key": "doc-001",
+  },
+  body: JSON.stringify({
+    docId:      "welcome",
+    collection: "default",
+    text:       "AtlasRAG stores memory for agents.",
+  }),
+});</pre>
+                        </div>
+                      </div>
+                      <div class="product-hosted-code-block">
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="doc-copy-wrap">
+                          <pre class="doc-code" id="hostedJsAsk">const res = await fetch(`${BASE}/v1/ask`, {
+  method:  "POST",
+  headers: {
+    "Authorization": `Bearer ${KEY}`,
+    "Content-Type":  "application/json",
+  },
+  body: JSON.stringify({
+    question: "What does AtlasRAG store?",
+    k:        5,
+    policy:   "amvl",
+  }),
+});
+
+const { data } = await res.json();
+console.log(data.answer);</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div><!-- /doc-panels -->
+              </div><!-- /product-hosted-code-section -->
+
+              <div class="product-hosted-errors">
+                <div class="product-hosted-error-head">If AI generation is blocked</div>
+                <div class="product-hosted-error-row">
+                  <div class="product-hosted-error-item">
+                    <span class="product-hosted-error-code">402</span>
+                    <span class="product-hosted-error-label"><code class="mono">CREDIT_REQUIRED</code> — balance is zero. Add credit from the Dashboard.</span>
+                  </div>
+                  <div class="product-hosted-error-item">
+                    <span class="product-hosted-error-code">503</span>
+                    <span class="product-hosted-error-label"><code class="mono">CREDIT_CHECK_FAILED</code> — transient error. Retry with backoff.</span>
+                  </div>
+                  <div class="product-hosted-error-item">
+                    <span class="product-hosted-error-code note">—</span>
+                    <span class="product-hosted-error-label">Self-hosted tokens (no <code class="mono">atrg_</code> prefix) bypass the credit system entirely.</span>
+                  </div>
+                </div>
+              </div>
+
+            </section>
+            <!-- ── END HOSTED API SECTION ──────────────────────────────────────── -->
+
+            <section class="product-quickstart" id="product-self-host" aria-label="Start building immediately">
               <div class="product-quickstart-head">
-                <p class="product-card-eyebrow">Start Building Immediately</p>
+                <p class="product-card-eyebrow">Self-Host And Build On Top</p>
                 <h3>Up and running in minutes.</h3>
-                <p>Install the CLI, start the stack, and write your first memory in under five minutes.</p>
+                <p>Install the CLI, start the stack, and write your first memory in under five minutes. Full control — your infra, your data.</p>
               </div>
               <div class="product-quickstart-steps">
                 <div class="product-qs-step">

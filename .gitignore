@@ -30,3 +30,8 @@ __pycache__/
 # Node local/dev artifacts
 node_modules/
 gateway/node_modules/
+
+# Private portal plugin (billing, auth, project management).
+# Lives in a separate private repository. Not part of the open-source distribution.
+gateway/plugins/
+docker-compose.override.yml

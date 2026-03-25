@@ -887,21 +887,20 @@ function mountCopyButtonOnTarget(btn, targetEl){
   }
 }
 
-function initDocsCopyButtons(){
-  const docsPage = $("pageDocs");
-  if (!docsPage) return;
+function initPageCopyButtons(page){
+  if (!page) return;
 
   let generatedCount = 0;
-  const codeBlocks = Array.from(docsPage.querySelectorAll("pre.doc-code"));
+  const codeBlocks = Array.from(page.querySelectorAll("pre.doc-code"));
   codeBlocks.forEach((pre) => {
     if (!pre.id) {
       generatedCount += 1;
-      pre.id = `docCodeAuto${generatedCount}`;
+      pre.id = `pageCodeAuto${generatedCount}`;
     }
     ensureDocCopyWrap(pre);
   });
 
-  Array.from(docsPage.querySelectorAll("[data-copy-target]")).forEach((btn) => {
+  Array.from(page.querySelectorAll("[data-copy-target]")).forEach((btn) => {
     const targetId = btn.getAttribute("data-copy-target");
     const targetEl = targetId ? $(targetId) : null;
     if (targetEl?.matches?.("pre.doc-code")) {
@@ -913,10 +912,8 @@ function initDocsCopyButtons(){
   codeBlocks.forEach((pre) => {
     const wrap = pre.parentElement;
     if (!wrap) return;
-    const existingBtn = docsPage.querySelector(`[data-copy-target="${pre.id}"]`);
-    if (existingBtn) {
-      return;
-    }
+    const existingBtn = page.querySelector(`[data-copy-target="${pre.id}"]`);
+    if (existingBtn) return;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "copy-inline-btn";
@@ -926,6 +923,12 @@ function initDocsCopyButtons(){
     bindCopyButton(btn);
   });
 }
+
+function initDocsCopyButtons(){
+  initPageCopyButtons($("pageDocs"));
+  initPageCopyButtons($("pageProduct"));
+}
+
 
 function initDocsAgentConnect(){
   const section = $("docAgentConnect");
@@ -2101,6 +2104,35 @@ window.addEventListener("DOMContentLoaded", () => {
   if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = loadStoredProviderOverride("openai");
   if ($("geminiApiKeyOverride")) $("geminiApiKeyOverride").value = loadStoredProviderOverride("gemini");
   if ($("anthropicApiKeyOverride")) $("anthropicApiKeyOverride").value = loadStoredProviderOverride("anthropic");
+
+  // Auto-save service token on paste/input (debounced 600 ms) — no button required
+  let _apiKeySaveTimer = null;
+  $("apiKey").addEventListener("input", () => {
+    const badge = $("apiKeySavedBadge");
+    if (badge) badge.style.display = "none";
+    clearTimeout(_apiKeySaveTimer);
+    _apiKeySaveTimer = setTimeout(() => {
+      const val = $("apiKey").value.trim();
+      if (!val) return;
+      // Detect type: service tokens start with "atrg_" or are long hex strings; otherwise treat as bearer JWT
+      const type = (val.startsWith("atrg_") || (!val.includes(".") && val.length > 32)) ? "api_key" : "bearer";
+      saveStoredAuth(type, val);
+      if ($("authType")) $("authType").value = type;
+      if (badge) { badge.style.display = "inline"; setTimeout(() => { if (badge) badge.style.display = "none"; }, 2500); }
+      loadDocsList();
+      loadCollectionScopeOptions();
+    }, 600);
+  });
+
+  // Show / hide toggle for the token field
+  if ($("apiKeyToggleBtn")) {
+    $("apiKeyToggleBtn").addEventListener("click", () => {
+      const input = $("apiKey");
+      const revealing = input.type === "password";
+      input.type = revealing ? "text" : "password";
+      $("apiKeyToggleBtn").textContent = revealing ? "Hide" : "Show";
+    });
+  }
 
   if ($("saveKeyBtn")) {
     $("saveKeyBtn").onclick = () => {

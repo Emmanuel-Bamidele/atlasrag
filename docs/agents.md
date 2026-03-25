@@ -16,6 +16,7 @@ Use this if you need to choose the right usage mode quickly.
 
 | Usage mode | Best when | Read next |
 | --- | --- | --- |
+| **Use AtlasRAG as a hosted service** | **No infrastructure to run — sign up, create a project, get an `atrg_` token** | [**`hosted.md`**](hosted.md) |
 | Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [`self-hosting.md`](self-hosting.md) |
 | Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
 | Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Direct service token](#direct-service-token) |
@@ -493,6 +494,68 @@ The SDK already understands:
 - JWT or API key auth
 - idempotency headers
 - search, ask, docs, memory, and jobs endpoints
+
+## Hosted Service Tokens And Credits
+
+If your token was issued from the AtlasRAG hosted Dashboard (it starts with `atrg_`), generation endpoints require a positive credit balance.
+
+Affected endpoints:
+
+- `POST /ask`
+- `POST /v1/ask`
+- `POST /boolean_ask`
+- `POST /v1/boolean_ask`
+
+Not affected (no credit check):
+
+- `POST /v1/docs`
+- `POST /v1/docs/url`
+- `GET /v1/search`
+- `POST /v1/memory/write`
+- `POST /v1/memory/recall`
+- `POST /v1/memory/reflect`
+
+### 402 — No Credits
+
+```json
+HTTP 402 Payment Required
+
+{
+  "error": "Insufficient credits. Add credit from the Dashboard to continue generating.",
+  "code": "CREDIT_REQUIRED"
+}
+```
+
+Handle this in code by checking `res.status === 402` and `data.code === "CREDIT_REQUIRED"`. Do not treat this as a generic server error — it means the account balance is zero and the user or operator needs to top up.
+
+```js
+const res = await fetch(`${BASE}/v1/ask`, { method: "POST", headers, body });
+const data = await res.json();
+
+if (res.status === 402 && data.code === "CREDIT_REQUIRED") {
+  // Prompt user to add credit, queue for retry, or surface as a billing error
+  throw new BillingError("No credits remaining. Top up at the Dashboard.");
+}
+
+if (!res.ok) throw new Error(data.error || "AtlasRAG error");
+```
+
+### 503 — Credit Check Failed
+
+```json
+HTTP 503 Service Unavailable
+
+{
+  "error": "Service temporarily unavailable. Please try again.",
+  "code": "CREDIT_CHECK_FAILED"
+}
+```
+
+This means the server encountered a transient error verifying the credit balance. It does not mean the account has no credit. Retry with exponential backoff. The server blocks generation rather than allowing an unverified request through.
+
+### Self-Hosted Tokens Are Not Affected
+
+If you are self-hosting AtlasRAG, tokens without the `atrg_` prefix bypass the credit system entirely. The 402 and 503 responses above will never be returned for those tokens.
 
 ## Security Notes For Agent Teams
 

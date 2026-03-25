@@ -1844,6 +1844,7 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                         <a href="#doc-setup-modes">Start here</a>
                         <a href="#doc-setup-boundaries">What changes by mode</a>
                         <a href="#doc-setup-guides">Mode-by-mode setup</a>
+                        <a href="#mode-hosted">AtlasRAG Hosted</a>
                         <a href="#doc-setup-rules">Credential rules</a>
                         <a href="#doc-setup-mistakes">Common mistakes</a>
                       </div>
@@ -1870,6 +1871,7 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                 <div class="doc-block">
                   <div class="doc-label">What the mode names mean</div>
                   <ul>
+                    <li><strong>AtlasRAG Hosted:</strong> AtlasRAG runs the infrastructure. You sign up, get an <span class="mono">atrg_</span> token from the Dashboard, and call the API. AI generation requires a credit balance topped up from the Dashboard.</li>
                     <li><strong>Self-host:</strong> you clone the repository, run AtlasRAG yourself, and create the first admin and service token yourself.</li>
                     <li><strong>Shared deployment:</strong> AtlasRAG already exists as a service. You do not need to clone the repo just to consume the API.</li>
                     <li><strong>Backend-as-caller:</strong> your own backend holds the AtlasRAG token and makes server-to-server requests on behalf of users.</li>
@@ -1887,6 +1889,12 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td><strong>AtlasRAG Hosted</strong></td>
+                        <td>AtlasRAG runs the infrastructure. You sign up, create a project in the Dashboard, and call the API with an <span class="mono">atrg_</span> token.</td>
+                        <td>You do not want to run any server, Docker, or Postgres. You want a working token in under five minutes.</td>
+                        <td>Sign up → Dashboard → <strong>New Project</strong> → copy your token. Add credit for AI generation.</td>
+                      </tr>
                       <tr>
                         <td>Self-host: bundled stack</td>
                         <td>You run AtlasRAG yourself with the bundled Compose stack, including the bundled Postgres service.</td>
@@ -1957,6 +1965,13 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                     </thead>
                     <tbody>
                       <tr>
+                        <td><strong>AtlasRAG Hosted</strong></td>
+                        <td>No</td>
+                        <td>No</td>
+                        <td>No</td>
+                        <td>Dashboard sign-up → create project → token shown once</td>
+                      </tr>
+                      <tr>
                         <td>Self-host: bundled stack</td>
                         <td>Yes</td>
                         <td>Yes</td>
@@ -2024,6 +2039,7 @@ atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" -
                 <div class="doc-tabs" data-doc-tabs="usageModes">
                   <button class="doc-tab active" data-doc-tab="bundled" type="button">Self-host (bundled)</button>
                   <button class="doc-tab" data-doc-tab="byoPostgres" type="button">Self-host (BYO Postgres)</button>
+                  <button class="doc-tab" data-doc-tab="hosted" type="button">AtlasRAG Hosted</button>
                   <button class="doc-tab" data-doc-tab="shared" type="button">Use existing deployment</button>
                   <button class="doc-tab" data-doc-tab="sharedOpenAi" type="button">Existing deployment + your provider key</button>
                   <button class="doc-tab" data-doc-tab="backendProxy" type="button">Backend-as-caller</button>
@@ -2212,6 +2228,135 @@ ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <div class="doc-label">8. Smoke test the external-Postgres path</div>
                       <pre class="doc-code">curl -X GET "${ATLASRAG_BASE_URL}/v1/search?q=atlasrag&k=3" \
   -H "X-API-Key: ${ATLASRAG_API_KEY}"</pre>
+                    </div>
+                  </div>
+
+                  <div class="doc-panel" data-doc-panel="hosted">
+                    <div id="mode-hosted"></div>
+                    <div class="doc-block">
+                      <div class="doc-label">Best for</div>
+                      <p>Developers who want a working AtlasRAG API token in under five minutes without running any infrastructure. AtlasRAG manages the server, Postgres, and AI provider — you sign up, create a project, and call the API.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are setting up</div>
+                      <ul>
+                        <li>A Dashboard account (Google, GitHub, or email sign-in)</li>
+                        <li>One or more projects — each is an isolated AtlasRAG tenant</li>
+                        <li>A credit balance for AI generation</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">You are not setting up</div>
+                      <ul>
+                        <li>Any server, Docker container, or Compose file</li>
+                        <li><span class="mono">.env</span> files or bootstrap scripts</li>
+                        <li>Your own Postgres database for AtlasRAG</li>
+                      </ul>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">1. Sign up and create a project</div>
+                      <ol>
+                        <li>Go to the hosted instance and sign in with Google, GitHub, or email.</li>
+                        <li>Click <strong>Dashboard</strong> in the nav.</li>
+                        <li>Click <strong>+ New Project</strong>, enter a name, and click <strong>Create</strong>.</li>
+                        <li>Copy the token shown — it is only displayed once.</li>
+                      </ol>
+                      <p class="hint">Tokens from the hosted service start with <span class="mono">atrg_</span>. If you close the dialog without copying the token, create a new one from the project's token list and revoke the old one.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">2. Add credits</div>
+                      <p>AI generation (<span class="mono">/ask</span>, <span class="mono">/boolean_ask</span>) requires a positive credit balance. Indexing, search, and memory operations are not credit-gated. Write operations (<span class="mono">/v1/docs</span>, <span class="mono">/v1/memory/write</span>) do update the storage meter, which is tracked separately and shown in the Dashboard.</p>
+                      <ol>
+                        <li>In the Dashboard, click <strong>+ Add Credit</strong> in the Credits &amp; Billing card.</li>
+                        <li>Choose a preset amount or enter a custom USD amount.</li>
+                        <li>Complete payment in Stripe Checkout. You are redirected back to the Dashboard with your balance updated.</li>
+                      </ol>
+                      <p class="hint">In test mode, use Stripe card <span class="mono">4242 4242 4242 4242</span> with any future expiry, any CVC, and any ZIP.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">3. Store your runtime env</div>
+                      <pre class="doc-code">ATLASRAG_BASE_URL=https://YOUR_HOSTED_DOMAIN
+ATLASRAG_API_KEY=atrg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">4. Make your first requests</div>
+                      <pre class="doc-code"># Index a document (no credit needed)
+curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
+  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+  -H "Idempotency-Key: hosted-001" \
+  -H "Content-Type: application/json" \
+  -d '{"docId":"welcome","collection":"default","text":"AtlasRAG stores memory for agents."}'
+
+# Ask a question (deducts credit)
+curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
+  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What does AtlasRAG store?","k":5,"policy":"amvl"}'</pre>
+                      <p class="hint">The hosted instance supplies the AI provider. You do not need to send <span class="mono">X-OpenAI-API-Key</span> unless you want to override the server default.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">Error codes specific to hosted tokens</div>
+                      <table class="table">
+                        <thead>
+                          <tr><th>HTTP status</th><th>code field</th><th>Meaning</th><th>Fix</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>402</td>
+                            <td><span class="mono">CREDIT_REQUIRED</span></td>
+                            <td>Account credit balance is zero. Generation is paused.</td>
+                            <td>Add credit from the Dashboard, then retry.</td>
+                          </tr>
+                          <tr>
+                            <td>503</td>
+                            <td><span class="mono">CREDIT_CHECK_FAILED</span></td>
+                            <td>Transient error verifying the credit balance. The server blocks rather than allows an unverified request.</td>
+                            <td>Retry with exponential backoff. Does not mean the balance is zero.</td>
+                          </tr>
+                          <tr>
+                            <td>401</td>
+                            <td>—</td>
+                            <td>Token is missing, malformed, revoked, or from a different deployment.</td>
+                            <td>Verify the token starts with <span class="mono">atrg_</span> and is active in the Dashboard.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <p>Handling <span class="mono">CREDIT_REQUIRED</span> in code:</p>
+                      <pre class="doc-code">const res = await fetch(`${BASE}/v1/ask`, { method: "POST", headers, body });
+const data = await res.json();
+
+if (res.status === 402 && data.code === "CREDIT_REQUIRED") {
+  // Prompt user to top up, or queue for retry after top-up
+  throw new BillingError("No credits remaining.");
+}
+if (!res.ok) throw new Error(data.error || "AtlasRAG error");</pre>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">Managing tokens</div>
+                      <p>From the Dashboard, on each project's token list you can:</p>
+                      <ul>
+                        <li><strong>Create additional tokens</strong> — useful for separating production, staging, and CI</li>
+                        <li><strong>Revoke a token</strong> — immediately invalidates it with no grace period</li>
+                        <li><strong>See last used time</strong> — per-token visibility into which are active</li>
+                      </ul>
+                      <p>The plain token value is only shown at creation time. If you need to copy it again in the same browser session, click <strong>Copy</strong> on the token row. If the session has expired, create a new token and revoke the old one.</p>
+                    </div>
+                    <div class="doc-block">
+                      <div class="doc-label">Hosted vs self-hosted</div>
+                      <table class="table">
+                        <thead>
+                          <tr><th></th><th>AtlasRAG Hosted</th><th>Self-Hosted</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr><td>Run Docker</td><td>No</td><td>Yes</td></tr>
+                          <tr><td>Manage Postgres</td><td>No</td><td>Yes</td></tr>
+                          <tr><td>Token comes from</td><td>Dashboard sign-up</td><td><span class="mono">bootstrap_instance.js</span></td></tr>
+                          <tr><td>Token prefix</td><td><span class="mono">atrg_</span></td><td>No fixed prefix</td></tr>
+                          <tr><td>AI generation billing</td><td>Credit balance in Dashboard</td><td>Your own provider key billed directly</td></tr>
+                          <tr><td>Storage billing</td><td>Measured per write, shown in Dashboard</td><td>Not tracked</td></tr>
+                          <tr><td>402 / 503 credit errors</td><td>Yes — for <span class="mono">atrg_</span> tokens with a project</td><td>Never</td></tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 

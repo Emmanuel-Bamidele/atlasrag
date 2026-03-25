@@ -9,6 +9,7 @@ If you are not sure which guide to open first, use this table.
 | Usage mode | Best when | Read first |
 | --- | --- | --- |
 | Not sure which setup path matches your situation | You need to understand what is self-hosted, what is shared, and where the first token comes from before you start | [`setup-modes.md`](setup-modes.md) |
+| **Use AtlasRAG as a hosted service** | **You do not want to run any infrastructure — sign up, get a token, and call the API** | [**`hosted.md`**](hosted.md) |
 | Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [`self-hosting.md`](self-hosting.md) |
 | Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
 | Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [`agents.md`](agents.md) |
@@ -20,11 +21,13 @@ If you are not sure which guide to open first, use this table.
 
 1. [`setup-modes.md`](setup-modes.md)
    Use this if you are not sure which setup mode you need yet.
-2. [`self-hosting.md`](self-hosting.md)
+2. [`hosted.md`](hosted.md)
+   Use this if you are using the AtlasRAG hosted service — no Docker or Postgres required.
+3. [`self-hosting.md`](self-hosting.md)
    Use this if you want the fastest path from clone to working local or single-node deployment.
-3. [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
+4. [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
    Use this if you already have Postgres, secret management, and your own deployment conventions.
-4. [`agents.md`](agents.md)
+5. [`agents.md`](agents.md)
    Use this if you are integrating AtlasRAG into an app backend, worker, or AI agent runtime.
 
 Short version:

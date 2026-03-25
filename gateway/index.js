@@ -241,6 +241,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Optional private portal plugin ───────────────────────────────────────────
+// Not part of the open-source distribution. Place the private plugin in
+// gateway/plugins/ (directory is git-ignored). The app runs normally without it.
+try {
+  const portalPlugin = require("./plugins");
+  portalPlugin.mount(app, { renderPublicUiTemplate });
+  console.log("[plugins] portal: mounted");
+} catch (e) {
+  if (e.code !== "MODULE_NOT_FOUND") throw e;
+  // gateway/plugins/ not present — running as open-source build, no portal features
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.get(["/", "/index.html"], (req, res, next) => {
   try {
     const html = renderPublicUiTemplate();
