@@ -17,7 +17,7 @@
                   <span id="apiKeySavedBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--good);pointer-events:none;">Saved</span>
                 </div>
                 <div class="hint">
-                  Stored in <span class="mono">localStorage</span> — never sent to any server except your own AtlasRAG instance.
+                  Stored in <span class="mono">localStorage</span> — never sent to any server except your own SupaVector instance.
                   Token is masked. <button id="apiKeyToggleBtn" type="button" style="background:none;border:none;color:var(--accent-2);cursor:pointer;font-size:11px;padding:0;font-family:var(--sans);">Show</button>
                 </div>
               </div>
@@ -242,12 +242,12 @@
                 <div class="field">
                   <label for="tenantEmbedProvider">Embedding provider</label>
                   <input id="tenantEmbedProvider" readonly>
-                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">atlasrag changemodel</span>.</div>
+                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>.</div>
                 </div>
                 <div class="field">
                   <label for="tenantEmbedModel">Embedding model</label>
                   <input id="tenantEmbedModel" readonly>
-                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">atlasrag changemodel</span>. Changing the embedding model requires a reindex on restart.</div>
+                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>. Changing the embedding model requires a reindex on restart.</div>
                 </div>
               </div>
 

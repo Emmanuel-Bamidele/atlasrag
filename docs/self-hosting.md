@@ -1,6 +1,6 @@
-# AtlasRAG Self-Hosting Guide
+# SupaVector Self-Hosting Guide
 
-This guide is for teams who want to fork or clone AtlasRAG and run it themselves without relying on a hosted AtlasRAG service.
+This guide is for teams who want to fork or clone SupaVector and run it themselves without relying on a hosted SupaVector service.
 
 If you are not yet sure whether you should self-host at all, start with [`setup-modes.md`](setup-modes.md) first.
 
@@ -24,34 +24,34 @@ If you already have your own Postgres and do not want to run the bundled databas
 
 ## What You Are Running
 
-AtlasRAG has three core runtime pieces:
+SupaVector has three core runtime pieces:
 
 - `gateway/`
   Node.js API layer, auth, docs UI, jobs, and RAG orchestration
-- `atlasrag/`
+- `supavector/`
   the vector store used for embedding storage and retrieval
 - Postgres
   persistent state for users, tenants, tokens, jobs, chunks, and memory metadata
 
 In local Compose, the repo starts all of these for you.
 
-The bundled Postgres path and the external-Postgres path are both still self-hosted AtlasRAG deployments. That choice only changes which database this AtlasRAG instance uses.
+The bundled Postgres path and the external-Postgres path are both still self-hosted SupaVector deployments. That choice only changes which database this SupaVector instance uses.
 
 ## Recommended Auth Model
 
-Use AtlasRAG like this:
+Use SupaVector like this:
 
 - humans use username/password or SSO for admin actions and the browser UI
 - apps, backends, workers, and agents use a service token
-- if a caller wants AtlasRAG to use its own provider key while still using this AtlasRAG deployment, it can send the matching request-scoped header on supported sync requests: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`
+- if a caller wants SupaVector to use its own provider key while still using this SupaVector deployment, it can send the matching request-scoped header on supported sync requests: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`
 
-Service tokens created by this deployment are valid only for this deployment. They are not interchangeable with tokens from a different AtlasRAG instance, whether that other instance is local, remote, shared, or managed elsewhere.
+Service tokens created by this deployment are valid only for this deployment. They are not interchangeable with tokens from a different SupaVector instance, whether that other instance is local, remote, shared, or managed elsewhere.
 
 That means your normal machine runtime should keep:
 
 ```bash
-ATLASRAG_BASE_URL=http://localhost:3000
-ATLASRAG_API_KEY=...
+SUPAVECTOR_BASE_URL=http://localhost:3000
+SUPAVECTOR_API_KEY=...
 ```
 
 You should not design your runtime around repeated human login calls.
@@ -76,7 +76,7 @@ Recommended baseline:
 
 ```bash
 git clone <your-fork-or-repo-url>
-cd atlasrag
+cd supavector
 ```
 
 ### 2. Create The Local Env File
@@ -111,14 +111,14 @@ COMPACT_MODEL=gpt-4o-mini
 ```
 
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
-`EMBED_MODEL` is instance-wide. Because AtlasRAG stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
-On startup, AtlasRAG also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
-`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because AtlasRAG still needs a provider-native embedding endpoint for indexing and retrieval.
+`EMBED_MODEL` is instance-wide. Because SupaVector stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
+On startup, SupaVector also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
+`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because SupaVector still needs a provider-native embedding endpoint for indexing and retrieval.
 Common generation presets include:
 - OpenAI: `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, `o4-mini`
 - Gemini: `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite`, `gemini-2.0-flash`
 - Anthropic: `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-3-7-sonnet-latest`, `claude-3-5-haiku-latest`
-Reasoning-style OpenAI presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with AtlasRAG. The gateway omits unsupported `temperature` parameters automatically for those models.
+Reasoning-style OpenAI presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with SupaVector. The gateway omits unsupported `temperature` parameters automatically for those models.
 You can inspect the live preset catalog and instance defaults at `GET /v1/models`.
 
 Useful optional values:
@@ -177,33 +177,33 @@ Save the printed token immediately. The API does not show it again later.
 ### 5. Export Runtime Env For Your App Or Agent
 
 ```bash
-export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_BASE_URL="http://localhost:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
 ```
 
 ### 6. Index A Document
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: demo-doc-1" \
   -H "Content-Type: application/json" \
   -d '{
     "docId":"welcome",
     "collection":"default",
-    "text":"AtlasRAG stores memory for agents and returns grounded answers with citations."
+    "text":"SupaVector stores memory for agents and returns grounded answers with citations."
   }'
 ```
 
 ### 7. Ask A Question
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question":"What does AtlasRAG store?",
+    "question":"What does SupaVector store?",
     "k":3,
     "policy":"amvl",
     "provider":"openai",
@@ -213,17 +213,17 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
 
 `provider` and `model` are optional and override the tenant or instance ask provider/model for that single request.
 
-On the CLI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` also accept the same numbered shortcuts shown by `atlasrag changemodel`. The live preset catalog is available from `GET /v1/models`.
+On the CLI, `supavector ask --model ...` and `supavector boolean_ask --model ...` also accept the same numbered shortcuts shown by `supavector changemodel`. The live preset catalog is available from `GET /v1/models`.
 
 ### 8. Ask A Strict True/False Question
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question":"Does AtlasRAG store memory for agents?",
+    "question":"Does SupaVector store memory for agents?",
     "k":3,
     "policy":"amvl"
   }'
@@ -236,10 +236,10 @@ This returns only `true`, `false`, or `invalid`. Use it when the caller needs a 
 Admins can read or update tenant-level generation defaults with:
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/admin/tenant" \
   -H "Authorization: Bearer ${TOKEN}"
 
-curl -sS -X PATCH "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
+curl -sS -X PATCH "${SUPAVECTOR_BASE_URL}/v1/admin/tenant" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -258,9 +258,9 @@ curl -sS -X PATCH "${ATLASRAG_BASE_URL}/v1/admin/tenant" \
 
 Those settings are tenant-scoped. `embedProvider` and `embedModel` are not part of this API because they remain instance-wide self-hosted env settings.
 
-### 9. Optional: Bring Your Own Provider Key To A Shared AtlasRAG Deployment
+### 9. Optional: Bring Your Own Provider Key To A Shared SupaVector Deployment
 
-If you are using an AtlasRAG instance that already has its own Postgres and auth, but you want your requests to use your own provider key, add the matching request-scoped header:
+If you are using an SupaVector instance that already has its own Postgres and auth, but you want your requests to use your own provider key, add the matching request-scoped header:
 
 ```bash
 -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}"
@@ -278,7 +278,7 @@ This works on supported sync request paths such as:
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 
-It is intentionally request-scoped. AtlasRAG does not persist that key for the tenant.
+It is intentionally request-scoped. SupaVector does not persist that key for the tenant.
 
 `POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
@@ -361,7 +361,7 @@ This removes:
 
 For a self-hosted upgrade:
 
-1. update the installed checkout with `atlasrag update`, or pull the new repo version manually
+1. update the installed checkout with `supavector update`, or pull the new repo version manually
 2. review changes to `.env.example`, `docker-compose.yml`, and `README.md`
 3. confirm your secrets and runtime env are still correct
 4. redeploy with:
@@ -375,7 +375,7 @@ docker compose up -d --build
 
 ## Backups
 
-AtlasRAG state lives in two places:
+SupaVector state lives in two places:
 
 - Postgres
 - vector store data volume
@@ -441,7 +441,7 @@ Most common causes:
 
 Usually one of:
 
-- wrong `ATLASRAG_API_KEY`
+- wrong `SUPAVECTOR_API_KEY`
 - token expired or revoked
 - using JWT where the runtime expects a service token
 - missing `Idempotency-Key` on write endpoints
@@ -470,4 +470,4 @@ Then hard-refresh the browser.
 After this guide, use:
 
 - [`bring-your-own-postgres.md`](bring-your-own-postgres.md) if you already have Postgres and secret management
-- [`agents.md`](agents.md) if you are wiring AtlasRAG into an app backend or AI runtime
+- [`agents.md`](agents.md) if you are wiring SupaVector into an app backend or AI runtime

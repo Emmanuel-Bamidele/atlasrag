@@ -26,12 +26,12 @@ const {
 } = require("../gateway/model_catalog");
 
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
-const CONFIG_DIR = path.join(os.homedir(), ".atlasrag");
+const CONFIG_DIR = path.join(os.homedir(), ".supavector");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
-const DEFAULT_INSTALL_HOME = path.join(os.homedir(), ".atlasrag");
+const DEFAULT_INSTALL_HOME = path.join(os.homedir(), ".supavector");
 const ONBOARD_ANSWER_MODEL_OPTIONS = GENERATION_MODEL_PRESETS;
-const SHELL_PATH_BLOCK_START = "# >>> atlasrag >>>";
-const SHELL_PATH_BLOCK_END = "# <<< atlasrag <<<";
+const SHELL_PATH_BLOCK_START = "# >>> supavector >>>";
+const SHELL_PATH_BLOCK_END = "# <<< supavector <<<";
 const INGESTIBLE_TEXT_EXTENSIONS = new Set([
   ".txt",
   ".md",
@@ -191,8 +191,8 @@ function readConfig() {
 }
 
 function resolveInstallHome(env = process.env, homeDir = os.homedir()) {
-  const raw = env && typeof env.ATLASRAG_HOME === "string" ? env.ATLASRAG_HOME : "";
-  return path.resolve(raw || path.join(homeDir, ".atlasrag"));
+  const raw = env && typeof env.SUPAVECTOR_HOME === "string" ? env.SUPAVECTOR_HOME : "";
+  return path.resolve(raw || path.join(homeDir, ".supavector"));
 }
 
 function buildInstallBinDir(installHome = DEFAULT_INSTALL_HOME) {
@@ -200,7 +200,7 @@ function buildInstallBinDir(installHome = DEFAULT_INSTALL_HOME) {
 }
 
 function buildInstallRepoDir(installHome = DEFAULT_INSTALL_HOME) {
-  return path.join(path.resolve(String(installHome || DEFAULT_INSTALL_HOME)), "src", "atlasrag");
+  return path.join(path.resolve(String(installHome || DEFAULT_INSTALL_HOME)), "src", "supavector");
 }
 
 function buildShellPathLine(binDir) {
@@ -420,7 +420,7 @@ function requireCliDependency(name) {
     return require(name);
   } catch (error) {
     if (error && error.code === "MODULE_NOT_FOUND") {
-      throw new Error(`Missing dependency "${name}". Run \`npm install\` in the AtlasRAG project root.`);
+      throw new Error(`Missing dependency "${name}". Run \`npm install\` in the SupaVector project root.`);
     }
     throw error;
   }

@@ -1,4 +1,4 @@
-class AtlasRAGClient {
+class SupaVectorClient {
   constructor(options = {}) {
     const baseUrl = options.baseUrl || "http://localhost:3000";
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -287,4 +287,4 @@ class AtlasRAGClient {
   }
 }
 
-module.exports = { AtlasRAGClient };
+module.exports = { SupaVectorClient };

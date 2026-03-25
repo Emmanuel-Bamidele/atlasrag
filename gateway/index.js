@@ -462,10 +462,10 @@ const MEMORY_EVENT_DEFAULTS = {
 };
 const MEMORY_TASK_EVENT_TYPES = new Set(["task_success", "task_fail"]);
 const OPENAPI_HIDDEN_TAGS = new Set(["Metrics"]);
-const MCP_SERVER_NAME = "atlasrag-docs";
+const MCP_SERVER_NAME = "supavector-docs";
 const MCP_SERVER_VERSION = "1.0.0";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
-const MCP_RESOURCE_URI_PREFIX = "atlasrag://docs/";
+const MCP_RESOURCE_URI_PREFIX = "supavector://docs/";
 
 function filterPublicOpenApiDoc(doc) {
   const inputTags = Array.isArray(doc?.tags) ? doc.tags : [];
@@ -1663,21 +1663,21 @@ function emitPromLatencySummary(lines, summary, labels) {
     ["0.99", summary.p99_ms]
   ];
   for (const [q, v] of quantiles) {
-    pushPromMetric(lines, "atlasrag_request_latency_ms", { ...base, quantile: q }, v);
+    pushPromMetric(lines, "supavector_request_latency_ms", { ...base, quantile: q }, v);
   }
   if (Number.isFinite(summary.avg_ms) && Number.isFinite(summary.count)) {
     const sum = summary.avg_ms * summary.count;
-    pushPromMetric(lines, "atlasrag_request_latency_ms_sum", base, sum);
-    pushPromMetric(lines, "atlasrag_request_latency_ms_count", base, summary.count);
+    pushPromMetric(lines, "supavector_request_latency_ms_sum", base, sum);
+    pushPromMetric(lines, "supavector_request_latency_ms_count", base, summary.count);
   }
   if (Number.isFinite(summary.count)) {
-    pushPromMetric(lines, "atlasrag_requests_total", base, summary.count);
+    pushPromMetric(lines, "supavector_requests_total", base, summary.count);
   }
   if (Number.isFinite(summary.error_count)) {
-    pushPromMetric(lines, "atlasrag_request_errors_total", base, summary.error_count);
+    pushPromMetric(lines, "supavector_request_errors_total", base, summary.error_count);
   }
   if (Number.isFinite(summary.error_rate)) {
-    pushPromMetric(lines, "atlasrag_request_error_rate", base, summary.error_rate);
+    pushPromMetric(lines, "supavector_request_error_rate", base, summary.error_rate);
   }
 }
 
@@ -1789,7 +1789,7 @@ async function reindexChunkBatch(rows) {
 }
 
 async function resolveExpectedEmbedVectorDim() {
-  const { vectors } = await embedTexts(["atlasrag vector dimension probe"]);
+  const { vectors } = await embedTexts(["supavector vector dimension probe"]);
   const dim = Array.isArray(vectors) && vectors[0] ? Number(vectors[0].length || 0) : 0;
   return Number.isFinite(dim) && dim > 0 ? dim : 0;
 }
@@ -2306,13 +2306,13 @@ function buildMcpDocsCorpus() {
   const entries = [
     readLocalDocsCorpusEntry({
       id: "guide",
-      title: "AtlasRAG Integration Guide",
+      title: "SupaVector Integration Guide",
       routePath: "/#pageDocsTop",
       filePath: path.join(UI_PARTIALS_DIR, "page-docs.html")
     }),
     readLocalDocsCorpusEntry({
       id: "api-reference",
-      title: "AtlasRAG API Reference",
+      title: "SupaVector API Reference",
       routePath: "/docs",
       filePath: path.join(PUBLIC_DIR, "docs", "index.html")
     })
@@ -2404,7 +2404,7 @@ function listMcpResources(req) {
   return MCP_DOCS_CORPUS.map((doc) => ({
     uri: `${MCP_RESOURCE_URI_PREFIX}${doc.id}`,
     name: doc.title,
-    description: `AtlasRAG documentation resource: ${doc.title}`,
+    description: `SupaVector documentation resource: ${doc.title}`,
     mimeType: "text/plain",
     annotations: {
       url: getMcpDocUrl(req, doc.routePath)
@@ -2416,11 +2416,11 @@ function listMcpTools() {
   return [
     {
       name: "search_docs",
-      description: "Search AtlasRAG documentation for setup, APIs, auth, memory policy modes (amvl/ttl/lru), and lifecycle details.",
+      description: "Search SupaVector documentation for setup, APIs, auth, memory policy modes (amvl/ttl/lru), and lifecycle details.",
       inputSchema: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Natural language query for AtlasRAG docs." },
+          query: { type: "string", description: "Natural language query for SupaVector docs." },
           top_k: { type: "integer", minimum: 1, maximum: 8, description: "Number of top results to return." }
         },
         required: ["query"]
@@ -2428,7 +2428,7 @@ function listMcpTools() {
     },
     {
       name: "read_docs_page",
-      description: "Read a full AtlasRAG docs resource by page id or resource URI.",
+      description: "Read a full SupaVector docs resource by page id or resource URI.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2458,7 +2458,7 @@ function handleMcpToolCall(params, req) {
     const results = searchMcpDocs(query, args.top_k);
     if (results.length === 0) {
       return {
-        content: [{ type: "text", text: `No AtlasRAG docs matches found for: ${query}` }],
+        content: [{ type: "text", text: `No SupaVector docs matches found for: ${query}` }],
         structuredContent: { query, matches: [] }
       };
     }
@@ -2542,7 +2542,7 @@ async function handleMcpMethod(method, params, req) {
         version: MCP_SERVER_VERSION
       },
       instructions: [
-        "Use tools/search_docs to find AtlasRAG API and product guidance.",
+        "Use tools/search_docs to find SupaVector API and product guidance.",
         "Use resources/list and resources/read to access full docs pages.",
         "Memory policy values are amvl, ttl, and lru; amvl is the default when policy is omitted.",
         "For /v1/ask, answer length can be controlled with answerLength: auto, short, medium, or long.",
@@ -5376,10 +5376,10 @@ app.get("/llms.txt", (req, res) => {
   const llmsUrl = `${baseUrl}/llms.txt`;
   const mcpUrl = `${baseUrl}/mcp`;
   const lines = [
-    "# AtlasRAG documentation endpoints",
+    "# SupaVector documentation endpoints",
     "",
-    "AtlasRAG provides durable memory APIs and multi-tenant retrieval infrastructure for production AI agents.",
-    "Memory policy values are amvl, ttl, and lru. If policy is omitted, AtlasRAG uses amvl.",
+    "SupaVector provides durable memory APIs and multi-tenant retrieval infrastructure for production AI agents.",
+    "Memory policy values are amvl, ttl, and lru. If policy is omitted, SupaVector uses amvl.",
     "",
     "## Primary links",
     `- Product docs UI: ${uiDocsUrl}`,
@@ -5390,9 +5390,9 @@ app.get("/llms.txt", (req, res) => {
     "",
     "## Suggested usage",
     "- Use the MCP server to search current docs for endpoint behavior, auth setup, and lifecycle controls.",
-    "- If working on a local computer with this repo, prefer the atlasrag CLI: run `atlasrag doctor`, then `atlasrag onboard` if not configured.",
-    "- On the local CLI path, `atlasrag onboard` creates the first admin and first service token and stores them in local CLI config.",
-    "- Use `--collection` explicitly on write/search/ask/boolean_ask when scope matters. `atlasrag write --folder ./name` uses the folder name as the default collection.",
+    "- If working on a local computer with this repo, prefer the supavector CLI: run `supavector doctor`, then `supavector onboard` if not configured.",
+    "- On the local CLI path, `supavector onboard` creates the first admin and first service token and stores them in local CLI config.",
+    "- Use `--collection` explicitly on write/search/ask/boolean_ask when scope matters. `supavector write --folder ./name` uses the folder name as the default collection.",
     "- For memory, ask, and boolean_ask APIs, policy can be set to amvl, ttl, or lru; the default is amvl.",
     "- For /v1/ask, use answerLength (auto|short|medium|long) to control response depth.",
     "- Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
@@ -5670,9 +5670,9 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
   <head><meta charset="utf-8"><title>SSO Login</title></head>
   <body>
     <script>
-      localStorage.setItem("atlasragJwt", ${JSON.stringify(token)});
-      localStorage.setItem("atlasragAuthToken", ${JSON.stringify(token)});
-      localStorage.setItem("atlasragAuthType", "bearer");
+      localStorage.setItem("supavectorJwt", ${JSON.stringify(token)});
+      localStorage.setItem("supavectorAuthToken", ${JSON.stringify(token)});
+      localStorage.setItem("supavectorAuthType", "bearer");
       window.location.href = "/";
     </script>
   </body>
@@ -5815,7 +5815,7 @@ app.post(["/admin/service-tokens", "/v1/admin/service-tokens"], requireJwt, requ
       expiresAt = dt.toISOString();
     }
 
-    const rawToken = `atrg_${crypto.randomBytes(24).toString("base64url")}`;
+    const rawToken = `supav_${crypto.randomBytes(24).toString("base64url")}`;
     const keyHash = hashToken(rawToken);
     const record = await createServiceToken({
       tenantId,
@@ -5906,14 +5906,14 @@ const metricsHandler = async (req, res) => {
 
   const isAdmin = hasTokenAdminAccess(req);
   const lines = [
-    "# HELP atlasrag_request_latency_ms Request latency in milliseconds (rolling window).",
-    "# TYPE atlasrag_request_latency_ms summary",
-    "# HELP atlasrag_requests_total Requests observed in rolling window.",
-    "# TYPE atlasrag_requests_total gauge",
-    "# HELP atlasrag_request_errors_total Error responses (>=500) observed in rolling window.",
-    "# TYPE atlasrag_request_errors_total gauge",
-    "# HELP atlasrag_request_error_rate Error rate observed in rolling window.",
-    "# TYPE atlasrag_request_error_rate gauge"
+    "# HELP supavector_request_latency_ms Request latency in milliseconds (rolling window).",
+    "# TYPE supavector_request_latency_ms summary",
+    "# HELP supavector_requests_total Requests observed in rolling window.",
+    "# TYPE supavector_requests_total gauge",
+    "# HELP supavector_request_errors_total Error responses (>=500) observed in rolling window.",
+    "# TYPE supavector_request_errors_total gauge",
+    "# HELP supavector_request_error_rate Error rate observed in rolling window.",
+    "# TYPE supavector_request_error_rate gauge"
   ];
 
   const emitGroup = (group, baseLabels) => {

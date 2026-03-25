@@ -1,4 +1,4 @@
-# AtlasRAG For Apps, Backends, And Agents
+# SupaVector For Apps, Backends, And Agents
 
 This guide is for developers building:
 
@@ -6,9 +6,9 @@ This guide is for developers building:
 - app backends
 - worker processes
 - internal tools
-- CI or automation that talks to AtlasRAG
+- CI or automation that talks to SupaVector
 
-The goal is simple: make AtlasRAG feel like a service your runtime can depend on, not a manual UI-only tool.
+The goal is simple: make SupaVector feel like a service your runtime can depend on, not a manual UI-only tool.
 
 ## Decision Matrix
 
@@ -16,13 +16,13 @@ Use this if you need to choose the right usage mode quickly.
 
 | Usage mode | Best when | Read next |
 | --- | --- | --- |
-| **Use AtlasRAG as a hosted service** | **No infrastructure to run — sign up, create a project, get an `atrg_` token** | [**`hosted.md`**](hosted.md) |
-| Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [`self-hosting.md`](self-hosting.md) |
-| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
-| Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Direct service token](#direct-service-token) |
-| Use a shared AtlasRAG deployment with your own provider key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your provider key](#shared-provider-key) |
-| Keep your own product auth and place AtlasRAG behind your backend | End users should not log into AtlasRAG directly | [Backend-as-caller](#backend-as-caller) |
-| Use AtlasRAG mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](#human-jwt) |
+| **Use SupaVector as a hosted service** | **No infrastructure to run — sign up, create a project, get an `supav_` token** | [**`hosted.md`**](hosted.md) |
+| Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working SupaVector instance | [`self-hosting.md`](self-hosting.md) |
+| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want SupaVector inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
+| Use a shared SupaVector deployment | SupaVector already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Direct service token](#direct-service-token) |
+| Use a shared SupaVector deployment with your own provider key | SupaVector keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared SupaVector, your provider key](#shared-provider-key) |
+| Keep your own product auth and place SupaVector behind your backend | End users should not log into SupaVector directly | [Backend-as-caller](#backend-as-caller) |
+| Use SupaVector mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](#human-jwt) |
 
 If you are still deciding what you are actually setting up, read [`setup-modes.md`](setup-modes.md) first. That guide explains the boundary between self-hosted, shared deployment, backend-held, and human-admin paths before you choose commands.
 
@@ -31,28 +31,28 @@ If you are still deciding what you are actually setting up, read [`setup-modes.m
 Classify the setup mode before you give instructions:
 
 - if the user is cloning the repo and running Docker themselves, use a self-hosted path
-- if the user already has `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`, use a shared-deployment path
-- if their backend should be the only AtlasRAG caller, use backend-as-caller
-- if they are signing in interactively to manage AtlasRAG itself, use the human-admin path
+- if the user already has `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`, use a shared-deployment path
+- if their backend should be the only SupaVector caller, use backend-as-caller
+- if they are signing in interactively to manage SupaVector itself, use the human-admin path
 
 Important boundary rules:
 
-- `--external-postgres` is still self-hosted AtlasRAG
-- shared-deployment users normally do not edit AtlasRAG server env files on the client machine
-- service tokens are deployment-scoped and do not carry across different AtlasRAG deployments
+- `--external-postgres` is still self-hosted SupaVector
+- shared-deployment users normally do not edit SupaVector server env files on the client machine
+- service tokens are deployment-scoped and do not carry across different SupaVector deployments
 
 ## Recommended Runtime Model
 
-Use AtlasRAG like this:
+Use SupaVector like this:
 
 1. a human admin bootstraps the instance once
-2. AtlasRAG issues a service token
+2. SupaVector issues a service token
 3. your app, backend, worker, or agent stores that token
-4. runtime code calls AtlasRAG with `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`
+4. runtime code calls SupaVector with `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`
 
 Optional variant:
 
-5. if the runtime wants AtlasRAG to use its own provider key, it also sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests
+5. if the runtime wants SupaVector to use its own provider key, it also sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests
 
 Human login is still useful for:
 
@@ -68,40 +68,40 @@ It is not the preferred runtime path for autonomous agents.
 For most runtimes, this is enough:
 
 ```bash
-ATLASRAG_BASE_URL=http://localhost:3000
-ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN
+SUPAVECTOR_BASE_URL=http://localhost:3000
+SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN
 ```
 
 Optional app-level defaults you may also keep:
 
 ```bash
-ATLASRAG_COLLECTION=default
-ATLASRAG_AGENT_ID=agent:planner
+SUPAVECTOR_COLLECTION=default
+SUPAVECTOR_AGENT_ID=agent:planner
 ```
 
 ## CLI Against A Live Deployment
 
-If AtlasRAG is already online and you want to test it from your own machine with the CLI:
+If SupaVector is already online and you want to test it from your own machine with the CLI:
 
 ```bash
-export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
-atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
-atlasrag search --q "remote test" --collection cli-smoke --k 3
-atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
-atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
+export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
+supavector write --doc-id cli-test --collection cli-smoke --text "SupaVector CLI remote test."
+supavector search --q "remote test" --collection cli-smoke --k 3
+supavector ask --question "What does the CLI test document say?" --collection cli-smoke
+supavector boolean_ask --question "Does the CLI test document mention SupaVector?" --collection cli-smoke
 ```
 
 Important distinction:
 
-- `atlasrag onboard` is for local self-hosted setup
-- `atlasrag write`, `atlasrag search`, `atlasrag ask`, and `atlasrag boolean_ask` are the normal commands for testing or using an already deployed AtlasRAG service
+- `supavector onboard` is for local self-hosted setup
+- `supavector write`, `supavector search`, `supavector ask`, and `supavector boolean_ask` are the normal commands for testing or using an already deployed SupaVector service
 - Docker is not required on the client machine for this remote path
-- service tokens are scoped to the AtlasRAG deployment that minted them; a token from one self-hosted or shared deployment will not authenticate against a different deployment
+- service tokens are scoped to the SupaVector deployment that minted them; a token from one self-hosted or shared deployment will not authenticate against a different deployment
 
 Model guidance:
 
-- use `atlasrag changemodel` for local self-hosted defaults instead of editing the env file by hand
+- use `supavector changemodel` for local self-hosted defaults instead of editing the env file by hand
 - `ask` and `boolean_ask` accept per-request `provider` and `model` overrides, and the CLI `--provider` / `--model` flags accept the same numbered shortcuts used during onboarding
 - the preset list now includes OpenAI, Gemini, and Anthropic generation catalogs; custom model ids are still allowed
 - use `GET /v1/models` when you need the live preset catalog and current instance defaults
@@ -138,10 +138,10 @@ With a valid service token, an agent can:
 What an agent cannot do from nothing:
 
 - self-bootstrap from only a provider key
-- create the first AtlasRAG credential anonymously
+- create the first SupaVector credential anonymously
 - create the first service token without an existing admin path
 
-That is by design. AtlasRAG still needs one operator-controlled bootstrap step.
+That is by design. SupaVector still needs one operator-controlled bootstrap step.
 
 ## Auth Choices
 
@@ -150,7 +150,7 @@ That is by design. AtlasRAG still needs one operator-controlled bootstrap step.
 
 Best when:
 
-- one internal agent or backend talks directly to AtlasRAG
+- one internal agent or backend talks directly to SupaVector
 - you control the runtime environment
 
 Send:
@@ -182,30 +182,30 @@ Authorization: Bearer YOUR_JWT
 Best when:
 
 - your product already has its own end-user auth
-- you do not want every user or agent to log into AtlasRAG separately
+- you do not want every user or agent to log into SupaVector separately
 
 Pattern:
 
 1. end user authenticates to your app
-2. your backend calls AtlasRAG with a service token
+2. your backend calls SupaVector with a service token
 3. your backend decides which user or privileges should be represented
 
 This is usually the cleanest product architecture.
 
 <a id="shared-provider-key"></a>
-### 4. Shared AtlasRAG, Your Provider Key
+### 4. Shared SupaVector, Your Provider Key
 
 Best when:
 
-- AtlasRAG is already deployed and keeps its own Postgres/auth state
+- SupaVector is already deployed and keeps its own Postgres/auth state
 - you want a request to use your provider key instead of the server default
-- you do not need AtlasRAG to persist your provider key server-side
+- you do not need SupaVector to persist your provider key server-side
 
 Pattern:
 
 1. authenticate with a service token or JWT as usual
 2. also send `X-OpenAI-API-Key: YOUR_OPENAI_KEY`, `X-Gemini-API-Key: YOUR_GEMINI_KEY`, or `X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY`
-3. AtlasRAG uses that key for supported sync embedding/answer requests
+3. SupaVector uses that key for supported sync embedding/answer requests
 
 `POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
@@ -230,7 +230,7 @@ Those two endpoints reject request-scoped provider-key headers because the work 
 
 ## Service Token Lifecycle
 
-Treat the AtlasRAG service token like any internal API credential.
+Treat the SupaVector service token like any internal API credential.
 
 Recommended practices:
 
@@ -251,40 +251,40 @@ A common split is:
 ### Health
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/health"
+curl -sS "${SUPAVECTOR_BASE_URL}/health"
 ```
 
 ### Index A Document
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Idempotency-Key: idx-001" \
   -H "Content-Type: application/json" \
   -d '{
     "docId":"welcome",
     "collection":"default",
-    "text":"AtlasRAG stores memory for agents."
+    "text":"SupaVector stores memory for agents."
   }'
 ```
 
 ### Search
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/search?q=memory&k=5&collection=default&policy=amvl" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}"
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/search?q=memory&k=5&collection=default&policy=amvl" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}"
 ```
 
 ### Ask
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question":"What does AtlasRAG store?",
+    "question":"What does SupaVector store?",
     "k":5,
     "policy":"amvl",
     "provider":"openai",
@@ -295,12 +295,12 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
 ### True/False Only
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question":"Does AtlasRAG store memory for agents?",
+    "question":"Does SupaVector store memory for agents?",
     "k":5,
     "provider":"openai",
     "policy":"amvl"
@@ -312,8 +312,8 @@ Read `data.supportingChunks` when the caller needs the exact chunk text that sup
 ### Memory Write
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/memory/write" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/memory/write" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Idempotency-Key: mem-001" \
   -H "Content-Type: application/json" \
@@ -332,8 +332,8 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/memory/write" \
 ### Memory Recall
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/memory/recall" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/memory/recall" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -364,7 +364,7 @@ Good practice:
 
 ## Choosing A Retrieval Or Memory Policy
 
-AtlasRAG supports three policies:
+SupaVector supports three policies:
 
 - `amvl`
 - `ttl`
@@ -376,7 +376,7 @@ Use when:
 
 - you want the platform's main value-based memory behavior
 - you want retrieval and lifecycle decisions tuned for longer-term usefulness
-- you are using AtlasRAG as intended
+- you are using SupaVector as intended
 
 This is the default and the recommended starting point.
 
@@ -397,7 +397,7 @@ Use when:
 
 ## Direct Agent Versus Backend Proxy
 
-### Let The Agent Call AtlasRAG Directly
+### Let The Agent Call SupaVector Directly
 
 Good when:
 
@@ -405,7 +405,7 @@ Good when:
 - the environment is trusted
 - the token can be stored securely
 
-### Let Your Backend Call AtlasRAG
+### Let Your Backend Call SupaVector
 
 Good when:
 
@@ -415,7 +415,7 @@ Good when:
 
 This is the better default for most customer-facing products.
 
-## Visibility Without AtlasRAG End-User Login
+## Visibility Without SupaVector End-User Login
 
 If your app has its own user auth and you still want per-user visibility:
 
@@ -423,17 +423,17 @@ If your app has its own user auth and you still want per-user visibility:
 - use an admin service token from your backend
 - send `principalId` and optionally `privileges`
 
-This lets your backend remain the caller of record while AtlasRAG enforces tenant, ACL, and visibility rules.
+This lets your backend remain the caller of record while SupaVector enforces tenant, ACL, and visibility rules.
 
 Do not expose an admin service token to the browser.
 
 ## Example Runtime Pattern In Node
 
 ```js
-const BASE = process.env.ATLASRAG_BASE_URL;
-const API_KEY = process.env.ATLASRAG_API_KEY;
+const BASE = process.env.SUPAVECTOR_BASE_URL;
+const API_KEY = process.env.SUPAVECTOR_API_KEY;
 
-async function atlasrag(path, { method = "GET", body, headers = {} } = {}) {
+async function supavector(path, { method = "GET", body, headers = {} } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -449,20 +449,20 @@ async function atlasrag(path, { method = "GET", body, headers = {} } = {}) {
   return data;
 }
 
-await atlasrag("/v1/docs", {
+await supavector("/v1/docs", {
   method: "POST",
   headers: { "Idempotency-Key": "idx-001" },
   body: {
     docId: "welcome",
     collection: "default",
-    text: "AtlasRAG stores memory for agents."
+    text: "SupaVector stores memory for agents."
   }
 });
 
-const answer = await atlasrag("/v1/ask", {
+const answer = await supavector("/v1/ask", {
   method: "POST",
   body: {
-    question: "What does AtlasRAG store?",
+    question: "What does SupaVector store?",
     k: 5,
     policy: "amvl"
   }
@@ -470,10 +470,10 @@ const answer = await atlasrag("/v1/ask", {
 
 console.log(answer.data.answer);
 
-const booleanAsk = await atlasrag("/v1/boolean_ask", {
+const booleanAsk = await supavector("/v1/boolean_ask", {
   method: "POST",
   body: {
-    question: "Does AtlasRAG store memory for agents?",
+    question: "Does SupaVector store memory for agents?",
     k: 5,
     policy: "amvl"
   }
@@ -497,7 +497,7 @@ The SDK already understands:
 
 ## Hosted Service Tokens And Credits
 
-If your token was issued from the AtlasRAG hosted Dashboard (it starts with `atrg_`), generation endpoints require a positive credit balance.
+If your token was issued from the SupaVector hosted Dashboard (it starts with `supav_`), generation endpoints require a positive credit balance.
 
 Affected endpoints:
 
@@ -537,7 +537,7 @@ if (res.status === 402 && data.code === "CREDIT_REQUIRED") {
   throw new BillingError("No credits remaining. Top up at the Dashboard.");
 }
 
-if (!res.ok) throw new Error(data.error || "AtlasRAG error");
+if (!res.ok) throw new Error(data.error || "SupaVector error");
 ```
 
 ### 503 — Credit Check Failed
@@ -555,7 +555,7 @@ This means the server encountered a transient error verifying the credit balance
 
 ### Self-Hosted Tokens Are Not Affected
 
-If you are self-hosting AtlasRAG, tokens without the `atrg_` prefix bypass the credit system entirely. The 402 and 503 responses above will never be returned for those tokens.
+If you are self-hosting SupaVector, tokens without the `supav_` prefix bypass the credit system entirely. The 402 and 503 responses above will never be returned for those tokens.
 
 ## Security Notes For Agent Teams
 
@@ -565,9 +565,9 @@ If you are self-hosting AtlasRAG, tokens without the `atrg_` prefix bypass the c
 - revoke tokens when an environment is retired
 - audit any use of `ALLOW_PRINCIPAL_OVERRIDE`
 
-## What To Build Around AtlasRAG
+## What To Build Around SupaVector
 
-AtlasRAG is a good fit when your agent stack needs:
+SupaVector is a good fit when your agent stack needs:
 
 - document ingestion
 - grounded retrieval
@@ -581,10 +581,10 @@ It should usually sit behind or beside your orchestrator, not replace your orche
 
 After you have a working service token:
 
-1. wire `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY` into your runtime
+1. wire `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` into your runtime
 2. add one ingest smoke test
 3. add one ask smoke test
-4. decide whether your app will call AtlasRAG directly or through your backend
+4. decide whether your app will call SupaVector directly or through your backend
 
 For infrastructure setup details, go back to:
 

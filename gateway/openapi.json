@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "AtlasRAG API",
+    "title": "SupaVector API",
     "version": "1.0.0",
-    "description": "AtlasRAG provides semantic search, RAG answers, and long-term memory APIs for multi-tenant agents. Recommended integration model: bootstrap once, store a service token, and let your backend or runtime agent call AtlasRAG directly. Use JWTs mainly for human admin sessions. If you want AtlasRAG to keep its own Postgres/auth runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key. Those overrides are request-scoped and are rejected by asynchronous memory reflect/compact flows. All /v1 endpoints return a standard response envelope: { ok, data|error, meta }. For idempotent write endpoints, send a unique Idempotency-Key per logical request."
+    "description": "SupaVector provides semantic search, RAG answers, and long-term memory APIs for multi-tenant agents. Recommended integration model: bootstrap once, store a service token, and let your backend or runtime agent call SupaVector directly. Use JWTs mainly for human admin sessions. If you want SupaVector to keep its own Postgres/auth runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key. Those overrides are request-scoped and are rejected by asynchronous memory reflect/compact flows. All /v1 endpoints return a standard response envelope: { ok, data|error, meta }. For idempotent write endpoints, send a unique Idempotency-Key per logical request."
   },
   "servers": [
     {
@@ -342,7 +342,7 @@
       },
       "ModelId": {
         "type": "string",
-        "description": "Provider-native model id. AtlasRAG publishes its current preset catalog at GET /v1/models, but custom model ids are also allowed."
+        "description": "Provider-native model id. SupaVector publishes its current preset catalog at GET /v1/models, but custom model ids are also allowed."
       },
       "ProviderPreset": {
         "type": "object",
@@ -1933,7 +1933,7 @@
                       ],
                       "notes": {
                         "customModelAllowed": true,
-                        "compatibility": "AtlasRAG omits unsupported temperature parameters automatically for reasoning-style OpenAI models. Gemini and Anthropic use provider-native request formats.",
+                        "compatibility": "SupaVector omits unsupported temperature parameters automatically for reasoning-style OpenAI models. Gemini and Anthropic use provider-native request formats.",
                         "availability": "Model availability depends on your provider account, enabled APIs, and region.",
                         "requestScopedKeys": "Use X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key to override provider credentials per request."
                       }
@@ -1963,7 +1963,7 @@
             }
           }
         },
-        "description": "Return AtlasRAG's curated provider-aware preset catalog, including the CLI numeric shortcuts, plus the current instance defaults. Custom model ids remain allowed anywhere a model field is supported."
+        "description": "Return SupaVector's curated provider-aware preset catalog, including the CLI numeric shortcuts, plus the current instance defaults. Custom model ids remain allowed anywhere a model field is supported."
       }
     },
     "/v1/login": {
@@ -2404,7 +2404,7 @@
               },
               "example": {
                 "docId": "onboarding-guide",
-                "text": "AtlasRAG stores semantic memories for agents and supports tenant-scoped retrieval.",
+                "text": "SupaVector stores semantic memories for agents and supports tenant-scoped retrieval.",
                 "collection": "default",
                 "tags": [
                   "guide",
@@ -2617,7 +2617,7 @@
                 "$ref": "#/components/schemas/AskRequest"
               },
               "example": {
-                "question": "What does AtlasRAG store?",
+                "question": "What does SupaVector store?",
                 "k": 4,
                 "answerLength": "auto",
                 "policy": "amvl",
@@ -2668,7 +2668,7 @@
                 "$ref": "#/components/schemas/BooleanAskRequest"
               },
               "example": {
-                "question": "Is AtlasRAG designed for agent memory retrieval?",
+                "question": "Is SupaVector designed for agent memory retrieval?",
                 "k": 4,
                 "policy": "amvl",
                 "collection": "default",

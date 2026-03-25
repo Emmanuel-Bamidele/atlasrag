@@ -4,7 +4,7 @@
             <section class="product-showcase">
               <div class="product-showcase-copy">
                 <p class="product-showcase-kicker">Product</p>
-                <h2>AtlasRAG gives AI apps a governed memory layer.</h2>
+                <h2>SupaVector gives AI apps a governed memory layer.</h2>
                 <p class="product-showcase-lead">
                   Put retrieval, memory retention, access control, and feedback loops behind one backend surface
                   instead of spreading them across your app.
@@ -14,10 +14,10 @@
                   <a class="btn secondary" href="#" role="button">Watch a demo</a>
                 </div>
                 <p class="product-showcase-lead" style="margin-top:14px;">
-                  AtlasRAG is open source. The source code, installer scripts, and self-hosted setup files are available in the
-                  <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.
+                  SupaVector is open source. The source code, installer scripts, and self-hosted setup files are available in the
+                  <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.
                 </p>
-                <div class="product-showcase-notes" aria-label="AtlasRAG product highlights">
+                <div class="product-showcase-notes" aria-label="SupaVector product highlights">
                   <span class="product-showcase-note">Self-hosted</span>
                   <span class="product-showcase-note">Tenant-aware</span>
                   <span class="product-showcase-note">Policy-driven recall</span>
@@ -55,13 +55,13 @@
                   </div>
                   <div class="product-stage-footer">
                     <span>Your app stays in front.</span>
-                    <span>AtlasRAG handles the memory layer behind it.</span>
+                    <span>SupaVector handles the memory layer behind it.</span>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section class="product-belt" aria-label="AtlasRAG use cases">
+            <section class="product-belt" aria-label="SupaVector use cases">
               <div class="product-belt-track">
                 <span>Customer support copilots</span>
                 <span>Internal knowledge agents</span>
@@ -84,7 +84,7 @@
                 <p class="product-card-eyebrow">Hosted API</p>
                 <h3>Get a token, add credit, start calling.</h3>
                 <p>No servers to run. Sign up, create a project in the Dashboard, add credit, and you're calling the API in minutes.</p>
-                <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? AtlasRAG is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
+                <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? SupaVector is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
               </div>
 
               <div class="product-hosted-steps">
@@ -93,7 +93,7 @@
                   <h4>Sign up &amp; create a project</h4>
                   <p>Sign in with Google, GitHub, or email. Click <strong>Dashboard → New Project</strong>. Copy the token shown — it's only displayed once.</p>
                   <div class="product-hosted-token-preview">
-                    <span class="product-hosted-token-prefix">atrg_</span><span class="product-hosted-token-body">••••••••••••••••••••••••••••••••</span>
+                    <span class="product-hosted-token-prefix">supav_</span><span class="product-hosted-token-body">••••••••••••••••••••••••••••••••</span>
                   </div>
                 </div>
                 <div class="product-hosted-step">
@@ -111,8 +111,8 @@
                   <h4>Wire up your environment</h4>
                   <p>Set two env vars in your app, agent, or script. That's the entire setup — no Docker, no Postgres, no config files.</p>
                   <div class="product-qs-code" style="margin-top:auto;">
-                    <pre class="doc-code" id="hostedEnvVars">ATLASRAG_BASE_URL=https://your-host
-ATLASRAG_API_KEY=atrg_your_token</pre>
+                    <pre class="doc-code" id="hostedEnvVars">SUPAVECTOR_BASE_URL=https://your-host
+SUPAVECTOR_API_KEY=supav_your_token</pre>
                   </div>
                 </div>
               </div>
@@ -136,25 +136,25 @@ ATLASRAG_API_KEY=atrg_your_token</pre>
                       <div class="product-hosted-code-block">
                         <div class="product-hosted-code-label">Index a document</div>
                         <div class="doc-copy-wrap">
-                          <pre class="doc-code" id="hostedCurlIndex">curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+                          <pre class="doc-code" id="hostedCurlIndex">curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: doc-001" \
   -H "Content-Type: application/json" \
   -d '{
     "docId":      "welcome",
     "collection": "default",
-    "text":       "AtlasRAG stores memory for agents."
+    "text":       "SupaVector stores memory for agents."
   }'</pre>
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
                         <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
                         <div class="doc-copy-wrap">
-                          <pre class="doc-code" id="hostedCurlAsk">curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+                          <pre class="doc-code" id="hostedCurlAsk">curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What does AtlasRAG store?",
+    "question": "What does SupaVector store?",
     "k":        5,
     "policy":   "amvl"
   }'</pre>
@@ -171,8 +171,8 @@ ATLASRAG_API_KEY=atrg_your_token</pre>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedPyIndex">import os, requests
 
-BASE = os.environ["ATLASRAG_BASE_URL"]
-KEY  = os.environ["ATLASRAG_API_KEY"]
+BASE = os.environ["SUPAVECTOR_BASE_URL"]
+KEY  = os.environ["SUPAVECTOR_API_KEY"]
 HDR  = {
     "Authorization": f"Bearer {KEY}",
     "Content-Type":  "application/json",
@@ -184,7 +184,7 @@ requests.post(
     json={
         "docId":      "welcome",
         "collection": "default",
-        "text":       "AtlasRAG stores memory for agents.",
+        "text":       "SupaVector stores memory for agents.",
     },
 ).raise_for_status()</pre>
                         </div>
@@ -196,7 +196,7 @@ requests.post(
     f"{BASE}/v1/ask",
     headers=HDR,
     json={
-        "question": "What does AtlasRAG store?",
+        "question": "What does SupaVector store?",
         "k":        5,
         "policy":   "amvl",
     },
@@ -214,8 +214,8 @@ print(r.json()["data"]["answer"])</pre>
                       <div class="product-hosted-code-block">
                         <div class="product-hosted-code-label">Index a document</div>
                         <div class="doc-copy-wrap">
-                          <pre class="doc-code" id="hostedNodeIndex">const BASE = process.env.ATLASRAG_BASE_URL;
-const KEY  = process.env.ATLASRAG_API_KEY;
+                          <pre class="doc-code" id="hostedNodeIndex">const BASE = process.env.SUPAVECTOR_BASE_URL;
+const KEY  = process.env.SUPAVECTOR_API_KEY;
 
 async function ar(path, body, extra = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -233,7 +233,7 @@ async function ar(path, body, extra = {}) {
 
 await ar("/v1/docs",
   { docId: "welcome", collection: "default",
-    text: "AtlasRAG stores memory for agents." },
+    text: "SupaVector stores memory for agents." },
   { "Idempotency-Key": "doc-001" }
 );</pre>
                         </div>
@@ -242,7 +242,7 @@ await ar("/v1/docs",
                         <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedNodeAsk">const { data } = await ar("/v1/ask", {
-  question: "What does AtlasRAG store?",
+  question: "What does SupaVector store?",
   k:        5,
   policy:   "amvl",
 });
@@ -260,7 +260,7 @@ console.log(data.answer);</pre>
                         <div class="product-hosted-code-label">Index a document</div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedJsIndex">const BASE = "https://your-host";
-const KEY  = "atrg_your_token"; // keep server-side in prod
+const KEY  = "supav_your_token"; // keep server-side in prod
 
 await fetch(`${BASE}/v1/docs`, {
   method:  "POST",
@@ -272,7 +272,7 @@ await fetch(`${BASE}/v1/docs`, {
   body: JSON.stringify({
     docId:      "welcome",
     collection: "default",
-    text:       "AtlasRAG stores memory for agents.",
+    text:       "SupaVector stores memory for agents.",
   }),
 });</pre>
                         </div>
@@ -287,7 +287,7 @@ await fetch(`${BASE}/v1/docs`, {
     "Content-Type":  "application/json",
   },
   body: JSON.stringify({
-    question: "What does AtlasRAG store?",
+    question: "What does SupaVector store?",
     k:        5,
     policy:   "amvl",
   }),
@@ -316,7 +316,7 @@ console.log(data.answer);</pre>
                   </div>
                   <div class="product-hosted-error-item">
                     <span class="product-hosted-error-code note">—</span>
-                    <span class="product-hosted-error-label">Self-hosted tokens (no <code class="mono">atrg_</code> prefix) bypass the credit system entirely.</span>
+                    <span class="product-hosted-error-label">Self-hosted tokens (no <code class="mono">supav_</code> prefix) bypass the credit system entirely.</span>
                   </div>
                 </div>
               </div>
@@ -336,8 +336,8 @@ console.log(data.answer);</pre>
                   <h4>Clone and install the CLI</h4>
                   <p>Clone the repo, then run the installer. Works on macOS, Linux, and Windows.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">git clone https://github.com/Emmanuel-Bamidele/atlasrag.git
-cd atlasrag && ./scripts/install.sh</pre>
+                    <pre class="doc-code">git clone https://github.com/Emmanuel-Bamidele/supavector.git
+cd supavector && ./scripts/install.sh</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -345,7 +345,7 @@ cd atlasrag && ./scripts/install.sh</pre>
                   <h4>Start the stack</h4>
                   <p>One command brings up the vector core, gateway, and Postgres locally.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">atlasrag start</pre>
+                    <pre class="doc-code">supavector start</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -353,46 +353,46 @@ cd atlasrag && ./scripts/install.sh</pre>
                   <h4>Write your first memory</h4>
                   <p>Use the CLI or call the API directly with your service token.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">atlasrag write --text "Hello, memory"</pre>
+                    <pre class="doc-code">supavector write --text "Hello, memory"</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">04</span>
                   <h4>Ask a question</h4>
-                  <p>Query the memory you just wrote. AtlasRAG retrieves and answers grounded in your data.</p>
+                  <p>Query the memory you just wrote. SupaVector retrieves and answers grounded in your data.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">atlasrag ask --question "What did I store?"</pre>
+                    <pre class="doc-code">supavector ask --question "What did I store?"</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">05</span>
                   <h4>Add to your app env</h4>
-                  <p>Export the base URL and service token so your backend can reach AtlasRAG.</p>
+                  <p>Export the base URL and service token so your backend can reach SupaVector.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                    <pre class="doc-code">export SUPAVECTOR_BASE_URL="http://localhost:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">06</span>
                   <h4>Call server-to-server</h4>
-                  <p>Your backend calls AtlasRAG directly. No browser, no end-user login needed.</p>
+                  <p>Your backend calls SupaVector directly. No browser, no end-user login needed.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">curl -X POST "$ATLASRAG_BASE_URL/v1/ask" \
-  -H "X-API-Key: $ATLASRAG_API_KEY" \
+                    <pre class="doc-code">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
+  -H "X-API-Key: $SUPAVECTOR_API_KEY" \
   -d '{"question":"What did I store?","k":3}'</pre>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section class="product-story" aria-label="What AtlasRAG changes">
+            <section class="product-story" aria-label="What SupaVector changes">
               <div class="product-story-copy">
                 <p class="product-card-eyebrow">What shifts</p>
                 <h3>Move memory out of app glue and into infrastructure.</h3>
                 <p>
                   Teams stop stitching together retrieval logic, ACL rules, expiry behavior, and quality loops
-                  in five different places. AtlasRAG centralizes the memory layer so product code can stay focused
+                  in five different places. SupaVector centralizes the memory layer so product code can stay focused
                   on the actual experience.
                 </p>
                 <ul class="product-story-list">
@@ -419,7 +419,7 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                   <p class="product-card-eyebrow">Open Source</p>
                   <h3>Built in the open. MIT licensed.</h3>
                   <p>
-                    AtlasRAG is fully open source. Every line — the C++ vector core, Node.js gateway,
+                    SupaVector is fully open source. Every line — the C++ vector core, Node.js gateway,
                     installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
                     There is no hosted service, no vendor lock-in, and no black-box dependencies.
                   </p>
@@ -431,7 +431,7 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                   </div>
                 </div>
                 <div class="product-opensource-action">
-                  <a class="product-github-btn" href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">
+                  <a class="product-github-btn" href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
                     View on GitHub
                   </a>
@@ -440,11 +440,11 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               </div>
             </section>
 
-            <section class="product-trajectory" aria-label="How AtlasRAG fits into products">
+            <section class="product-trajectory" aria-label="How SupaVector fits into products">
               <div class="product-flow-head">
                 <p class="product-card-eyebrow">How it fits</p>
-                <h3>Keep your app. Add AtlasRAG behind it.</h3>
-                <p>AtlasRAG becomes the memory layer behind your existing product instead of replacing your product with a new one.</p>
+                <h3>Keep your app. Add SupaVector behind it.</h3>
+                <p>SupaVector becomes the memory layer behind your existing product instead of replacing your product with a new one.</p>
               </div>
               <div class="product-trajectory-grid">
                 <article class="product-trajectory-step">
@@ -469,7 +469,7 @@ export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               <div class="product-doc-bridge-copy">
                 <p class="product-card-eyebrow">Explore further</p>
                 <h3>See setup, API details, and the open source code.</h3>
-                <p>Documentation covers setup, auth, service tokens, API endpoints, memory policies, and integration examples. If you want to inspect or fork AtlasRAG itself, the source code is in the <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                <p>Documentation covers setup, auth, service tokens, API endpoints, memory policies, and integration examples. If you want to inspect or fork SupaVector itself, the source code is in the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
               </div>
               <div class="product-doc-bridge-links">
                 <a class="product-doc-link" href="#doc-setup-modes">Setup paths</a>

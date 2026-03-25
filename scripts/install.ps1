@@ -24,21 +24,21 @@ function Resolve-Bin {
   return $null
 }
 
-function Test-AtlasRagRepo {
+function Test-SupaVectorRepo {
   param([string]$PathValue)
 
-  return (Test-Path (Join-Path $PathValue "bin/atlasrag.js")) -and
+  return (Test-Path (Join-Path $PathValue "bin/supavector.js")) -and
     (Test-Path (Join-Path $PathValue "docker-compose.yml")) -and
     (Test-Path (Join-Path $PathValue "gateway"))
 }
 
-$repoUrl = if ($env:ATLASRAG_REPO_URL) { $env:ATLASRAG_REPO_URL } else { "https://github.com/Emmanuel-Bamidele/atlasrag.git" }
-$installHome = if ($env:ATLASRAG_HOME) { $env:ATLASRAG_HOME } else { Join-Path $HOME ".atlasrag" }
+$repoUrl = if ($env:SUPAVECTOR_REPO_URL) { $env:SUPAVECTOR_REPO_URL } else { "https://github.com/Emmanuel-Bamidele/supavector.git" }
+$installHome = if ($env:SUPAVECTOR_HOME) { $env:SUPAVECTOR_HOME } else { Join-Path $HOME ".supavector" }
 $binDir = Join-Path $installHome "bin"
-$defaultRepoDir = Join-Path $installHome "src/atlasrag"
+$defaultRepoDir = Join-Path $installHome "src/supavector"
 
-if (-not $RepoDir -and $env:ATLASRAG_REPO_DIR) {
-  $RepoDir = $env:ATLASRAG_REPO_DIR
+if (-not $RepoDir -and $env:SUPAVECTOR_REPO_DIR) {
+  $RepoDir = $env:SUPAVECTOR_REPO_DIR
 }
 
 $nodeBin = Resolve-Bin @(
@@ -47,7 +47,7 @@ $nodeBin = Resolve-Bin @(
   "${env:ProgramFiles(x86)}\nodejs\node.exe"
 )
 if (-not $nodeBin) {
-  throw "Node.js 18+ is required to run the AtlasRAG CLI."
+  throw "Node.js 18+ is required to run the SupaVector CLI."
 }
 
 & $nodeBin -e "process.exit(Number.parseInt(process.versions.node.split('.')[0], 10) >= 18 ? 0 : 1)"
@@ -64,7 +64,7 @@ $npmBin = Resolve-Bin @(
   "${env:ProgramFiles(x86)}\nodejs\npm.cmd"
 )
 if (-not $npmBin) {
-  throw "npm is required to install AtlasRAG CLI dependencies."
+  throw "npm is required to install SupaVector CLI dependencies."
 }
 
 $gitBin = Resolve-Bin @(
@@ -73,7 +73,7 @@ $gitBin = Resolve-Bin @(
   "${env:ProgramFiles(x86)}\Git\cmd\git.exe"
 )
 if (-not $gitBin) {
-  throw "git is required to install AtlasRAG from source."
+  throw "git is required to install SupaVector from source."
 }
 
 $dockerBin = Resolve-Bin @(
@@ -84,10 +84,10 @@ $dockerBin = Resolve-Bin @(
 
 if ($RepoDir) {
   $RepoDir = (Resolve-Path $RepoDir).Path
-  if (-not (Test-AtlasRagRepo $RepoDir)) {
-    throw "Not an AtlasRAG checkout: $RepoDir"
+  if (-not (Test-SupaVectorRepo $RepoDir)) {
+    throw "Not a SupaVector checkout: $RepoDir"
   }
-} elseif (Test-AtlasRagRepo (Get-Location).Path) {
+} elseif (Test-SupaVectorRepo (Get-Location).Path) {
   $RepoDir = (Get-Location).Path
 } else {
   $RepoDir = $defaultRepoDir
@@ -124,9 +124,9 @@ try {
 }
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-$ps1Wrapper = Join-Path $binDir "atlasrag.ps1"
-$cmdWrapper = Join-Path $binDir "atlasrag.cmd"
-$repoCli = (Join-Path $RepoDir "bin/atlasrag.js")
+$ps1Wrapper = Join-Path $binDir "supavector.ps1"
+$cmdWrapper = Join-Path $binDir "supavector.cmd"
+$repoCli = (Join-Path $RepoDir "bin/supavector.js")
 
 $ps1WrapperContent = @"
 param(
@@ -153,7 +153,7 @@ if (-not $NoPathUpdate) {
   }
 }
 
-Write-Host "AtlasRAG CLI installed."
+Write-Host "SupaVector CLI installed."
 Write-Host ""
 Write-Host "CLI wrappers:"
 Write-Host "  $ps1Wrapper"
@@ -162,15 +162,15 @@ Write-Host "Repo checkout: $RepoDir"
 Write-Host "Node: $nodeBin"
 Write-Host "Docker: $(if ($dockerBin) { $dockerBin } else { 'not detected in this shell' })"
 Write-Host ""
-Write-Host "Open a new terminal if \`"atlasrag\`" is not available yet."
+Write-Host "Open a new terminal if \`"supavector\`" is not available yet."
 Write-Host "Recommended next commands:"
-Write-Host "  atlasrag doctor"
-Write-Host "  atlasrag update"
-Write-Host "  atlasrag changemodel"
-Write-Host "  atlasrag onboard"
-Write-Host '  atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."'
-Write-Host '  atlasrag ask --question "What does AtlasRAG store?"'
-Write-Host '  atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?"'
+Write-Host "  supavector doctor"
+Write-Host "  supavector update"
+Write-Host "  supavector changemodel"
+Write-Host "  supavector onboard"
+Write-Host '  supavector write --doc-id welcome --text "SupaVector stores memory for agents."'
+Write-Host '  supavector ask --question "What does SupaVector store?"'
+Write-Host '  supavector boolean_ask --question "Does SupaVector store memory for agents?"'
 
 if ($RunOnboard) {
   Write-Host ""

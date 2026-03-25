@@ -36,7 +36,7 @@ const {
 } = require("../lib");
 
 async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlasrag-cli-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "supavector-cli-"));
   try {
     await fn(dir);
   } finally {
@@ -69,10 +69,10 @@ function testParseCliArgs() {
   const updateParsed = parseCliArgs([
     "update",
     "--project-root",
-    "/tmp/atlasrag"
+    "/tmp/supavector"
   ]);
   assert.equal(updateParsed.command, "update");
-  assert.equal(updateParsed.flags["project-root"], "/tmp/atlasrag");
+  assert.equal(updateParsed.flags["project-root"], "/tmp/supavector");
 
   const uninstallParsed = parseCliArgs([
     "uninstall",
@@ -86,11 +86,11 @@ function testParseCliArgs() {
   const booleanAskParsed = parseCliArgs([
     "boolean_ask",
     "--question",
-    "Does AtlasRAG store memory?",
+    "Does SupaVector store memory?",
     "--json"
   ]);
   assert.equal(booleanAskParsed.command, "boolean_ask");
-  assert.equal(booleanAskParsed.flags.question, "Does AtlasRAG store memory?");
+  assert.equal(booleanAskParsed.flags.question, "Does SupaVector store memory?");
   assert.equal(booleanAskParsed.flags.json, true);
 
   const changeModelParsed = parseCliArgs([
@@ -143,7 +143,7 @@ function testEnvAssignmentHelpers() {
 
 function testDetectProjectRoot() {
   return withTempDir(async (dir) => {
-    const root = path.join(dir, "atlasrag");
+    const root = path.join(dir, "supavector");
     const nested = path.join(root, "gateway", "public");
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(root, "docker-compose.yml"), "services:\n", "utf8");
@@ -156,24 +156,24 @@ function testDetectProjectRoot() {
 
 function testCreateOnboardConfig() {
   const config = createOnboardConfig({
-    projectRoot: "/tmp/atlasrag",
+    projectRoot: "/tmp/supavector",
     mode: "bundled-postgres",
     envFile: ".env",
     composeFile: "docker-compose.yml",
     baseUrl: resolveBaseUrl("4100"),
     tenantId: "default",
     adminUsername: "admin",
-    apiKey: "atrg_secret",
+    apiKey: "supav_secret",
     openAiApiKey: "sk-test",
     geminiApiKey: "gemini-test",
     anthropicApiKey: "anthropic-test"
   });
 
-  assert.equal(config.projectRoot, "/tmp/atlasrag");
+  assert.equal(config.projectRoot, "/tmp/supavector");
   assert.equal(config.baseUrl, "http://localhost:4100");
   assert.equal(config.tenantId, "default");
   assert.equal(config.adminUsername, "admin");
-  assert.equal(config.apiKey, "atrg_secret");
+  assert.equal(config.apiKey, "supav_secret");
   assert.equal(config.openAiApiKey, "sk-test");
   assert.equal(config.geminiApiKey, "gemini-test");
   assert.equal(config.anthropicApiKey, "anthropic-test");
@@ -181,7 +181,7 @@ function testCreateOnboardConfig() {
   assert.ok(config.updatedAt);
 
   const pending = createOnboardConfig({
-    projectRoot: "/tmp/atlasrag",
+    projectRoot: "/tmp/supavector",
     mode: "bundled-postgres",
     envFile: ".env",
     composeFile: "docker-compose.yml",
@@ -213,11 +213,11 @@ async function testDocumentExtraction() {
     const pdfPath = path.join(dir, "manual.pdf");
     const docxPath = path.join(dir, "resume.docx");
 
-    fs.writeFileSync(textPath, "Hello from AtlasRAG.\n", "utf8");
+    fs.writeFileSync(textPath, "Hello from SupaVector.\n", "utf8");
     fs.writeFileSync(pdfPath, Buffer.from("%PDF-test", "utf8"));
     fs.writeFileSync(docxPath, Buffer.from("PK-test", "utf8"));
 
-    assert.equal(await extractDocumentText(textPath), "Hello from AtlasRAG.\n");
+    assert.equal(await extractDocumentText(textPath), "Hello from SupaVector.\n");
 
     const pdfText = await extractDocumentText(pdfPath, {
       extractPdfText: async () => "PDF content\n\nwith spacing"
@@ -234,7 +234,7 @@ async function testDocumentExtraction() {
 function testNormalizeTcpPort() {
   assert.equal(normalizeTcpPort("3000"), "3000");
   assert.equal(normalizeTcpPort(" 5432 ", "Gateway port"), "5432");
-  assert.throws(() => normalizeTcpPort("atlasrag status", "Gateway port"), /Gateway port must be a number between 1 and 65535/);
+  assert.throws(() => normalizeTcpPort("supavector status", "Gateway port"), /Gateway port must be a number between 1 and 65535/);
   assert.throws(() => normalizeTcpPort("70000"), /Port must be a number between 1 and 65535/);
 }
 
@@ -243,11 +243,11 @@ function testBaseUrlHelpers() {
     "http://localhost:3000",
     "http://127.0.0.1:3000"
   ]);
-  assert.deepEqual(buildBaseUrlCandidates("https://atlasrag.com"), [
-    "https://atlasrag.com"
+  assert.deepEqual(buildBaseUrlCandidates("https://supavector.com"), [
+    "https://supavector.com"
   ]);
   assert.equal(preferredBaseUrl("http://localhost:3000"), "http://127.0.0.1:3000");
-  assert.equal(preferredBaseUrl("https://atlasrag.com"), "https://atlasrag.com");
+  assert.equal(preferredBaseUrl("https://supavector.com"), "https://supavector.com");
 }
 
 function testModelHelpers() {
@@ -276,22 +276,22 @@ function testModelHelpers() {
 }
 
 function testInstallHelpers() {
-  const installHome = resolveInstallHome({ ATLASRAG_HOME: "/tmp/custom-atlasrag" }, "/Users/tester");
-  assert.equal(installHome, path.resolve("/tmp/custom-atlasrag"));
-  assert.equal(buildInstallBinDir(installHome), path.join(path.resolve("/tmp/custom-atlasrag"), "bin"));
-  assert.equal(buildInstallRepoDir(installHome), path.join(path.resolve("/tmp/custom-atlasrag"), "src", "atlasrag"));
+  const installHome = resolveInstallHome({ SUPAVECTOR_HOME: "/tmp/custom-supavector" }, "/Users/tester");
+  assert.equal(installHome, path.resolve("/tmp/custom-supavector"));
+  assert.equal(buildInstallBinDir(installHome), path.join(path.resolve("/tmp/custom-supavector"), "bin"));
+  assert.equal(buildInstallRepoDir(installHome), path.join(path.resolve("/tmp/custom-supavector"), "src", "supavector"));
 
-  const shellPathLine = buildShellPathLine("/tmp/custom-atlasrag/bin");
-  assert.equal(shellPathLine, `export PATH="${path.resolve("/tmp/custom-atlasrag/bin")}:$PATH"`);
+  const shellPathLine = buildShellPathLine("/tmp/custom-supavector/bin");
+  assert.equal(shellPathLine, `export PATH="${path.resolve("/tmp/custom-supavector/bin")}:$PATH"`);
 
   const rcText = [
     "export PATH=\"/usr/local/bin:$PATH\"",
-    "# >>> atlasrag >>>",
+    "# >>> supavector >>>",
     shellPathLine,
-    "# <<< atlasrag <<<",
+    "# <<< supavector <<<",
     "alias ll='ls -la'"
   ].join("\n");
-  assert.equal(stripManagedShellPath(rcText, "/tmp/custom-atlasrag/bin"), [
+  assert.equal(stripManagedShellPath(rcText, "/tmp/custom-supavector/bin"), [
     "export PATH=\"/usr/local/bin:$PATH\"",
     "alias ll='ls -la'"
   ].join("\n"));
@@ -300,14 +300,14 @@ function testInstallHelpers() {
     shellPathLine,
     "export PATH=\"/usr/local/bin:$PATH\""
   ].join("\n");
-  assert.equal(stripManagedShellPath(legacyRcText, "/tmp/custom-atlasrag/bin"), "export PATH=\"/usr/local/bin:$PATH\"");
+  assert.equal(stripManagedShellPath(legacyRcText, "/tmp/custom-supavector/bin"), "export PATH=\"/usr/local/bin:$PATH\"");
 
   assert.equal(
-    removePathEntry("/usr/local/bin:/tmp/custom-atlasrag/bin:/bin", "/tmp/custom-atlasrag/bin", "linux"),
+    removePathEntry("/usr/local/bin:/tmp/custom-supavector/bin:/bin", "/tmp/custom-supavector/bin", "linux"),
     "/usr/local/bin:/bin"
   );
   assert.equal(
-    removePathEntry("C:\\Windows;C:\\Users\\Test\\.atlasrag\\bin;C:\\Tools", "c:\\users\\test\\.atlasrag\\bin\\", "win32"),
+    removePathEntry("C:\\Windows;C:\\Users\\Test\\.supavector\\bin;C:\\Tools", "c:\\users\\test\\.supavector\\bin\\", "win32"),
     "C:\\Windows;C:\\Tools"
   );
 }

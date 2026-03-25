@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.redis
-    image: atlasrag/vector-store
+    image: supavector/vector-store
     environment:
       VECTOR_WAL: ${VECTOR_WAL:-1}
       WAL_PATH: "/data/wal.log"
@@ -31,7 +31,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
-    image: atlasrag/gateway
+    image: supavector/gateway
     environment:
       TCP_TIMEOUT_MS: "30000"
       TCP_HOST: redis

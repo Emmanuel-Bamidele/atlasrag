@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.redis
-    image: atlasrag/vector-store
+    image: supavector/vector-store
     restart: unless-stopped
     environment:
       VECTOR_WAL: "1"
@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.stunnel
-    image: atlasrag/stunnel
+    image: supavector/stunnel
     restart: unless-stopped
     volumes:
       - ./deploy/stunnel/vector-server.conf:/etc/stunnel/stunnel.conf:ro
@@ -35,7 +35,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.stunnel
-    image: atlasrag/stunnel
+    image: supavector/stunnel
     restart: unless-stopped
     volumes:
       - ./deploy/stunnel/vector-client.conf:/etc/stunnel/stunnel.conf:ro
@@ -64,7 +64,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
-    image: atlasrag/gateway
+    image: supavector/gateway
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -158,10 +158,10 @@ services:
 
 volumes:
   pgdata:
-    name: atlasrag_pgdata
+    name: supavector_pgdata
   vector_data:
-    name: atlasrag_vector_data
+    name: supavector_vector_data
   caddy_data:
-    name: atlasrag_caddy_data
+    name: supavector_caddy_data
   caddy_config:
-    name: atlasrag_caddy_config
+    name: supavector_caddy_config

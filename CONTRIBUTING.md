@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to AtlasRAG.
+Thanks for contributing to SupaVector.
 
 This repository is currently optimized for self-hosted deployment and active iteration. Contributions should improve correctness, operator experience, documentation quality, or self-hosting readiness without widening scope casually.
 
@@ -80,7 +80,7 @@ Changes that need extra discussion first:
 
 ## Product Direction And Contribution Lanes
 
-AtlasRAG is moving toward a clear role: the memory layer for AI agents.
+SupaVector is moving toward a clear role: the memory layer for AI agents.
 
 That means a product that can sit inside a single local loop, a multi-agent system, a backend worker graph, or a deployed runtime and provide durable memory, retrieval, memory policies, and auditability across those environments.
 
@@ -97,7 +97,7 @@ Good roadmap-aligned contribution lanes:
 
 ### 1. Agent Loop Primitives
 
-AtlasRAG already supports document and memory APIs. A strong next step is making it easier for agent runtimes to call AtlasRAG inside a loop.
+SupaVector already supports document and memory APIs. A strong next step is making it easier for agent runtimes to call SupaVector inside a loop.
 
 Good contributions here:
 
@@ -110,7 +110,7 @@ Keep changes small. A focused helper, endpoint improvement, or SDK example is be
 
 ### 2. Multi-Agent Memory Controls
 
-AtlasRAG should work for one agent, many agents, and handoffs between agents.
+SupaVector should work for one agent, many agents, and handoffs between agents.
 
 Good contributions here:
 
@@ -123,7 +123,7 @@ Contributions in this area must preserve tenant isolation and access-control gua
 
 ### 3. Provider And Model Portability
 
-AtlasRAG should remain usable with different base models and deployment styles.
+SupaVector should remain usable with different base models and deployment styles.
 
 Good contributions here:
 
@@ -132,11 +132,11 @@ Good contributions here:
 - compatibility fixes for local or self-hosted model backends
 - docs that make model/runtime boundaries clearer
 
-Avoid hard-coding AtlasRAG into one model vendor unless the change is explicitly vendor-specific and isolated.
+Avoid hard-coding SupaVector into one model vendor unless the change is explicitly vendor-specific and isolated.
 
 ### 4. SDK And Runtime Integrations
 
-If AtlasRAG is the memory layer, it needs to be easy to plug into real agent runtimes.
+If SupaVector is the memory layer, it needs to be easy to plug into real agent runtimes.
 
 Good contributions here:
 
@@ -162,7 +162,7 @@ This is a high-value area for contributors who want to improve production readin
 
 ### 6. Local-First And Remote Deployment Parity
 
-AtlasRAG should feel consistent whether it runs on a laptop, a private server, or a shared deployment.
+SupaVector should feel consistent whether it runs on a laptop, a private server, or a shared deployment.
 
 Good contributions here:
 

@@ -2,7 +2,7 @@
 
 ## Supported Scope
 
-AtlasRAG is currently documented as self-hosted software. Security work should prioritize:
+SupaVector is currently documented as self-hosted software. Security work should prioritize:
 
 - tenant isolation
 - authentication and authorization
@@ -45,7 +45,7 @@ Security-sensitive material should not be committed to the repository, including
 
 ## Operational Notes
 
-Operators deploying AtlasRAG should:
+Operators deploying SupaVector should:
 
 - use strong secrets for JWT and cookie signing
 - store secrets outside version control

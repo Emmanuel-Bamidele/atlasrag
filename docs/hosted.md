@@ -1,22 +1,22 @@
-# AtlasRAG Hosted
+# SupaVector Hosted
 
-This guide is for developers using AtlasRAG as a hosted service — where AtlasRAG runs the infrastructure and you call the API with a token issued from the Dashboard.
+This guide is for developers using SupaVector as a hosted service — where SupaVector runs the infrastructure and you call the API with a token issued from the Dashboard.
 
 Choose this path when:
 
-- you do not want to run Docker, Postgres, or any AtlasRAG server yourself
+- you do not want to run Docker, Postgres, or any SupaVector server yourself
 - you want a working API token in under five minutes
-- you are building an app, backend, agent, or prototype that calls AtlasRAG
+- you are building an app, backend, agent, or prototype that calls SupaVector
 
 What you are not setting up:
 
 - any server, Docker container, or Compose file
 - `.env` files or bootstrap scripts
-- your own Postgres database for AtlasRAG
+- your own Postgres database for SupaVector
 
 ## Step 1 — Sign Up
 
-Go to the AtlasRAG hosted instance and sign up with Google, GitHub, or email.
+Go to the SupaVector hosted instance and sign up with Google, GitHub, or email.
 
 If you use email, a one-time code is sent to your inbox. Enter it to complete sign-in. No password is stored.
 
@@ -29,14 +29,14 @@ After signing in, the **Dashboard** tab appears in the navigation.
 3. Enter a project name (max 80 characters)
 4. Click **Create**
 
-A project represents one isolated AtlasRAG tenant. All documents, memories, and usage are scoped to that project.
+A project represents one isolated SupaVector tenant. All documents, memories, and usage are scoped to that project.
 
 ## Step 3 — Copy Your Service Token
 
 When a project is created, a service token is displayed **once**. Copy it immediately.
 
 ```
-atrg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 The token is not stored in plain text on the server. If you close the dialog without copying it, create a new token from the project's token list. The old one remains active until you revoke it.
@@ -90,33 +90,33 @@ No real charge is made.
 Set two environment variables in your app, agent, or script:
 
 ```bash
-ATLASRAG_BASE_URL=https://YOUR_HOSTED_DOMAIN
-ATLASRAG_API_KEY=atrg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+SUPAVECTOR_BASE_URL=https://YOUR_HOSTED_DOMAIN
+SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Then call the API the same way as any AtlasRAG deployment:
+Then call the API the same way as any SupaVector deployment:
 
 ```bash
 # Health check (no token needed)
-curl -sS "${ATLASRAG_BASE_URL}/health"
+curl -sS "${SUPAVECTOR_BASE_URL}/health"
 
 # Index a document
-curl -sS "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: doc-001" \
   -H "Content-Type: application/json" \
   -d '{
     "docId": "welcome",
     "collection": "default",
-    "text": "AtlasRAG stores memory for agents."
+    "text": "SupaVector stores memory for agents."
   }'
 
 # Ask a question
-curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "Authorization: Bearer ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What does AtlasRAG store?",
+    "question": "What does SupaVector store?",
     "k": 5,
     "policy": "amvl"
   }'
@@ -148,11 +148,11 @@ You can also call the API directly:
 
 ```bash
 # Credit balance (requires portal JWT, not service token)
-curl -sS "${ATLASRAG_BASE_URL}/portal/billing/balance" \
+curl -sS "${SUPAVECTOR_BASE_URL}/portal/billing/balance" \
   -H "Authorization: Bearer YOUR_PORTAL_JWT"
 
 # Transaction history
-curl -sS "${ATLASRAG_BASE_URL}/portal/billing/transactions" \
+curl -sS "${SUPAVECTOR_BASE_URL}/portal/billing/transactions" \
   -H "Authorization: Bearer YOUR_PORTAL_JWT"
 ```
 
@@ -208,7 +208,7 @@ if (res.status === 402 && data.code === "CREDIT_REQUIRED") {
 
 **Cause:** The token is missing, malformed, revoked, or belongs to a different deployment.
 
-**Fix:** Verify the token starts with `atrg_`, was copied from the Dashboard of this deployment, and has not been revoked.
+**Fix:** Verify the token starts with `supav_`, was copied from the Dashboard of this deployment, and has not been revoked.
 
 ### 410 — Token Revoked
 
@@ -216,21 +216,21 @@ Returned by the token reveal endpoint when a token has been explicitly revoked. 
 
 ## Hosted Versus Self-Hosted
 
-| | AtlasRAG Hosted | Self-Hosted |
+| | SupaVector Hosted | Self-Hosted |
 |---|---|---|
 | You run Docker | No | Yes |
 | You manage Postgres | No | Yes |
 | Where your token comes from | Dashboard sign-up | `bootstrap_instance.js` script |
-| Token prefix | `atrg_` | Any (usually no prefix) |
+| Token prefix | `supav_` | Any (usually no prefix) |
 | AI generation billing | Credit balance in Dashboard | Your own provider key billed directly |
 | Storage billing | Measured per write, shown in Dashboard | Not tracked |
-| Data residency | AtlasRAG-managed | Your own infrastructure |
+| Data residency | SupaVector-managed | Your own infrastructure |
 
-Self-hosted tokens do not go through the credit system. If you see `atrg_` in your token and you are not using the hosted service, that token was minted by a portal-enabled deployment and does carry the credit requirement.
+Self-hosted tokens do not go through the credit system. If you see `supav_` in your token and you are not using the hosted service, that token was minted by a portal-enabled deployment and does carry the credit requirement.
 
 ## Multiple Projects
 
-Each project is a separate AtlasRAG tenant with its own:
+Each project is a separate SupaVector tenant with its own:
 
 - document and memory store
 - token list
@@ -240,5 +240,5 @@ Use separate projects to isolate different apps, environments (production vs sta
 
 ## Read Next
 
-- [`setup-modes.md`](setup-modes.md) — understand how hosted fits into the broader AtlasRAG setup modes
+- [`setup-modes.md`](setup-modes.md) — understand how hosted fits into the broader SupaVector setup modes
 - [`agents.md`](agents.md) — wiring your service token into an agent or backend runtime

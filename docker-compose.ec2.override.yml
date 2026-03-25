@@ -15,6 +15,6 @@ services:
   gateway:
     build:
       context: ..
-      dockerfile: atlasrag-portal/Dockerfile.node.portal
+      dockerfile: supavector-portal/Dockerfile.node.portal
     ports:
       - "127.0.0.1:3300:3000"

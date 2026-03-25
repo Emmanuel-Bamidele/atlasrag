@@ -1,10 +1,10 @@
-# AtlasRAG Developer Quickstart
+# SupaVector Developer Quickstart
 
 This guide shows the **recommended first path** for a developer who wants to:
 
 1. SSH into a **cloud VM**
-2. Set up **AtlasRAG with the CLI** on that server
-3. Build and deploy an app that calls AtlasRAG **server-to-server**
+2. Set up **SupaVector with the CLI** on that server
+3. Build and deploy an app that calls SupaVector **server-to-server**
 4. Run the app behind **Gunicorn + Nginx**
 5. Use the same pattern on **AWS, Azure, or GCP**
 
@@ -17,13 +17,13 @@ It focuses on the cleanest production pattern first. Other deployment approaches
 Before you touch a server, decide which mode you are using.
 
 ### Recommended for your first real app
-**Self-host AtlasRAG on a VM and keep AtlasRAG behind your backend.**
+**Self-host SupaVector on a VM and keep SupaVector behind your backend.**
 
 That means:
-- AtlasRAG runs on your VM
+- SupaVector runs on your VM
 - your app runs on the same VM or another VM
-- your app talks to AtlasRAG over private/server-side HTTP
-- the browser never sees the AtlasRAG service token
+- your app talks to SupaVector over private/server-side HTTP
+- the browser never sees the SupaVector service token
 
 This is the **backend-as-caller** pattern.
 
@@ -40,9 +40,9 @@ On your VM, you should have:
 
 You also need to know one important rule:
 
-> `atlasrag onboard` is for **bootstrapping your own self-hosted AtlasRAG deployment**.
+> `supavector onboard` is for **bootstrapping your own self-hosted SupaVector deployment**.
 >
-> Do **not** run it on a machine that is only consuming an already-running AtlasRAG deployment.
+> Do **not** run it on a machine that is only consuming an already-running SupaVector deployment.
 
 ---
 
@@ -51,15 +51,15 @@ You also need to know one important rule:
 The simplest production shape is:
 
 ```text
-User -> Nginx -> Gunicorn app -> AtlasRAG API
+User -> Nginx -> Gunicorn app -> SupaVector API
 ```
 
 Typical local/private ports on one VM:
 - **Nginx**: `80/443`
 - **Your app (Gunicorn)**: `127.0.0.1:8000`
-- **AtlasRAG**: `127.0.0.1:3000`
+- **SupaVector**: `127.0.0.1:3000`
 
-This keeps AtlasRAG private and lets your app call it server-to-server.
+This keeps SupaVector private and lets your app call it server-to-server.
 
 ---
 
@@ -92,52 +92,52 @@ sudo apt install -y curl git ca-certificates gnupg lsb-release
 
 Install Docker using your normal OS/vendor-approved method.
 
-### Step 3 — Install AtlasRAG CLI and bootstrap the instance
+### Step 3 — Install SupaVector CLI and bootstrap the instance
 
 Typical flow:
 
 ```bash
 ./scripts/install.sh
-atlasrag onboard
+supavector onboard
 ```
 
-During onboarding, AtlasRAG will prompt for the initial setup and create the **first admin** and the **first service token** for the self-hosted deployment.
+During onboarding, SupaVector will prompt for the initial setup and create the **first admin** and the **first service token** for the self-hosted deployment.
 
 ### Step 4 — Verify the service is up
 
 Once onboarding is complete, set the runtime env values and check health:
 
 ```bash
-export ATLASRAG_BASE_URL="http://127.0.0.1:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_BASE_URL="http://127.0.0.1:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
 
-curl -fsS "${ATLASRAG_BASE_URL}/v1/health"
+curl -fsS "${SUPAVECTOR_BASE_URL}/v1/health"
 ```
 
 ### Step 5 — Index a test document
 
 ```bash
-curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: idx-001" \
   -H "Content-Type: application/json" \
   -d '{
     "docId": "welcome",
     "collection": "default",
-    "text": "AtlasRAG stores memory for agents."
+    "text": "SupaVector stores memory for agents."
   }'
 ```
 
 ### Step 6 — Ask your first question
 
 ```bash
-curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3}'
+  -d '{"question":"What does SupaVector store?","k":3}'
 ```
 
-If that works, your AtlasRAG server is ready for your app.
+If that works, your SupaVector server is ready for your app.
 
 ---
 
@@ -155,8 +155,8 @@ For production, store env vars in one of these places instead:
 At minimum, your app runtime needs:
 
 ```bash
-ATLASRAG_BASE_URL=http://127.0.0.1:3000
-ATLASRAG_API_KEY=YOUR_SERVICE_TOKEN
+SUPAVECTOR_BASE_URL=http://127.0.0.1:3000
+SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN
 ```
 
 Do not commit these secrets to Git.
@@ -167,18 +167,18 @@ Do not commit these secrets to Git.
 
 Your frontend or browser should call **your backend**.
 
-Your backend should call **AtlasRAG**.
+Your backend should call **SupaVector**.
 
 ### Recommended flow
 1. User signs in to your app
 2. User uploads text or a document
-3. Your backend calls AtlasRAG `/v1/docs`
+3. Your backend calls SupaVector `/v1/docs`
 4. User asks a question
-5. Your backend calls AtlasRAG `/v1/ask`
+5. Your backend calls SupaVector `/v1/ask`
 6. Your backend returns the result to the frontend
 
 ### Why this is the recommended pattern
-- your AtlasRAG token stays private
+- your SupaVector token stays private
 - you can add billing, limits, and logging
 - you can revoke access centrally
 - you can swap internal infrastructure later
@@ -193,18 +193,18 @@ Your backend should call **AtlasRAG**.
 import os
 import requests
 
-ATLASRAG_BASE_URL = os.environ["ATLASRAG_BASE_URL"]
-ATLASRAG_API_KEY = os.environ["ATLASRAG_API_KEY"]
+SUPAVECTOR_BASE_URL = os.environ["SUPAVECTOR_BASE_URL"]
+SUPAVECTOR_API_KEY = os.environ["SUPAVECTOR_API_KEY"]
 
 headers = {
-    "X-API-Key": ATLASRAG_API_KEY,
+    "X-API-Key": SUPAVECTOR_API_KEY,
     "Content-Type": "application/json",
 }
 
 
 def index_text(doc_id: str, text: str, collection: str = "default"):
     resp = requests.post(
-        f"{ATLASRAG_BASE_URL}/v1/docs",
+        f"{SUPAVECTOR_BASE_URL}/v1/docs",
         headers={**headers, "Idempotency-Key": f"idx-{doc_id}"},
         json={
             "docId": doc_id,
@@ -219,7 +219,7 @@ def index_text(doc_id: str, text: str, collection: str = "default"):
 
 def ask(question: str, collection: str = "default"):
     resp = requests.post(
-        f"{ATLASRAG_BASE_URL}/v1/ask",
+        f"{SUPAVECTOR_BASE_URL}/v1/ask",
         headers=headers,
         json={
             "question": question,
@@ -292,7 +292,7 @@ Use:
 ### The app pattern stays the same everywhere
 
 ```text
-Cloud VM -> AtlasRAG + your backend -> Nginx -> public traffic
+Cloud VM -> SupaVector + your backend -> Nginx -> public traffic
 ```
 
 So the cloud-specific difference is mostly:
@@ -301,7 +301,7 @@ So the cloud-specific difference is mostly:
 - secret storage
 - load balancer / TLS options
 
-The AtlasRAG app pattern does not materially change.
+The SupaVector app pattern does not materially change.
 
 ---
 
@@ -317,99 +317,99 @@ Pages:
 - `/ask`
 
 Backend endpoints:
-- `POST /upload` -> calls AtlasRAG `/v1/docs`
-- `POST /ask` -> calls AtlasRAG `/v1/ask`
+- `POST /upload` -> calls SupaVector `/v1/docs`
+- `POST /ask` -> calls SupaVector `/v1/ask`
 
 This is the fastest path from working infrastructure to a real demo.
 
 ---
 
-## 11) Using an existing AtlasRAG deployment
+## 11) Using an existing SupaVector deployment
 
-If you **did not install AtlasRAG on this server**, you can still use it by connecting to an existing deployment.
+If you **did not install SupaVector on this server**, you can still use it by connecting to an existing deployment.
 
 There are two common scenarios:
 
-### Option 1 — AtlasRAG Hosted
+### Option 1 — SupaVector Hosted
 
-If you already obtained a service token from **AtlasRAG hosted** and want to use that hosted deployment, you do **not** run `atlasrag onboard` on your server.
+If you already obtained a service token from **SupaVector hosted** and want to use that hosted deployment, you do **not** run `supavector onboard` on your server.
 
 You should already have:
-- `ATLASRAG_BASE_URL`
-- `ATLASRAG_API_KEY` (service token)
+- `SUPAVECTOR_BASE_URL`
+- `SUPAVECTOR_API_KEY` (service token)
 
 Set them on your server:
 
 ```bash
-export ATLASRAG_BASE_URL="https://YOUR_HOSTED_ATLASRAG_BASE_URL"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_BASE_URL="https://YOUR_HOSTED_SUPAVECTOR_BASE_URL"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
 ```
 
-Now call AtlasRAG from your backend exactly the same way:
+Now call SupaVector from your backend exactly the same way:
 
 ```bash
-curl -X POST "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does AtlasRAG store?","k":3}'
+  -d '{"question":"What does SupaVector store?","k":3}'
 ```
 
 In this mode:
-- no local AtlasRAG bootstrap is needed
+- no local SupaVector bootstrap is needed
 - no local Docker stack is needed just to consume the API
 - your app still uses the same server-to-server pattern
 
-### Option 2 — Your own self-hosted AtlasRAG elsewhere
+### Option 2 — Your own self-hosted SupaVector elsewhere
 
-If you or your team already deployed AtlasRAG somewhere else, the procedure is almost the same.
+If you or your team already deployed SupaVector somewhere else, the procedure is almost the same.
 
 Examples:
-- AtlasRAG runs on another EC2 instance
-- AtlasRAG runs on an Azure VM
-- AtlasRAG runs on a GCP VM
-- AtlasRAG runs on any other server you control
+- SupaVector runs on another EC2 instance
+- SupaVector runs on an Azure VM
+- SupaVector runs on a GCP VM
+- SupaVector runs on any other server you control
 
 In that case:
 1. get the base URL of that deployment
 2. get a service token created on that deployment
 3. store both on your app server
-4. call AtlasRAG from your backend
+4. call SupaVector from your backend
 
 Example:
 
 ```bash
-export ATLASRAG_BASE_URL="http://YOUR_EXISTING_ATLASRAG_SERVER:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_BASE_URL="http://YOUR_EXISTING_SUPAVECTOR_SERVER:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
 ```
 
 Then call it exactly the same way:
 
 ```bash
-curl -X POST "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "docId": "example",
     "collection": "default",
-    "text": "AtlasRAG stores memory for agents."
+    "text": "SupaVector stores memory for agents."
   }'
 ```
 
 ### Important rules for both cases
 
-- Do **not** run `atlasrag onboard` on a machine that is only consuming an existing deployment
+- Do **not** run `supavector onboard` on a machine that is only consuming an existing deployment
 - Service tokens are **deployment-specific**
 - A token from one deployment will **not** work on another deployment
-- Keep `ATLASRAG_API_KEY` server-side only
+- Keep `SUPAVECTOR_API_KEY` server-side only
 - Do not expose service tokens in frontend code
 
 ### Summary table
 
 | Scenario | What you do |
 |---|---|
-| Hosted AtlasRAG | Use the hosted base URL + hosted service token |
+| Hosted SupaVector | Use the hosted base URL + hosted service token |
 | Self-hosted elsewhere | Use that deployment’s base URL + that deployment’s service token |
-| Self-hosting on this server | Run `atlasrag onboard` and use the local service token |
+| Self-hosting on this server | Run `supavector onboard` and use the local service token |
 
 ---
 
@@ -419,16 +419,16 @@ Once you understand the main pattern above, these other modes are easy:
 
 ### A. Existing shared deployment
 You are only a consumer.
-You do not self-host AtlasRAG.
+You do not self-host SupaVector.
 You just get a base URL and service token from the admin.
 
 ### B. Hosted deployment + your own model keys
 You use an existing deployment while sending your own provider key on supported routes.
-That is useful if you want AtlasRAG to keep the data/runtime layer, but you want your own LLM billing.
+That is useful if you want SupaVector to keep the data/runtime layer, but you want your own LLM billing.
 
 ### C. Full self-host with external Postgres
 This is still self-hosting.
-The only difference is where AtlasRAG stores relational state.
+The only difference is where SupaVector stores relational state.
 
 ### D. Human admin setup
 Use `/v1/login` only when a human admin needs interactive access, tenant settings, or wants to mint service tokens.
@@ -438,12 +438,12 @@ It is not the usual long-running runtime credential for apps.
 
 ## 13) Common mistakes to avoid
 
-- Running `atlasrag onboard` on a machine that is only consuming an existing hosted/shared deployment
+- Running `supavector onboard` on a machine that is only consuming an existing hosted/shared deployment
 - Putting long-lived service tokens in browser code
 - Treating username/password as the main app credential instead of service tokens
 - Forgetting that tokens are deployment-scoped
-- Committing `ATLASRAG_API_KEY` to Git
-- Exposing AtlasRAG directly when your own backend can proxy it safely
+- Committing `SUPAVECTOR_API_KEY` to Git
+- Exposing SupaVector directly when your own backend can proxy it safely
 
 ---
 
@@ -452,20 +452,20 @@ It is not the usual long-running runtime credential for apps.
 ### If you are self-hosting on a VM
 1. SSH into the VM
 2. Install Docker
-3. Install AtlasRAG CLI
-4. Run `atlasrag onboard`
-5. Save `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY`
+3. Install SupaVector CLI
+4. Run `supavector onboard`
+5. Save `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`
 6. Verify `/v1/health`
 7. Test `/v1/docs` and `/v1/ask`
 8. Deploy your backend with Gunicorn
 9. Put Nginx in front
-10. Keep AtlasRAG token server-side only
+10. Keep SupaVector token server-side only
 
-### If you are consuming an existing AtlasRAG deployment
+### If you are consuming an existing SupaVector deployment
 1. Get base URL from the hosted provider or admin
 2. Get service token from that same deployment
 3. Store both on your backend
-4. Call AtlasRAG server-to-server
+4. Call SupaVector server-to-server
 5. Do not run onboarding locally
 
 ---
@@ -474,9 +474,9 @@ It is not the usual long-running runtime credential for apps.
 
 For your first serious deployment, do this:
 
-- self-host AtlasRAG on one VM, or use a hosted AtlasRAG deployment you already have access to
+- self-host SupaVector on one VM, or use a hosted SupaVector deployment you already have access to
 - run your backend on the same VM or a second VM
-- keep AtlasRAG behind your backend
+- keep SupaVector behind your backend
 - use Gunicorn + Nginx for the app
 - store secrets in server-side env or a secret manager
 

@@ -22,7 +22,7 @@ async function callRpc(id, method, params) {
 
   const llms = await requestJson("GET", "/llms.txt");
   assertStatus(llms, 200, "GET /llms.txt");
-  assert(llms.text.includes("AtlasRAG"), "llms.txt should describe AtlasRAG");
+  assert(llms.text.includes("SupaVector"), "llms.txt should describe SupaVector");
   assert(llms.text.includes("/mcp"), "llms.txt should include MCP endpoint");
 
   const mcpInfo = await requestJson("GET", "/mcp");
@@ -39,7 +39,7 @@ async function callRpc(id, method, params) {
 
   const toolCall = await callRpc(3, "tools/call", {
     name: "search_docs",
-    arguments: { query: "AtlasRAG API documentation", top_k: 3 }
+    arguments: { query: "SupaVector API documentation", top_k: 3 }
   });
   assert(Array.isArray(toolCall.content), "tools/call should return content");
   assert(toolCall.content.length > 0, "tools/call content should not be empty");

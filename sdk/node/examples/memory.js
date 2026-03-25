@@ -1,15 +1,15 @@
-const { AtlasRAGClient } = require("../src");
+const { SupaVectorClient } = require("../src");
 
-const client = new AtlasRAGClient({
-  baseUrl: process.env.ATLASRAG_URL || "http://localhost:3000",
-  collection: process.env.ATLASRAG_COLLECTION || "default"
+const client = new SupaVectorClient({
+  baseUrl: process.env.SUPAVECTOR_URL || "http://localhost:3000",
+  collection: process.env.SUPAVECTOR_COLLECTION || "default"
 });
 
 async function main() {
-  const username = process.env.ATLASRAG_USER;
-  const password = process.env.ATLASRAG_PASS;
+  const username = process.env.SUPAVECTOR_USER;
+  const password = process.env.SUPAVECTOR_PASS;
   if (!username || !password) {
-    throw new Error("Set ATLASRAG_USER and ATLASRAG_PASS in your environment.");
+    throw new Error("Set SUPAVECTOR_USER and SUPAVECTOR_PASS in your environment.");
   }
 
   await client.login(username, password);
@@ -35,7 +35,7 @@ async function main() {
 
   console.log("memory recall", recall.data.results.length);
 
-  await client.indexText("artifact_doc", "AtlasRAG keeps artifacts and reflects them into semantic memory.");
+  await client.indexText("artifact_doc", "SupaVector keeps artifacts and reflects them into semantic memory.");
   const reflect = await client.memoryReflect({
     docId: "artifact_doc",
     policy: "amvl",

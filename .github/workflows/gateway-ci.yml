@@ -33,13 +33,13 @@ jobs:
       - name: Prepare CI env file
         run: |
           cat > .env.ci << 'EOF'
-          POSTGRES_DB=atlasrag
-          POSTGRES_USER=atlasrag
-          POSTGRES_PASSWORD=atlasrag
+          POSTGRES_DB=supavector
+          POSTGRES_USER=supavector
+          POSTGRES_PASSWORD=supavector
           OPENAI_API_KEY=
           JWT_SECRET=ci_jwt_secret
-          JWT_ISSUER=atlasrag
-          JWT_AUDIENCE=atlasrag
+          JWT_ISSUER=supavector
+          JWT_AUDIENCE=supavector
           JWT_EXPIRES_IN=1h
           COOKIE_SECRET=ci_cookie_secret
           COOKIE_SECURE=0
@@ -56,7 +56,7 @@ jobs:
           REINDEX_ON_START=auto
           ALLOW_PRINCIPAL_OVERRIDE=0
           TELEMETRY_ENABLED=0
-          FETCH_USER_AGENT=atlasrag-ci
+          FETCH_USER_AGENT=supavector-ci
           EOF
 
       - name: Start services
@@ -119,7 +119,7 @@ jobs:
         run: |
           cp .env.example .env.quickstart.ci
           cat >> .env.quickstart.ci << 'EOF'
-          POSTGRES_PASSWORD=atlasrag
+          POSTGRES_PASSWORD=supavector
           JWT_SECRET=ci_jwt_secret
           COOKIE_SECRET=ci_cookie_secret
           PUBLIC_BASE_URL=http://localhost:3000
@@ -160,13 +160,13 @@ jobs:
             -H "authorization: Bearer $TOKEN" \
             -H 'content-type: application/json' \
             -H 'Idempotency-Key: smoke-doc-1' \
-            -d '{"docId":"welcome","text":"AtlasRAG stores memory for agents and returns grounded answers with citations."}')
+            -d '{"docId":"welcome","text":"SupaVector stores memory for agents and returns grounded answers with citations."}')
           printf '%s' "$INDEX_JSON" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] is True; assert data["data"]["docId"] == "welcome"; assert data["data"]["chunksIndexed"] >= 1'
 
           ASK_JSON=$(curl -fsS http://localhost:3000/v1/ask \
             -H "authorization: Bearer $TOKEN" \
             -H 'content-type: application/json' \
-            -d '{"question":"What does AtlasRAG store?","k":3}')
+            -d '{"question":"What does SupaVector store?","k":3}')
           printf '%s' "$ASK_JSON" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] is True; assert isinstance(data["data"].get("answer"), str) and data["data"]["answer"].strip()'
 
       - name: Print service logs on failure

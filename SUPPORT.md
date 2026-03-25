@@ -1,6 +1,6 @@
 # Support
 
-AtlasRAG is currently published as self-hosted software.
+SupaVector is currently published as self-hosted software.
 
 ## What This Repository Provides
 

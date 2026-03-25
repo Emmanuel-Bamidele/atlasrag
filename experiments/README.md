@@ -1,4 +1,4 @@
-# AtlasRAG Experiment Suite
+# SupaVector Experiment Suite
 
 Submission experiment harness for AMV-L vs TTL vs LRU with stress scenarios and AMV-L ablations.
 

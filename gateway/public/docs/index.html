@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>AtlasRAG API Docs</title>
+    <title>SupaVector API Docs</title>
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
     <style>
       :root {
@@ -95,17 +95,17 @@
   <body>
     <main class="page">
       <section class="hero">
-        <h1>AtlasRAG API Documentation</h1>
+        <h1>SupaVector API Documentation</h1>
         <p>
           This page is focused on API consumers building apps and agents.
-          The recommended model is: bootstrap once, store a service token, then let your backend or agent call AtlasRAG directly.
+          The recommended model is: bootstrap once, store a service token, then let your backend or agent call SupaVector directly.
         </p>
         <div class="meta-grid">
           <article class="meta-card">
             <h2>Recommended Flow</h2>
             <ol>
               <li>Run <code>node scripts/bootstrap_instance.js</code> once to create an admin and service token.</li>
-              <li>Store <code>ATLASRAG_BASE_URL</code> and <code>ATLASRAG_API_KEY</code> in your app or agent env.</li>
+              <li>Store <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> in your app or agent env.</li>
               <li>Index content via <code>/v1/docs</code> or <code>/v1/docs/url</code>.</li>
               <li>Retrieve context with <code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/boolean_ask</code>, and the memory endpoints.</li>
             </ol>
@@ -115,17 +115,17 @@
             <ul>
               <li>Fork and self-deploy with the bundled stack for the fastest start.</li>
               <li>Fork and self-deploy with your own Postgres and OpenAI key if you already have infra in place.</li>
-              <li>Use a shared AtlasRAG deployment if your app or agent just needs to call an existing instance.</li>
-              <li>Use a shared AtlasRAG deployment with your own OpenAI key when the request should use your provider key.</li>
-              <li>Keep your own product auth in front when AtlasRAG should sit behind your backend.</li>
+              <li>Use a shared SupaVector deployment if your app or agent just needs to call an existing instance.</li>
+              <li>Use a shared SupaVector deployment with your own OpenAI key when the request should use your provider key.</li>
+              <li>Keep your own product auth in front when SupaVector should sit behind your backend.</li>
             </ul>
           </article>
           <article class="meta-card">
             <h2>Important Notes</h2>
             <ul>
               <li>JWTs are best for human admin sessions. Service tokens are best for apps, agents, workers, and CI.</li>
-              <li>AtlasRAG can use your existing Postgres. Set <code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, and <code>PGPASSWORD</code>.</li>
-              <li>If you want AtlasRAG to keep its own Postgres/auth but use your OpenAI key for a request, also send <code>X-OpenAI-API-Key</code>.</li>
+              <li>SupaVector can use your existing Postgres. Set <code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, and <code>PGPASSWORD</code>.</li>
+              <li>If you want SupaVector to keep its own Postgres/auth but use your OpenAI key for a request, also send <code>X-OpenAI-API-Key</code>.</li>
               <li><code>Idempotency-Key</code> is required for <code>/v1/docs</code>, <code>/v1/docs/url</code>, <code>/v1/memory/write</code>, <code>/v1/memory/reflect</code>.</li>
               <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
               <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
@@ -138,7 +138,7 @@
           </article>
         </div>
         <div class="controls">
-          Bootstrap once, then use the returned <code>ATLASRAG_BASE_URL</code> and <code>ATLASRAG_API_KEY</code> everywhere else. Add <code>X-OpenAI-API-Key</code> only when you want request-scoped provider override.
+          Bootstrap once, then use the returned <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> everywhere else. Add <code>X-OpenAI-API-Key</code> only when you want request-scoped provider override.
         </div>
       </section>
       <div id="swagger-ui"></div>

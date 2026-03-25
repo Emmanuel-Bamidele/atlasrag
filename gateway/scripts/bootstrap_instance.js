@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bootstrap an AtlasRAG instance by ensuring a local admin user and minting a service token.
+// Bootstrap a SupaVector instance by ensuring a local admin user and minting a service token.
 
 const fs = require("fs");
 const path = require("path");
@@ -186,8 +186,8 @@ function formatOutput(result, asJson) {
   console.log(`Service token: ${result.serviceToken.token}`);
   console.log("");
   console.log("Suggested app env:");
-  console.log(`ATLASRAG_BASE_URL=${result.baseUrl}`);
-  console.log(`ATLASRAG_API_KEY=${result.serviceToken.token}`);
+  console.log(`SUPAVECTOR_BASE_URL=${result.baseUrl}`);
+  console.log(`SUPAVECTOR_API_KEY=${result.serviceToken.token}`);
 }
 
 async function main() {
@@ -199,7 +199,7 @@ async function main() {
 
   const username = readValue(parsed, "username", "admin").trim();
   const providedPassword = readValue(parsed, "password", "").trim();
-  const password = providedPassword || `atrg_admin_${randomSecret(18)}`;
+  const password = providedPassword || `supav_admin_${randomSecret(18)}`;
   const tenant = readValue(parsed, "tenant", username).trim();
   const roles = parseRoles(readValue(parsed, "roles"), "admin,indexer,reader");
   const serviceTokenName = readValue(parsed, "service-token-name", `${tenant}-bootstrap`).trim();
@@ -236,7 +236,7 @@ async function main() {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const rawToken = `atrg_${randomSecret(24)}`;
+    const rawToken = `supav_${randomSecret(24)}`;
     const keyHash = hashToken(rawToken);
 
     await pool.query("BEGIN");

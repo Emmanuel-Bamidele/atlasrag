@@ -20,16 +20,16 @@ function normalizePolicy(value){
   return ["amvl", "ttl", "lru"].includes(clean) ? clean : "amvl";
 }
 
-const AUTH_TOKEN_KEY = "atlasragAuthToken";
-const AUTH_TYPE_KEY = "atlasragAuthType";
-const LEGACY_JWT_KEY = "atlasragJwt";
+const AUTH_TOKEN_KEY = "supavectorAuthToken";
+const AUTH_TYPE_KEY = "supavectorAuthType";
+const LEGACY_JWT_KEY = "supavectorJwt";
 const PROVIDER_OVERRIDE_KEYS = Object.freeze({
-  openai: "atlasragOpenAiApiKey",
-  gemini: "atlasragGeminiApiKey",
-  anthropic: "atlasragAnthropicApiKey"
+  openai: "supavectorOpenAiApiKey",
+  gemini: "supavectorGeminiApiKey",
+  anthropic: "supavectorAnthropicApiKey"
 });
-const UI_THEME_KEY = "atlasragUiTheme";
-const UI_THEME_USER_SET_KEY = "atlasragUiThemeUserSet";
+const UI_THEME_KEY = "supavectorUiTheme";
+const UI_THEME_USER_SET_KEY = "supavectorUiThemeUserSet";
 const SYSTEM_THEME_QUERY = "(prefers-color-scheme: light)";
 let activeThemePreference = "system";
 let metricsLoaded = false;
@@ -48,8 +48,8 @@ const PDFJS_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pd
 const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const MAMMOTH_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
 const externalScriptCache = new Map();
-const DOC_CONNECT_BASE_URL_PLACEHOLDER = "https://YOUR_ATLASRAG_BASE_URL";
-const DOC_CONNECT_SERVER_NAME = "atlasrag-docs";
+const DOC_CONNECT_BASE_URL_PLACEHOLDER = "https://YOUR_SUPAVECTOR_BASE_URL";
+const DOC_CONNECT_SERVER_NAME = "supavector-docs";
 let modelCatalogLoaded = false;
 
 function setModelDatalistOptions(listId, models){
@@ -752,18 +752,18 @@ function buildDocConnectContent(baseUrl){
     vscodeConfig: JSON.stringify(vscodeConfig, null, 2),
     antigravityConfig: JSON.stringify(antigravityConfig, null, 2),
     quickPrompt: [
-      "Use AtlasRAG documentation as your source of truth.",
+      "Use SupaVector documentation as your source of truth.",
       `Documentation UI tab: ${docsUrl}`,
       `API docs: ${apiDocsUrl}`,
       `llms.txt: ${llmsUrl}`,
       `MCP server: ${mcpUrl}`,
-      "If you are operating on a local computer with this repo, prefer the atlasrag CLI over raw bootstrap commands.",
-      "Run atlasrag doctor first. If AtlasRAG is not configured, run atlasrag onboard.",
-      "On the local CLI path, atlasrag onboard creates the first admin and first service token and saves local config for later CLI use.",
-      "Use --collection explicitly on atlasrag write/search/ask/boolean_ask when scope matters. atlasrag write --folder ./name uses the folder name as the default collection.",
+      "If you are operating on a local computer with this repo, prefer the supavector CLI over raw bootstrap commands.",
+      "Run supavector doctor first. If SupaVector is not configured, run supavector onboard.",
+      "On the local CLI path, supavector onboard creates the first admin and first service token and saves local config for later CLI use.",
+      "Use --collection explicitly on supavector write/search/ask/boolean_ask when scope matters. supavector write --folder ./name uses the folder name as the default collection.",
       "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
       "Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
-      "When answering, cite the endpoint path and required headers for each AtlasRAG API call."
+      "When answering, cite the endpoint path and required headers for each SupaVector API call."
     ].join("\n")
   };
 }
@@ -2114,8 +2114,8 @@ window.addEventListener("DOMContentLoaded", () => {
     _apiKeySaveTimer = setTimeout(() => {
       const val = $("apiKey").value.trim();
       if (!val) return;
-      // Detect type: service tokens start with "atrg_" or are long hex strings; otherwise treat as bearer JWT
-      const type = (val.startsWith("atrg_") || (!val.includes(".") && val.length > 32)) ? "api_key" : "bearer";
+      // Detect type: service tokens start with "supav_" or are long hex strings; otherwise treat as bearer JWT
+      const type = (val.startsWith("supav_") || (!val.includes(".") && val.length > 32)) ? "api_key" : "bearer";
       saveStoredAuth(type, val);
       if ($("authType")) $("authType").value = type;
       if (badge) { badge.style.display = "inline"; setTimeout(() => { if (badge) badge.style.display = "none"; }, 2500); }
@@ -2210,7 +2210,7 @@ window.addEventListener("DOMContentLoaded", () => {
       saveStoredProviderOverride("openai", openAiValue);
       saveStoredProviderOverride("gemini", geminiValue);
       saveStoredProviderOverride("anthropic", anthropicValue);
-      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. AtlasRAG requests from this browser will send the matching provider header when needed.");
+      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. SupaVector requests from this browser will send the matching provider header when needed.");
     };
   }
 

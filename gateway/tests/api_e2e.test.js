@@ -57,7 +57,7 @@ async function deleteDocWithAdmin(adminJwt, docId) {
 
 (async () => {
   const unique = randomId("ci-e2e");
-  const marker = `atlasrag_${unique}_marker`;
+  const marker = `supavector_${unique}_marker`;
   const docId = `${unique}_doc`;
 
   let adminJwt = null;
@@ -79,7 +79,7 @@ async function deleteDocWithAdmin(adminJwt, docId) {
       body: {
         docId,
         text: [
-          "AtlasRAG e2e ingestion test document.",
+          "SupaVector e2e ingestion test document.",
           `Unique marker: ${marker}.`,
           "This verifies indexing, retrieval, and memory lifecycle endpoints."
         ].join(" ")

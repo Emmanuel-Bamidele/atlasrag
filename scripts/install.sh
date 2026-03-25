@@ -3,15 +3,15 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-AtlasRAG CLI installer
+SupaVector CLI installer
 
 Usage:
   ./scripts/install.sh [--repo-dir PATH] [--run-onboard] [--no-path-update]
 
 Environment overrides:
-  ATLASRAG_REPO_URL     Override the git clone URL
-  ATLASRAG_HOME         Override the install root (default: ~/.atlasrag)
-  ATLASRAG_REPO_DIR     Force a specific repo checkout
+  SUPAVECTOR_REPO_URL     Override the git clone URL
+  SUPAVECTOR_HOME         Override the install root (default: ~/.supavector)
+  SUPAVECTOR_REPO_DIR     Force a specific repo checkout
 EOF
 }
 
@@ -34,11 +34,11 @@ find_bin() {
 
 looks_like_repo() {
   local dir="$1"
-  [[ -f "$dir/bin/atlasrag.js" && -f "$dir/docker-compose.yml" && -d "$dir/gateway" ]]
+  [[ -f "$dir/bin/supavector.js" && -f "$dir/docker-compose.yml" && -d "$dir/gateway" ]]
 }
 
-PATH_BLOCK_START="# >>> atlasrag >>>"
-PATH_BLOCK_END="# <<< atlasrag <<<"
+PATH_BLOCK_START="# >>> supavector >>>"
+PATH_BLOCK_END="# <<< supavector <<<"
 
 upsert_path_block() {
   local rc_file="$1"
@@ -57,11 +57,11 @@ upsert_path_block() {
   printf '\n%s\n%s\n%s\n' "$PATH_BLOCK_START" "$line" "$PATH_BLOCK_END" >>"$rc_file"
 }
 
-REPO_URL="${ATLASRAG_REPO_URL:-https://github.com/Emmanuel-Bamidele/atlasrag.git}"
-INSTALL_HOME="${ATLASRAG_HOME:-$HOME/.atlasrag}"
+REPO_URL="${SUPAVECTOR_REPO_URL:-https://github.com/Emmanuel-Bamidele/supavector.git}"
+INSTALL_HOME="${SUPAVECTOR_HOME:-$HOME/.supavector}"
 BIN_DIR="$INSTALL_HOME/bin"
-DEFAULT_REPO_DIR="$INSTALL_HOME/src/atlasrag"
-REPO_DIR_OVERRIDE="${ATLASRAG_REPO_DIR:-}"
+DEFAULT_REPO_DIR="$INSTALL_HOME/src/supavector"
+REPO_DIR_OVERRIDE="${SUPAVECTOR_REPO_DIR:-}"
 RUN_ONBOARD=0
 UPDATE_PATH=1
 
@@ -92,7 +92,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 NODE_BIN="$(find_bin node /usr/local/bin/node /opt/homebrew/bin/node)" || {
-  printf 'Node.js 18+ is required to run the AtlasRAG CLI.\n' >&2
+  printf 'Node.js 18+ is required to run the SupaVector CLI.\n' >&2
   exit 1
 }
 
@@ -102,12 +102,12 @@ if ! "$NODE_BIN" -e 'process.exit(Number.parseInt(process.versions.node.split(".
 fi
 
 NPM_BIN="$(find_bin npm "$(dirname "$NODE_BIN")/npm" /usr/local/bin/npm /opt/homebrew/bin/npm)" || {
-  printf 'npm is required to install AtlasRAG CLI dependencies.\n' >&2
+  printf 'npm is required to install SupaVector CLI dependencies.\n' >&2
   exit 1
 }
 
 GIT_BIN="$(find_bin git /usr/bin/git /usr/local/bin/git /opt/homebrew/bin/git)" || {
-  printf 'git is required to install AtlasRAG from source.\n' >&2
+  printf 'git is required to install SupaVector from source.\n' >&2
   exit 1
 }
 
@@ -116,7 +116,7 @@ DOCKER_BIN="$(find_bin docker /usr/local/bin/docker /opt/homebrew/bin/docker || 
 if [[ -n "$REPO_DIR_OVERRIDE" ]]; then
   REPO_DIR="$(cd "$REPO_DIR_OVERRIDE" && pwd)"
   if ! looks_like_repo "$REPO_DIR"; then
-    printf 'Not an AtlasRAG checkout: %s\n' "$REPO_DIR" >&2
+    printf 'Not a SupaVector checkout: %s\n' "$REPO_DIR" >&2
     exit 1
   fi
 elif looks_like_repo "$PWD"; then
@@ -140,11 +140,11 @@ fi
 )
 
 mkdir -p "$BIN_DIR"
-WRAPPER_PATH="$BIN_DIR/atlasrag"
+WRAPPER_PATH="$BIN_DIR/supavector"
 cat >"$WRAPPER_PATH" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-exec "$NODE_BIN" "$REPO_DIR/bin/atlasrag.js" "\$@"
+exec "$NODE_BIN" "$REPO_DIR/bin/supavector.js" "\$@"
 EOF
 chmod +x "$WRAPPER_PATH"
 
@@ -165,7 +165,7 @@ if [[ "$UPDATE_PATH" -eq 1 ]]; then
 fi
 
 cat <<EOF
-AtlasRAG CLI installed.
+SupaVector CLI installed.
 
 CLI wrapper: $WRAPPER_PATH
 Repo checkout: $REPO_DIR
@@ -176,13 +176,13 @@ If this is a new shell, make sure this path is available:
   export PATH="$BIN_DIR:\$PATH"
 
 Recommended next commands:
-  atlasrag doctor
-  atlasrag update
-  atlasrag changemodel
-  atlasrag onboard
-  atlasrag write --doc-id welcome --text "AtlasRAG stores memory for agents."
-  atlasrag ask --question "What does AtlasRAG store?"
-  atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?"
+  supavector doctor
+  supavector update
+  supavector changemodel
+  supavector onboard
+  supavector write --doc-id welcome --text "SupaVector stores memory for agents."
+  supavector ask --question "What does SupaVector store?"
+  supavector boolean_ask --question "Does SupaVector store memory for agents?"
 EOF
 
 if [[ "$RUN_ONBOARD" -eq 1 ]]; then

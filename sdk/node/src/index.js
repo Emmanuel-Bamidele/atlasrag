@@ -1,5 +1,5 @@
-const { AtlasRAGClient } = require("./client");
+const { SupaVectorClient } = require("./client");
 
 module.exports = {
-  AtlasRAGClient
+  SupaVectorClient
 };

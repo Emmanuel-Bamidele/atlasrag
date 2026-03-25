@@ -1,6 +1,6 @@
-# AtlasRAG
+# SupaVector
 
-AtlasRAG is a self-hosted memory and retrieval platform for AI agents. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest documents, search them, ask grounded questions, and manage long-term memory with tenant-aware controls.
+SupaVector is a self-hosted memory and retrieval platform for AI agents. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest documents, search them, ask grounded questions, and manage long-term memory with tenant-aware controls.
 
 Current public scope: single-node self-hosted deployment. You run it in your own environment and bring your own model provider credentials.
 
@@ -11,7 +11,7 @@ License: MIT
 ## Main Surfaces
 
 - `gateway/`: Node.js/Express gateway, auth, APIs, public docs UI, and background jobs.
-- `atlasrag/`: C++ vector server used for embedding storage and similarity search.
+- `supavector/`: C++ vector server used for embedding storage and similarity search.
 - `sdk/node/`: small Node SDK for API consumers.
 - `docs/`: setup, deployment, and agent integration guides.
 - `scripts/install.sh` and `scripts/install.ps1`: CLI installer entrypoints for local setup.
@@ -30,9 +30,9 @@ License: MIT
 
 - Human admins use username/password or SSO to manage the instance.
 - Apps, backends, workers, and agents should use a service token.
-- If you want AtlasRAG to keep its own Postgres/auth/runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`.
-- If you already have your own application auth, keep it there and let your backend call AtlasRAG server-to-server.
-- AtlasRAG can run against your existing Postgres by wiring `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` into the gateway runtime environment or a custom Compose file.
+- If you want SupaVector to keep its own Postgres/auth/runtime but use your own provider key for a request, send the matching request-scoped header on supported sync routes: `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key`.
+- If you already have your own application auth, keep it there and let your backend call SupaVector server-to-server.
+- SupaVector can run against your existing Postgres by wiring `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` into the gateway runtime environment or a custom Compose file.
 
 ## Developer And Agent Decision Matrix
 
@@ -40,12 +40,12 @@ If you are not sure which path to use, choose based on the kind of deployment an
 
 | Usage mode | Best when | Read first |
 | --- | --- | --- |
-| Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working AtlasRAG instance | [Self-hosting guide](docs/self-hosting.md) |
-| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want AtlasRAG inside your environment | [Bring your own Postgres](docs/bring-your-own-postgres.md) |
-| Use a shared AtlasRAG deployment | AtlasRAG already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Apps, backends, and agents](docs/agents.md) |
-| Use a shared AtlasRAG deployment with your own provider key | AtlasRAG keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared AtlasRAG, your provider key](docs/agents.md#shared-provider-key) |
-| Keep your own product auth and place AtlasRAG behind your backend | End users should not log into AtlasRAG directly | [Backend-as-caller](docs/agents.md#backend-as-caller) |
-| Use AtlasRAG mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](docs/agents.md#human-jwt) |
+| Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working SupaVector instance | [Self-hosting guide](docs/self-hosting.md) |
+| Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want SupaVector inside your environment | [Bring your own Postgres](docs/bring-your-own-postgres.md) |
+| Use a shared SupaVector deployment | SupaVector already has its own Postgres/auth/runtime and your app or agent just needs to call it | [Apps, backends, and agents](docs/agents.md) |
+| Use a shared SupaVector deployment with your own provider key | SupaVector keeps the shared Postgres/auth/runtime, but each request should use your provider key | [Shared SupaVector, your provider key](docs/agents.md#shared-provider-key) |
+| Keep your own product auth and place SupaVector behind your backend | End users should not log into SupaVector directly | [Backend-as-caller](docs/agents.md#backend-as-caller) |
+| Use SupaVector mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [Human JWT](docs/agents.md#human-jwt) |
 
 If you are still deciding what you are actually setting up, start with [Setup Modes](docs/setup-modes.md) before choosing a self-hosted or shared-deployment path.
 
@@ -54,23 +54,23 @@ If you are still deciding what you are actually setting up, start with [Setup Mo
 ### Prerequisites
 
 - Docker with the Compose plugin
-- Node.js 18+ if you want to use the AtlasRAG CLI
+- Node.js 18+ if you want to use the SupaVector CLI
 - Git if you want the installer to clone or refresh the repo for you
 - At least one provider API key for normal retrieval and answer quality. OpenAI remains the default out of the box.
 
 `OPENAI_API_KEY` is the default quickstart path. `GEMINI_API_KEY` and `ANTHROPIC_API_KEY` are also supported, and `GEMINI_API` is accepted as an alias for `GEMINI_API_KEY`.
 
-### AtlasRAG CLI (recommended)
+### SupaVector CLI (recommended)
 
-AtlasRAG ships with a CLI for onboarding, stack operations, and basic API usage.
+SupaVector ships with a CLI for onboarding, stack operations, and basic API usage.
 
 ### Install
 
-Use the CLI when you want AtlasRAG to feel like one command surface: install it, run the local stack, point apps at it, maintain it over time, and keep a working command reference close by.
+Use the CLI when you want SupaVector to feel like one command surface: install it, run the local stack, point apps at it, maintain it over time, and keep a working command reference close by.
 
 The CLI covers:
 
-- install and update the local `atlasrag` command
+- install and update the local `supavector` command
 - onboard the first local stack and bootstrap the first admin and service token
 - start, stop, and diagnose the local Docker services
 - run `write`, `search`, `ask`, and `boolean_ask` directly from the terminal
@@ -84,7 +84,7 @@ Install from a local checkout:
 Install from a one-line remote command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash
 ```
 
 Windows PowerShell:
@@ -96,27 +96,27 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 Or the one-line remote version:
 
 ```powershell
-irm https://raw.githubusercontent.com/Emmanuel-Bamidele/atlasrag/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.ps1 | iex
 ```
 
 What the installer creates:
 
-- macOS/Linux wrapper: `~/.atlasrag/bin/atlasrag`
-- Windows wrappers: `%USERPROFILE%\.atlasrag\bin\atlasrag.ps1` and `atlasrag.cmd`
-- a PATH update so new terminals can find `atlasrag`
+- macOS/Linux wrapper: `~/.supavector/bin/supavector`
+- Windows wrappers: `%USERPROFILE%\.supavector\bin\supavector.ps1` and `supavector.cmd`
+- a PATH update so new terminals can find `supavector`
 
-If your current terminal still says `atlasrag: command not found`, open a new shell or add the install bin directory to PATH manually.
+If your current terminal still says `supavector: command not found`, open a new shell or add the install bin directory to PATH manually.
 
 ### Container
 
-On the local self-hosted path, the CLI manages the AtlasRAG container stack for you. The default path uses the bundled Postgres service from `docker-compose.yml`. If you already manage your own Postgres, use `atlasrag onboard --external-postgres` and the CLI will write `.env.external-postgres` and use `docker-compose.external-postgres.yml` instead.
+On the local self-hosted path, the CLI manages the SupaVector container stack for you. The default path uses the bundled Postgres service from `docker-compose.yml`. If you already manage your own Postgres, use `supavector onboard --external-postgres` and the CLI will write `.env.external-postgres` and use `docker-compose.external-postgres.yml` instead.
 
-That choice only changes which Postgres database this self-hosted AtlasRAG instance uses. It does not make the instance part of another AtlasRAG deployment or platform.
+That choice only changes which Postgres database this self-hosted SupaVector instance uses. It does not make the instance part of another SupaVector deployment or platform.
 
 Start with the onboarding wizard:
 
 ```bash
-atlasrag onboard
+supavector onboard
 ```
 
 The wizard prompts for:
@@ -141,50 +141,50 @@ For the normal first-run path, you can usually press `Enter` at:
 During onboarding, the CLI also:
 
 - writes the local env file
-- saves the local project/base URL context in `~/.atlasrag/config.json`
+- saves the local project/base URL context in `~/.supavector/config.json`
 - starts the Docker stack
 - runs the bootstrap helper for you
 - creates the first admin and the first service token
-- updates `~/.atlasrag/config.json` with the saved service token
+- updates `~/.supavector/config.json` with the saved service token
 
 If you want the external Postgres path directly:
 
 ```bash
-atlasrag onboard --external-postgres
+supavector onboard --external-postgres
 ```
 
 If the Docker stack is already up but setup has not finished yet, finish setup on that running stack with:
 
 ```bash
-atlasrag bootstrap --username your-username --tenant default
+supavector bootstrap --username your-username --tenant default
 ```
 
 Use the same admin username you entered during onboarding. If you pressed `Enter` at `Tenant id [default]:`, keep `default` here too. This finishes setup by saving the base URL and first service token for later CLI commands.
 
-If onboarding stops early after the stack starts, `atlasrag doctor` will still show the saved base URL and will mark the API key as pending bootstrap instead of treating the local setup as completely unknown.
+If onboarding stops early after the stack starts, `supavector doctor` will still show the saved base URL and will mark the API key as pending bootstrap instead of treating the local setup as completely unknown.
 
-If you are using AtlasRAG from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
+If you are using SupaVector from this same computer through the CLI, you do not need to copy the token anywhere. Later CLI commands use the saved service token automatically.
 
 Useful local container commands:
 
 ```bash
-atlasrag status
-atlasrag start --build
-atlasrag stop --down
-atlasrag logs
-atlasrag doctor
+supavector status
+supavector start --build
+supavector stop --down
+supavector logs
+supavector doctor
 ```
 
 ### Hosting
 
-Once CLI setup is complete, AtlasRAG becomes a running local service your own app, backend, worker, or agent can call. The normal runtime inputs are the saved base URL and service token.
+Once CLI setup is complete, SupaVector becomes a running local service your own app, backend, worker, or agent can call. The normal runtime inputs are the saved base URL and service token.
 
 If you are wiring your own app, backend, worker, or agent on the same machine, export the saved values into your runtime env:
 
 ```bash
-export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
-export ATLASRAG_COLLECTION="default"
+export SUPAVECTOR_BASE_URL="http://localhost:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_COLLECTION="default"
 ```
 
 If you want request-scoped provider usage on supported sync routes, also export one or more of:
@@ -198,52 +198,52 @@ export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"
 The token is shown during onboarding. If you need to inspect it again locally, run:
 
 ```bash
-atlasrag config show --show-secrets
+supavector config show --show-secrets
 ```
 
 Do not commit those values to git.
 
-If AtlasRAG is already deployed online behind nginx or another public proxy, use the CLI as a remote client instead of onboarding locally:
+If SupaVector is already deployed online behind nginx or another public proxy, use the CLI as a remote client instead of onboarding locally:
 
 ```bash
-export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
-atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
-atlasrag search --q "remote test" --collection cli-smoke --k 3
-atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
-atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
+export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
+supavector write --doc-id cli-test --collection cli-smoke --text "SupaVector CLI remote test."
+supavector search --q "remote test" --collection cli-smoke --k 3
+supavector ask --question "What does the CLI test document say?" --collection cli-smoke
+supavector boolean_ask --question "Does the CLI test document mention SupaVector?" --collection cli-smoke
 ```
 
-In that remote path, Docker is not required on the client machine. `atlasrag onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
+In that remote path, Docker is not required on the client machine. `supavector onboard` is for local self-hosting; `write`, `search`, `ask`, and `boolean_ask` are the main commands for testing a live deployment.
 
-Service tokens are scoped to the AtlasRAG deployment that minted them. A token from your local self-hosted instance will not work against a different AtlasRAG deployment, and a token from a shared or hosted deployment will not work against your separate local instance unless that exact deployment issued it.
+Service tokens are scoped to the SupaVector deployment that minted them. A token from your local self-hosted instance will not work against a different SupaVector deployment, and a token from a shared or hosted deployment will not work against your separate local instance unless that exact deployment issued it.
 
 ### Maintenance
 
-Later, update an installed AtlasRAG CLI checkout with:
+Later, update an installed SupaVector CLI checkout with:
 
 ```bash
-atlasrag update
-atlasrag changemodel
+supavector update
+supavector changemodel
 ```
 
-For the managed install under `~/.atlasrag`, `atlasrag update` can recover from a force-pushed `origin/main` as long as the checkout is clean.
+For the managed install under `~/.supavector`, `supavector update` can recover from a force-pushed `origin/main` as long as the checkout is clean.
 
 To remove the managed CLI install later:
 
 ```bash
-atlasrag uninstall
+supavector uninstall
 ```
 
-This removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under `~/.atlasrag` when that checkout exists, and for managed local self-hosted installs it also runs `docker compose down -v` to clear the local AtlasRAG containers and volumes.
+This removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under `~/.supavector` when that checkout exists, and for managed local self-hosted installs it also runs `docker compose down -v` to clear the local SupaVector containers and volumes.
 
 To change local self-hosted model defaults later:
 
 ```bash
-atlasrag changemodel
+supavector changemodel
 
 # non-interactive example
-atlasrag changemodel \
+supavector changemodel \
   --answer-provider openai \
   --answer-model 2 \
   --boolean-ask-model inherit \
@@ -255,13 +255,13 @@ atlasrag changemodel \
   --restart
 ```
 
-`atlasrag changemodel` edits the local AtlasRAG env file. The CLI now prompts for the provider first, then shows the numbered model choices for that provider so users do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer provider/model, and `--compact-model inherit` makes compaction follow the reflect provider/model.
+`supavector changemodel` edits the local SupaVector env file. The CLI now prompts for the provider first, then shows the numbered model choices for that provider so users do not need to type common model ids manually. `--boolean-ask-model inherit` makes `boolean_ask` follow the answer provider/model, and `--compact-model inherit` makes compaction follow the reflect provider/model.
 
 Provider picker choices are:
 - generation providers: `1 = openai`, `2 = gemini`, `3 = anthropic`
 - embedding providers: `1 = openai`, `2 = gemini`
 
-When the provider is OpenAI, `atlasrag ask --model ...` and `atlasrag boolean_ask --model ...` still accept the familiar numbered shortcuts (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`). When you also pass `--provider`, the same numbering becomes provider-specific for that provider's catalog. Explicit model ids still work anywhere.
+When the provider is OpenAI, `supavector ask --model ...` and `supavector boolean_ask --model ...` still accept the familiar numbered shortcuts (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`). When you also pass `--provider`, the same numbering becomes provider-specific for that provider's catalog. Explicit model ids still work anywhere.
 
 Model env keys for self-hosted installs:
 
@@ -281,7 +281,7 @@ COMPACT_PROVIDER=
 COMPACT_MODEL=gpt-4o-mini
 ```
 
-`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because AtlasRAG still needs a provider-native embedding endpoint for indexing and retrieval.
+`ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because SupaVector still needs a provider-native embedding endpoint for indexing and retrieval.
 
 You can also discover the preset catalog over HTTP:
 
@@ -291,56 +291,56 @@ curl http://localhost:3000/v1/models
 
 The response lists generation providers, embedding providers, provider-specific preset catalogs, and the current instance defaults. Model availability still depends on your provider account, enabled APIs, and region.
 
-`EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `atlasrag changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
+`EMBED_MODEL` is instance-wide, not tenant-specific. Because the vector store uses one embedding space for all stored chunks, changing `EMBED_MODEL` requires a reindex. `supavector changemodel` sets `REINDEX_ON_START=force` automatically when the embedding model changes so the next local restart rebuilds vectors from stored chunks.
 
 Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
-On startup, AtlasRAG now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
-Reasoning-style models such as `o1`, `o3`, `o4-mini`, and the GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. AtlasRAG omits unsupported `temperature` parameters automatically for those models.
+On startup, SupaVector now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
+Reasoning-style models such as `o1`, `o3`, `o4-mini`, and the GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. SupaVector omits unsupported `temperature` parameters automatically for those models.
 
 Common maintenance checks:
 
 ```bash
-atlasrag doctor
-atlasrag status --json
-atlasrag logs --service gateway
-atlasrag config show
+supavector doctor
+supavector status --json
+supavector logs --service gateway
+supavector config show
 ```
 
-If `atlasrag` is not found, open a new terminal or add `~/.atlasrag/bin` to PATH manually. If the stack is running but setup was not saved yet, run `atlasrag bootstrap --username your-username --tenant default`. If gateway readiness times out, inspect `atlasrag logs --service gateway` and the written env file.
+If `supavector` is not found, open a new terminal or add `~/.supavector/bin` to PATH manually. If the stack is running but setup was not saved yet, run `supavector bootstrap --username your-username --tenant default`. If gateway readiness times out, inspect `supavector logs --service gateway` and the written env file.
 
 ### Commands
 
 After onboarding, you can run:
 
 ```bash
-atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
-atlasrag search --q "memory for agents" --collection local-demo --k 5
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
-atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
+supavector write --doc-id welcome --collection local-demo --text "SupaVector stores memory for agents."
+supavector search --q "memory for agents" --collection local-demo --k 5
+supavector ask --question "What does SupaVector store?" --collection local-demo
+supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo
 ```
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
 ```bash
-atlasrag write --folder ./customer-support
-atlasrag search --q "refund policy" --collection customer-support --k 5
+supavector write --folder ./customer-support
+supavector search --q "refund policy" --collection customer-support --k 5
 ```
 
 You can also inspect, update, and clean up indexed content from the CLI:
 
 ```bash
-atlasrag collections list
-atlasrag docs list --collection customer-support
+supavector collections list
+supavector docs list --collection customer-support
 
 # Replace one document after the source file changes
-atlasrag docs replace \
+supavector docs replace \
   --doc-id handbook \
   --collection customer-support \
   --file ./customer-support/handbook.md \
   --yes
 
 # Equivalent single-doc update flow
-atlasrag write \
+supavector write \
   --doc-id handbook \
   --collection customer-support \
   --file ./customer-support/handbook.md \
@@ -348,13 +348,13 @@ atlasrag write \
   --yes
 
 # Reconcile a folder-backed collection to match local files exactly
-atlasrag write --folder ./customer-support --sync --yes
+supavector write --folder ./customer-support --sync --yes
 
 # Delete one doc
-atlasrag docs delete --doc-id handbook --collection customer-support --yes
+supavector docs delete --doc-id handbook --collection customer-support --yes
 
 # Delete an entire collection (admin-capable token required)
-atlasrag collections delete --collection customer-support --yes
+supavector collections delete --collection customer-support --yes
 ```
 
 Use `docs replace` or `write --replace` when the content behind a single `docId` has changed. Use `write --folder --sync` when the local folder should become the source of truth for the whole collection, including deleting docs that are no longer present in that folder. There is not a separate collection-rename command; collection maintenance is done by listing, replacing, syncing, and deleting docs.
@@ -365,31 +365,31 @@ Local bundled stack:
 
 ```bash
 ./scripts/install.sh
-atlasrag onboard
-atlasrag status
-atlasrag write --doc-id welcome --collection local-demo --text "AtlasRAG stores memory for agents."
-atlasrag ask --question "What does AtlasRAG store?" --collection local-demo
-atlasrag boolean_ask --question "Does AtlasRAG store memory for agents?" --collection local-demo
+supavector onboard
+supavector status
+supavector write --doc-id welcome --collection local-demo --text "SupaVector stores memory for agents."
+supavector ask --question "What does SupaVector store?" --collection local-demo
+supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo
 ```
 
 Local external Postgres:
 
 ```bash
-atlasrag onboard --external-postgres
-atlasrag doctor
-atlasrag write --doc-id policies --collection compliance --file ./docs/policies.md
-atlasrag search --q "policies" --collection compliance --json
+supavector onboard --external-postgres
+supavector doctor
+supavector write --doc-id policies --collection compliance --file ./docs/policies.md
+supavector search --q "policies" --collection compliance --json
 ```
 
 Remote live deployment:
 
 ```bash
-export ATLASRAG_BASE_URL="https://YOUR_DOMAIN"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
-atlasrag write --doc-id cli-test --collection cli-smoke --text "AtlasRAG CLI remote test."
-atlasrag search --q "remote test" --collection cli-smoke --k 3
-atlasrag ask --question "What does the CLI test document say?" --collection cli-smoke
-atlasrag boolean_ask --question "Does the CLI test document mention AtlasRAG?" --collection cli-smoke
+export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
+supavector write --doc-id cli-test --collection cli-smoke --text "SupaVector CLI remote test."
+supavector search --q "remote test" --collection cli-smoke --k 3
+supavector ask --question "What does the CLI test document say?" --collection cli-smoke
+supavector boolean_ask --question "Does the CLI test document mention SupaVector?" --collection cli-smoke
 ```
 
 Use the CLI when you want the fastest path from install to a working local deployment. Use the manual Docker steps below if you want to see and control each setup step explicitly.
@@ -439,7 +439,7 @@ docker compose exec gateway node scripts/bootstrap_instance.js \
   --service-token-name app-bootstrap
 ```
 
-That command ensures the admin user exists, creates a fresh service token, and prints the `ATLASRAG_BASE_URL` / `ATLASRAG_API_KEY` values your app or agent can use directly.
+That command ensures the admin user exists, creates a fresh service token, and prints the `SUPAVECTOR_BASE_URL` / `SUPAVECTOR_API_KEY` values your app or agent can use directly.
 
 If you run the gateway directly from source instead of Docker:
 
@@ -455,13 +455,13 @@ npm run bootstrap:instance -- \
 Export the printed values:
 
 ```bash
-export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="<paste service token here>"
+export SUPAVECTOR_BASE_URL="http://localhost:3000"
+export SUPAVECTOR_API_KEY="<paste service token here>"
 ```
 
-### 3b. Optional Third Mode: Your Provider Key, Shared AtlasRAG Deployment
+### 3b. Optional Third Mode: Your Provider Key, Shared SupaVector Deployment
 
-If you are using an AtlasRAG deployment that already has its own Postgres and auth, but you want requests to use your provider key instead of the server default, send the matching request-scoped header:
+If you are using an SupaVector deployment that already has its own Postgres and auth, but you want requests to use your provider key instead of the server default, send the matching request-scoped header:
 
 ```bash
 -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}"
@@ -504,26 +504,26 @@ docker compose exec gateway node scripts/create_user.js \
 Use the service token for normal machine-to-machine traffic:
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/docs" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H 'content-type: application/json' \
   -H 'Idempotency-Key: demo-doc-1' \
   -d '{
     "docId":"welcome",
-    "text":"AtlasRAG stores memory for agents and returns grounded answers with citations."
+    "text":"SupaVector stores memory for agents and returns grounded answers with citations."
   }'
 ```
 
 ### 5. Ask A Question From Your App Or Agent
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{
-    "question":"What does AtlasRAG store?",
+    "question":"What does SupaVector store?",
     "k":3,
     "policy":"amvl",
     "provider":"openai",
@@ -536,12 +536,12 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/ask" \
 ### 6. Ask A Strict True/False Question
 
 ```bash
-curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
-  -H "X-API-Key: ${ATLASRAG_API_KEY}" \
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{
-    "question":"Does AtlasRAG store memory for agents?",
+    "question":"Does SupaVector store memory for agents?",
     "k":3,
     "policy":"amvl"
   }'
@@ -549,7 +549,7 @@ curl -sS "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
 
 This endpoint returns only `true`, `false`, or `invalid`. `invalid` means the input was not a grounded true/false question for the retrieved sources. The response also includes `supportingChunks` when you need the exact chunk text used for the decision.
 
-Admins can set tenant-level generation defaults through `GET/PATCH /v1/admin/tenant` with `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` stay instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+Admins can set tenant-level generation defaults through `GET/PATCH /v1/admin/tenant` with `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` stay instance-wide and should be changed in the self-hosted env or with `supavector changemodel`.
 
 ### 7. Optional: Log In As A Human Admin
 
@@ -619,7 +619,7 @@ npm run test:e2e
 
 ## Bring Your Own Postgres And Env
 
-AtlasRAG does not require a bundled Postgres container in production. If your stack already has Postgres and secret management, point the gateway at your existing values:
+SupaVector does not require a bundled Postgres container in production. If your stack already has Postgres and secret management, point the gateway at your existing values:
 
 - `PGHOST`
 - `PGPORT`
@@ -634,7 +634,7 @@ AtlasRAG does not require a bundled Postgres container in production. If your st
 
 The stock `docker-compose.yml` is optimized for the bundled `postgres` service. If you want external Postgres, use the official `docker-compose.external-postgres.yml` path below or your own runtime wiring for the gateway.
 
-AtlasRAG includes an official external-Postgres path:
+SupaVector includes an official external-Postgres path:
 
 ```bash
 cp .env.external-postgres.example .env.external-postgres
@@ -643,7 +643,7 @@ docker compose -f docker-compose.external-postgres.yml --env-file .env.external-
   node scripts/bootstrap_instance.js --username admin --password change_me --tenant default --service-token-name app-bootstrap
 ```
 
-Then run the bootstrap helper once to create the first admin and service token. After that, your backend or agent can call AtlasRAG with `ATLASRAG_BASE_URL` and `ATLASRAG_API_KEY` without repeated human login.
+Then run the bootstrap helper once to create the first admin and service token. After that, your backend or agent can call SupaVector with `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` without repeated human login.
 
 ## Production Notes
 
@@ -677,4 +677,4 @@ The production compose file now supports an external cert directory for the inte
 
 ## Current Scope
 
-AtlasRAG is currently documented for self-hosted use. It is not presented here as a managed hosted service.
+SupaVector is currently documented for self-hosted use. It is not presented here as a managed hosted service.

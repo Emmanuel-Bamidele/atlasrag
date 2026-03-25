@@ -482,7 +482,7 @@ function buildPublicModelCatalog() {
     embeddings: embeddingsByProvider.openai || [],
     notes: {
       customModelAllowed: true,
-      compatibility: "AtlasRAG omits unsupported temperature parameters automatically for reasoning-style OpenAI models. Gemini and Anthropic use provider-native request formats.",
+      compatibility: "SupaVector omits unsupported temperature parameters automatically for reasoning-style OpenAI models. Gemini and Anthropic use provider-native request formats.",
       availability: "Model availability depends on your provider account, enabled APIs, and region.",
       requestScopedKeys: "Use X-OpenAI-API-Key, X-Gemini-API-Key, or X-Anthropic-API-Key to override provider credentials per request."
     }

@@ -1,6 +1,6 @@
-# AtlasRAG Node SDK
+# SupaVector Node SDK
 
-A small, dependency-free Node.js client for the AtlasRAG API.
+A small, dependency-free Node.js client for the SupaVector API.
 
 ## Install (local workspace)
 
@@ -14,14 +14,14 @@ npm install
 Fastest local path:
 
 ```bash
-atlasrag onboard
+supavector onboard
 ```
 
 That creates the local env, starts Docker, bootstraps the first admin, and stores the service token for later CLI usage.
 
 Manual path if you want to bootstrap the running gateway directly:
 
-Create the first admin and a service token from the running AtlasRAG gateway:
+Create the first admin and a service token from the running SupaVector gateway:
 
 ```bash
 docker compose exec gateway node scripts/bootstrap_instance.js \
@@ -34,8 +34,8 @@ docker compose exec gateway node scripts/bootstrap_instance.js \
 Store the printed values in your environment:
 
 ```bash
-export ATLASRAG_BASE_URL="http://localhost:3000"
-export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"
+export SUPAVECTOR_BASE_URL="http://localhost:3000"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
 export OPENAI_API_KEY="YOUR_OPENAI_KEY"
 export GEMINI_API_KEY="YOUR_GEMINI_KEY"
 export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"
@@ -44,25 +44,25 @@ export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"
 ## Quick start
 
 ```js
-const { AtlasRAGClient } = require("@atlasrag/sdk");
+const { SupaVectorClient } = require("@supavector/sdk");
 
-const client = new AtlasRAGClient({
-  baseUrl: process.env.ATLASRAG_BASE_URL || process.env.ATLASRAG_URL || "http://localhost:3000",
-  apiKey: process.env.ATLASRAG_API_KEY,
+const client = new SupaVectorClient({
+  baseUrl: process.env.SUPAVECTOR_BASE_URL || process.env.SUPAVECTOR_URL || "http://localhost:3000",
+  apiKey: process.env.SUPAVECTOR_API_KEY,
   openAiApiKey: process.env.OPENAI_API_KEY,
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY
 });
 
 async function main() {
-  await client.indexText("welcome", "AtlasRAG stores memory for agents.", {
+  await client.indexText("welcome", "SupaVector stores memory for agents.", {
     collection: "default"
   });
 
-  const answer = await client.ask("What does AtlasRAG store?", { k: 3, provider: "openai" });
+  const answer = await client.ask("What does SupaVector store?", { k: 3, provider: "openai" });
   console.log(answer.data.answer);
 
-  const booleanAsk = await client.booleanAsk("Does AtlasRAG store memory for agents?", { k: 3, provider: "openai" });
+  const booleanAsk = await client.booleanAsk("Does SupaVector store memory for agents?", { k: 3, provider: "openai" });
   console.log(booleanAsk.data.answer);
   console.log(booleanAsk.data.supportingChunks);
 }
@@ -75,16 +75,16 @@ main().catch(console.error);
 Use a JWT (Bearer) or a service token (API key). For apps, agents, workers, and backends, prefer a service token. If both are set, the SDK prefers the API key.
 
 ```js
-const client = new AtlasRAGClient({
-  baseUrl: process.env.ATLASRAG_BASE_URL || "http://localhost:3000",
-  apiKey: process.env.ATLASRAG_API_KEY,
+const client = new SupaVectorClient({
+  baseUrl: process.env.SUPAVECTOR_BASE_URL || "http://localhost:3000",
+  apiKey: process.env.SUPAVECTOR_API_KEY,
   openAiApiKey: process.env.OPENAI_API_KEY,
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY
 });
 ```
 
-If `openAiApiKey`, `geminiApiKey`, or `anthropicApiKey` is set, the SDK sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` so AtlasRAG can use your provider key while still using the shared AtlasRAG deployment and its Postgres/auth state.
+If `openAiApiKey`, `geminiApiKey`, or `anthropicApiKey` is set, the SDK sends `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` so SupaVector can use your provider key while still using the shared SupaVector deployment and its Postgres/auth state.
 
 Current limitation:
 
@@ -94,7 +94,7 @@ Current limitation:
 Human admin login is still available when you need a JWT for the UI or admin setup:
 
 ```js
-await client.login(process.env.ATLASRAG_USER, process.env.ATLASRAG_PASS);
+await client.login(process.env.SUPAVECTOR_USER, process.env.SUPAVECTOR_PASS);
 ```
 
 ## Methods
@@ -161,7 +161,7 @@ Job retries are idempotent: reruns replace derived memories instead of duplicati
 Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
 Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
-Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `atlasrag changemodel`.
+Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `supavector changemodel`.
 The live preset catalog is available from `client.getModels()` / `client.models()`. It returns provider-aware generation catalogs for OpenAI, Gemini, and Anthropic, plus embedding catalogs for OpenAI and Gemini.
 
 Per-request model override example:
@@ -169,19 +169,19 @@ Per-request model override example:
 ```js
 const models = await client.getModels();
 
-const answer = await client.ask("What does AtlasRAG store?", {
+const answer = await client.ask("What does SupaVector store?", {
   collection: "default",
   provider: "gemini",
   model: "gemini-2.5-flash"
 });
 
-const answerWithOpenAI = await client.ask("What does AtlasRAG store?", {
+const answerWithOpenAI = await client.ask("What does SupaVector store?", {
   collection: "default",
   provider: "openai",
   model: "gpt-4.1"
 });
 
-const check = await client.booleanAsk("Does AtlasRAG store memory for agents?", {
+const check = await client.booleanAsk("Does SupaVector store memory for agents?", {
   collection: "default",
   provider: "anthropic",
   model: "claude-sonnet-4-20250514"

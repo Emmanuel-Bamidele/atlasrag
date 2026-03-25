@@ -1,4 +1,4 @@
-# AtlasRAG With Your Own Postgres
+# SupaVector With Your Own Postgres
 
 This guide is for teams that already have:
 
@@ -6,9 +6,9 @@ This guide is for teams that already have:
 - their own secret management
 - their own deployment conventions
 
-This is the right path if you do not want AtlasRAG to own your database lifecycle.
+This is the right path if you do not want SupaVector to own your database lifecycle.
 
-If you are not yet sure whether you should self-host AtlasRAG with your own Postgres versus use an existing shared deployment, start with [`setup-modes.md`](setup-modes.md) first.
+If you are not yet sure whether you should self-host SupaVector with your own Postgres versus use an existing shared deployment, start with [`setup-modes.md`](setup-modes.md) first.
 
 ## Important Current Behavior
 
@@ -23,7 +23,7 @@ That means:
 If you want external Postgres, use one of these approaches:
 
 1. use the official `docker-compose.external-postgres.yml`
-2. run AtlasRAG in your own container/orchestrator setup
+2. run SupaVector in your own container/orchestrator setup
 3. maintain your own runtime wiring around the gateway and vector service
 
 This guide now uses the first approach because it is the cleanest built-in path for fork users.
@@ -32,22 +32,22 @@ This guide now uses the first approach because it is the cleanest built-in path 
 
 Use:
 
-- a separate database for AtlasRAG, if possible
-- a dedicated Postgres user for AtlasRAG
+- a separate database for SupaVector, if possible
+- a dedicated Postgres user for SupaVector
 - credentials managed outside Git
 
-This is better than sharing the same database/schema with an unrelated application because AtlasRAG relies on its own tables, indexes, and migration/bootstrap flow.
+This is better than sharing the same database/schema with an unrelated application because SupaVector relies on its own tables, indexes, and migration/bootstrap flow.
 
-## Postgres Features AtlasRAG Uses
+## Postgres Features SupaVector Uses
 
-AtlasRAG expects standard Postgres behavior including:
+SupaVector expects standard Postgres behavior including:
 
 - `ON CONFLICT`
 - `JSONB`
 - array columns
 - full-text search via `to_tsvector` and `websearch_to_tsquery`
 
-You do not need a separate vector extension for AtlasRAG's current architecture because vector storage is handled by the bundled vector service, not by Postgres.
+You do not need a separate vector extension for SupaVector's current architecture because vector storage is handled by the bundled vector service, not by Postgres.
 
 ## Minimum Runtime Env
 
@@ -56,15 +56,15 @@ At minimum, the gateway needs:
 ```bash
 PGHOST=db.example.internal
 PGPORT=5432
-PGDATABASE=atlasrag
-PGUSER=atlasrag
+PGDATABASE=supavector
+PGUSER=supavector
 PGPASSWORD=change_me
 
 OPENAI_API_KEY=...
 JWT_SECRET=...
 COOKIE_SECRET=...
-PUBLIC_BASE_URL=https://atlasrag.example.com
-OPENAPI_BASE_URL=https://atlasrag.example.com
+PUBLIC_BASE_URL=https://supavector.example.com
+OPENAPI_BASE_URL=https://supavector.example.com
 COOKIE_SECURE=1
 ```
 
@@ -160,21 +160,21 @@ Avoid:
 - embedding secrets into images
 - printing long-lived tokens into public CI logs
 
-## App Auth Versus AtlasRAG Auth
+## App Auth Versus SupaVector Auth
 
-If your product already has its own user auth, do not force every end user to authenticate directly to AtlasRAG.
+If your product already has its own user auth, do not force every end user to authenticate directly to SupaVector.
 
 Recommended pattern:
 
 1. your app authenticates its own users
-2. your backend calls AtlasRAG with a service token
+2. your backend calls SupaVector with a service token
 3. your backend passes `principalId` and `privileges` only when you intentionally enable server-side principal override
 
-For most teams, AtlasRAG should be an internal service inside the app stack, not a second end-user identity provider.
+For most teams, SupaVector should be an internal service inside the app stack, not a second end-user identity provider.
 
 ## Principal Override
 
-If you need backend-enforced per-user visibility without direct AtlasRAG user login:
+If you need backend-enforced per-user visibility without direct SupaVector user login:
 
 - set `ALLOW_PRINCIPAL_OVERRIDE=1`
 - use an admin service token
@@ -186,7 +186,7 @@ Use this carefully. It shifts trust to your backend, which becomes the caller of
 
 For a serious BYO Postgres deployment:
 
-- use a dedicated database or at least a dedicated AtlasRAG database user
+- use a dedicated database or at least a dedicated SupaVector database user
 - enable your normal database backups
 - monitor Postgres health and storage growth
 - treat service token rotation like any internal API credential rotation
@@ -215,11 +215,11 @@ Prefer:
 
 - separate database
 - separate DB user
-- explicit ownership of AtlasRAG tables
+- explicit ownership of SupaVector tables
 
 ### Forgetting The Vector Service
 
-Postgres is not the only runtime component. AtlasRAG still needs the bundled vector service unless you replace that layer yourself.
+Postgres is not the only runtime component. SupaVector still needs the bundled vector service unless you replace that layer yourself.
 
 ## Recommended Next Step
 
