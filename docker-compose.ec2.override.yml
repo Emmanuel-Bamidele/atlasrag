@@ -3,18 +3,20 @@
 #
 #   docker compose \
 #     -f docker-compose.prod.yml \
-#     -f ../atlasrag-portal/docker-compose.override.yml \
+#     -f ../supavector-portal/docker-compose.override.yml \
 #     -f docker-compose.ec2.override.yml \
 #     --env-file .env up -d --build gateway
 #
 # Assumes both repos are cloned side-by-side under the same parent directory:
-#   /opt/atlasrag/           ← this repo (public)
-#   /opt/atlasrag-portal/    ← portal plugins repo (private)
+#   /opt/supavector/           ← this repo (public)
+#   /opt/supavector-portal/    ← portal plugins repo (private)
 
 services:
   gateway:
     build:
       context: ..
       dockerfile: supavector-portal/Dockerfile.node.portal
+      args:
+        REPO_DIR: supavector
     ports:
       - "127.0.0.1:3300:3000"
