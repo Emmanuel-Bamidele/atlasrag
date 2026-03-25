@@ -21,3 +21,8 @@ services:
     ports:
       - "127.0.0.1:3300:3000"
 
+  # Host nginx handles SSL termination and proxies to the gateway on port 3300.
+  # The Docker proxy container is not used on EC2 — disable it.
+  proxy:
+    profiles: ["disabled"]
+
