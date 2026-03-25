@@ -1,14 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SupaVector">
   <defs>
-    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bg" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#132a2f"/>
       <stop offset="1" stop-color="#0b1a1f"/>
     </linearGradient>
-    <linearGradient id="accent" x1="16" y1="12" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+    <linearGradient id="accent" x1="10" y1="10" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3dd5c8"/>
+      <stop offset="1" stop-color="#2ab8ac"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="32" y1="14" x2="50" y2="50" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#3dd5c8"/>
       <stop offset="1" stop-color="#f6c356"/>
     </linearGradient>
   </defs>
+
+  <!-- Rounded square background -->
   <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
-  <path d="M16 48L28.4 16H35.6L48 48H41.8L39.2 40.8H24.8L22.2 48H16ZM26.9 35.2H37.1L32 21.1L26.9 35.2Z" fill="url(#accent)"/>
+
+  <!-- Node at origin (bottom-left) -->
+  <circle cx="16" cy="48" r="4" fill="url(#accent)"/>
+
+  <!-- Node at mid -->
+  <circle cx="32" cy="28" r="3.5" fill="url(#accent)" opacity="0.85"/>
+
+  <!-- Node at tip (top-right) -->
+  <circle cx="48" cy="14" r="4" fill="url(#arrow)"/>
+
+  <!-- Connector lines -->
+  <line x1="16" y1="48" x2="32" y2="28" stroke="#3dd5c8" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="32" y1="28" x2="48" y2="14" stroke="#3dd5c8" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- Arrow head at tip pointing top-right -->
+  <polygon points="48,14 38,16 46,22" fill="url(#arrow)"/>
 </svg>
