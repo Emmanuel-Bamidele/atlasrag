@@ -137,6 +137,7 @@ body.light-theme .bg-orb.orb-b{
   align-items:flex-start;
   justify-content:space-between;
   margin-bottom: 32px;
+  padding-left: 56px;
   padding-right: 56px;
 }
 
@@ -547,6 +548,7 @@ body.light-theme .table tr:hover{
 
 @media (max-width: 760px){
   .topbar{
+    padding-left: 48px;
     padding-right: 48px;
   }
 

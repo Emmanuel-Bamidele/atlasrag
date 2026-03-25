@@ -961,6 +961,12 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
   width: 100%;
 }
 
+@media (max-width: 640px) {
+  .product-story-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
 .product-story-panel{
   padding: 14px 14px 16px;
   border-radius: 14px;
@@ -1194,6 +1200,18 @@ body.light-theme .product-doc-link:hover{
     font-size: 32px;
   }
 
+  .product-showcase-copy{
+    text-align: center;
+  }
+
+  .product-showcase-actions{
+    justify-content: center;
+  }
+
+  .product-showcase-notes{
+    justify-content: center;
+  }
+
   .product-showcase-lead{
     font-size: 14px;
   }
@@ -1210,6 +1228,20 @@ body.light-theme .product-doc-link:hover{
     grid-template-columns: 1fr;
   }
 
+  .product-hosted-head,
+  .product-quickstart-head{
+    text-align: center;
+    max-width: none;
+  }
+
+  .product-hosted-head .product-hosted-selfhost-nudge{
+    text-align: center;
+  }
+
+  .product-hosted-credit-badges{
+    justify-content: center;
+  }
+
   .product-story,
   .product-trajectory,
   .product-doc-bridge{
@@ -1224,6 +1256,15 @@ body.light-theme .product-doc-link:hover{
 
   .product-trajectory-step{
     padding: 14px;
+    text-align: center;
+  }
+
+  .product-doc-bridge-copy{
+    text-align: center;
+  }
+
+  .product-doc-bridge-links{
+    justify-content: center;
   }
 
   .product-doc-link{
@@ -1544,6 +1585,7 @@ body.light-theme .docs-orient-hint {
   border-radius: 16px;
   border: 1px solid rgba(226,232,240,0.1);
   background: rgba(255,255,255,0.04);
+  min-width: 0;
   transition: border-color 0.22s ease, transform 0.22s ease,
               box-shadow 0.22s ease, background 0.22s ease;
 }
@@ -1879,7 +1921,7 @@ body.light-theme .product-hosted-nudge-link:hover { color: #163242; border-botto
 
 /* ── Responsive ── */
 
-@media (max-width: 860px) {
+@media (max-width: 960px) {
   .product-hosted-steps {
     grid-template-columns: 1fr;
   }
@@ -1948,6 +1990,7 @@ body.light-theme .product-hosted-nudge-link:hover { color: #163242; border-botto
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
   transition: border-color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
 }
 
