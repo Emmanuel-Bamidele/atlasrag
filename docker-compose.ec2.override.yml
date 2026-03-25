@@ -20,3 +20,8 @@ services:
         REPO_DIR: supavector
     ports:
       - "127.0.0.1:3300:3000"
+
+  proxy:
+    ports:
+      - "127.0.0.1:8085:80"
+      - "127.0.0.1:8445:443"
