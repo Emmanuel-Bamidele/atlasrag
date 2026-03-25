@@ -94,6 +94,7 @@ Good roadmap-aligned contribution lanes:
 - SDK and runtime integrations
 - memory observability and debugging
 - local-first and remote deployment parity
+- multimodal memory: images, video, and large files
 
 ### 1. Agent Loop Primitives
 
@@ -159,6 +160,21 @@ Good contributions here:
 - tests and tooling around recall quality, compaction, and cleanup behavior
 
 This is a high-value area for contributors who want to improve production readiness without changing the core architecture.
+
+### 7. Multimodal Memory: Images, Video, And Large Files
+
+Supavector currently stores and retrieves text. The next frontier is multimodal memory — letting agents store, index, search, and embed non-text content the same way they handle documents today.
+
+Good contributions here:
+
+- image ingestion and embedding pipelines (CLIP, vision model adapters)
+- video frame extraction and scene-level indexing
+- large file chunking strategies (PDFs with images, slide decks, audio transcripts)
+- storage-efficient representation of binary assets alongside their embeddings
+- retrieval APIs that return multimodal results alongside text context
+- provider abstractions for multimodal embedding models
+
+Contributions in this lane should keep the existing text memory APIs intact and treat multimodal as additive. Start small — a single file type, a single provider adapter, or a retrieval example is a good first step.
 
 ### 6. Local-First And Remote Deployment Parity
 
