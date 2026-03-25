@@ -6000,10 +6000,12 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
           aiTokensPer1K: aiTokenPricePer1K || null
         },
         costs: {
+          storageBytes,
           storageGB,
-          storageCharge: storagePricePerGB > 0 ? parseFloat((storageGB * storagePricePerGB).toFixed(6)) : null,
+          storageCharge: storagePricePerGB > 0 ? parseFloat((storageGB * storagePricePerGB).toFixed(6)) : 0,
+          aiTokens: totalAiTokens,
           aiTokens1K: totalAiTokens / 1000,
-          aiTokensCharge: aiTokenPricePer1K > 0 ? parseFloat(((totalAiTokens / 1000) * aiTokenPricePer1K).toFixed(6)) : null
+          aiTokensCharge: aiTokenPricePer1K > 0 ? parseFloat(((totalAiTokens / 1000) * aiTokenPricePer1K).toFixed(6)) : 0
         }
       },
       updatedAt: usageAll?.updated_at || null

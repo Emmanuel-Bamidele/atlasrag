@@ -1502,19 +1502,19 @@ function renderUsage(stats){
       values: { all: (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "24h": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "7d": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0) },
       meta: { all: "total", "24h": "since restart", "7d": "since restart" }
     },
-    ...(billingCosts.storageCharge != null ? [{
+    ...(billing.rates?.storagePerGB ? [{
       id: "storage_charge",
       label: "Storage charge",
-      value: `$${Number(billingCosts.storageCharge).toFixed(4)}`,
-      values: { all: `$${Number(billingCosts.storageCharge).toFixed(4)}`, "24h": `$${Number(billingCosts.storageCharge).toFixed(4)}`, "7d": `$${Number(billingCosts.storageCharge).toFixed(4)}` },
+      value: `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`,
+      values: { all: `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`, "24h": `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`, "7d": `$${Number(billingCosts.storageCharge || 0).toFixed(4)}` },
       format: (v) => v,
       meta: { all: `$${billing.rates?.storagePerGB}/GB`, "24h": "current", "7d": "current" }
     }] : []),
-    ...(billingCosts.aiTokensCharge != null ? [{
+    ...(billing.rates?.aiTokensPer1K ? [{
       id: "ai_tokens_charge",
       label: "AI tokens charge",
-      value: `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`,
-      values: { all: `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`, "24h": `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`, "7d": `$${Number(billingCosts.aiTokensCharge).toFixed(4)}` },
+      value: `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`,
+      values: { all: `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`, "24h": `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`, "7d": `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}` },
       format: (v) => v,
       meta: { all: `$${billing.rates?.aiTokensPer1K}/1K tokens`, "24h": "all time", "7d": "all time" }
     }] : [])
