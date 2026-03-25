@@ -4,7 +4,7 @@
             <section class="product-showcase">
               <div class="product-showcase-copy">
                 <p class="product-showcase-kicker">Product</p>
-                <h2>SupaVector gives AI apps a governed memory layer.</h2>
+                <h2>Supavector gives AI apps a governed memory layer.</h2>
                 <p class="product-showcase-lead">
                   Put retrieval, memory retention, access control, and feedback loops behind one backend surface
                   instead of spreading them across your app.
@@ -14,10 +14,10 @@
                   <a class="btn secondary" href="#" role="button">Watch a demo</a>
                 </div>
                 <p class="product-showcase-lead" style="margin-top:14px;">
-                  SupaVector is open source. The source code, installer scripts, and self-hosted setup files are available in the
+                  Supavector is open source. The source code, installer scripts, and self-hosted setup files are available in the
                   <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.
                 </p>
-                <div class="product-showcase-notes" aria-label="SupaVector product highlights">
+                <div class="product-showcase-notes" aria-label="Supavector product highlights">
                   <span class="product-showcase-note">Self-hosted</span>
                   <span class="product-showcase-note">Tenant-aware</span>
                   <span class="product-showcase-note">Policy-driven recall</span>
@@ -55,13 +55,13 @@
                   </div>
                   <div class="product-stage-footer">
                     <span>Your app stays in front.</span>
-                    <span>SupaVector handles the memory layer behind it.</span>
+                    <span>Supavector handles the memory layer behind it.</span>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section class="product-belt" aria-label="SupaVector use cases">
+            <section class="product-belt" aria-label="Supavector use cases">
               <div class="product-belt-track">
                 <span>Customer support copilots</span>
                 <span>Internal knowledge agents</span>
@@ -84,7 +84,7 @@
                 <p class="product-card-eyebrow">Hosted API</p>
                 <h3>Get a token, add credit, start calling.</h3>
                 <p>No servers to run. Sign up, create a project in the Dashboard, add credit, and you're calling the API in minutes.</p>
-                <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? SupaVector is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
+                <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? Supavector is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
               </div>
 
               <div class="product-hosted-steps">
@@ -143,7 +143,7 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
   -d '{
     "docId":      "welcome",
     "collection": "default",
-    "text":       "SupaVector stores memory for agents."
+    "text":       "Supavector stores memory for agents."
   }'</pre>
                         </div>
                       </div>
@@ -154,7 +154,7 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What does SupaVector store?",
+    "question": "What does Supavector store?",
     "k":        5,
     "policy":   "amvl"
   }'</pre>
@@ -184,7 +184,7 @@ requests.post(
     json={
         "docId":      "welcome",
         "collection": "default",
-        "text":       "SupaVector stores memory for agents.",
+        "text":       "Supavector stores memory for agents.",
     },
 ).raise_for_status()</pre>
                         </div>
@@ -196,7 +196,7 @@ requests.post(
     f"{BASE}/v1/ask",
     headers=HDR,
     json={
-        "question": "What does SupaVector store?",
+        "question": "What does Supavector store?",
         "k":        5,
         "policy":   "amvl",
     },
@@ -233,7 +233,7 @@ async function ar(path, body, extra = {}) {
 
 await ar("/v1/docs",
   { docId: "welcome", collection: "default",
-    text: "SupaVector stores memory for agents." },
+    text: "Supavector stores memory for agents." },
   { "Idempotency-Key": "doc-001" }
 );</pre>
                         </div>
@@ -242,7 +242,7 @@ await ar("/v1/docs",
                         <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedNodeAsk">const { data } = await ar("/v1/ask", {
-  question: "What does SupaVector store?",
+  question: "What does Supavector store?",
   k:        5,
   policy:   "amvl",
 });
@@ -272,7 +272,7 @@ await fetch(`${BASE}/v1/docs`, {
   body: JSON.stringify({
     docId:      "welcome",
     collection: "default",
-    text:       "SupaVector stores memory for agents.",
+    text:       "Supavector stores memory for agents.",
   }),
 });</pre>
                         </div>
@@ -287,7 +287,7 @@ await fetch(`${BASE}/v1/docs`, {
     "Content-Type":  "application/json",
   },
   body: JSON.stringify({
-    question: "What does SupaVector store?",
+    question: "What does Supavector store?",
     k:        5,
     policy:   "amvl",
   }),
@@ -359,7 +359,7 @@ cd supavector && ./scripts/install.sh</pre>
                 <div class="product-qs-step">
                   <span class="product-flow-number">04</span>
                   <h4>Ask a question</h4>
-                  <p>Query the memory you just wrote. SupaVector retrieves and answers grounded in your data.</p>
+                  <p>Query the memory you just wrote. Supavector retrieves and answers grounded in your data.</p>
                   <div class="product-qs-code">
                     <pre class="doc-code">supavector ask --question "What did I store?"</pre>
                   </div>
@@ -367,7 +367,7 @@ cd supavector && ./scripts/install.sh</pre>
                 <div class="product-qs-step">
                   <span class="product-flow-number">05</span>
                   <h4>Add to your app env</h4>
-                  <p>Export the base URL and service token so your backend can reach SupaVector.</p>
+                  <p>Export the base URL and service token so your backend can reach Supavector.</p>
                   <div class="product-qs-code">
                     <pre class="doc-code">export SUPAVECTOR_BASE_URL="http://localhost:3000"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
@@ -376,7 +376,7 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                 <div class="product-qs-step">
                   <span class="product-flow-number">06</span>
                   <h4>Call server-to-server</h4>
-                  <p>Your backend calls SupaVector directly. No browser, no end-user login needed.</p>
+                  <p>Your backend calls Supavector directly. No browser, no end-user login needed.</p>
                   <div class="product-qs-code">
                     <pre class="doc-code">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
   -H "X-API-Key: $SUPAVECTOR_API_KEY" \
@@ -386,13 +386,13 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               </div>
             </section>
 
-            <section class="product-story" aria-label="What SupaVector changes">
+            <section class="product-story" aria-label="What Supavector changes">
               <div class="product-story-copy">
                 <p class="product-card-eyebrow">What shifts</p>
                 <h3>Move memory out of app glue and into infrastructure.</h3>
                 <p>
                   Teams stop stitching together retrieval logic, ACL rules, expiry behavior, and quality loops
-                  in five different places. SupaVector centralizes the memory layer so product code can stay focused
+                  in five different places. Supavector centralizes the memory layer so product code can stay focused
                   on the actual experience.
                 </p>
                 <ul class="product-story-list">
@@ -419,7 +419,7 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                   <p class="product-card-eyebrow">Open Source</p>
                   <h3>Built in the open. MIT licensed.</h3>
                   <p>
-                    SupaVector is fully open source. Every line — the C++ vector core, Node.js gateway,
+                    Supavector is fully open source. Every line — the C++ vector core, Node.js gateway,
                     installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
                     There is no hosted service, no vendor lock-in, and no black-box dependencies.
                   </p>
@@ -440,11 +440,11 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               </div>
             </section>
 
-            <section class="product-trajectory" aria-label="How SupaVector fits into products">
+            <section class="product-trajectory" aria-label="How Supavector fits into products">
               <div class="product-flow-head">
                 <p class="product-card-eyebrow">How it fits</p>
-                <h3>Keep your app. Add SupaVector behind it.</h3>
-                <p>SupaVector becomes the memory layer behind your existing product instead of replacing your product with a new one.</p>
+                <h3>Keep your app. Add Supavector behind it.</h3>
+                <p>Supavector becomes the memory layer behind your existing product instead of replacing your product with a new one.</p>
               </div>
               <div class="product-trajectory-grid">
                 <article class="product-trajectory-step">
@@ -469,7 +469,7 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               <div class="product-doc-bridge-copy">
                 <p class="product-card-eyebrow">Explore further</p>
                 <h3>See setup, API details, and the open source code.</h3>
-                <p>Documentation covers setup, auth, service tokens, API endpoints, memory policies, and integration examples. If you want to inspect or fork SupaVector itself, the source code is in the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                <p>Documentation covers setup, auth, service tokens, API endpoints, memory policies, and integration examples. If you want to inspect or fork Supavector itself, the source code is in the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
               </div>
               <div class="product-doc-bridge-links">
                 <a class="product-doc-link" href="#doc-setup-modes">Setup paths</a>

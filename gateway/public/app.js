@@ -752,18 +752,18 @@ function buildDocConnectContent(baseUrl){
     vscodeConfig: JSON.stringify(vscodeConfig, null, 2),
     antigravityConfig: JSON.stringify(antigravityConfig, null, 2),
     quickPrompt: [
-      "Use SupaVector documentation as your source of truth.",
+      "Use Supavector documentation as your source of truth.",
       `Documentation UI tab: ${docsUrl}`,
       `API docs: ${apiDocsUrl}`,
       `llms.txt: ${llmsUrl}`,
       `MCP server: ${mcpUrl}`,
       "If you are operating on a local computer with this repo, prefer the supavector CLI over raw bootstrap commands.",
-      "Run supavector doctor first. If SupaVector is not configured, run supavector onboard.",
+      "Run supavector doctor first. If Supavector is not configured, run supavector onboard.",
       "On the local CLI path, supavector onboard creates the first admin and first service token and saves local config for later CLI use.",
       "Use --collection explicitly on supavector write/search/ask/boolean_ask when scope matters. supavector write --folder ./name uses the folder name as the default collection.",
       "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
       "Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
-      "When answering, cite the endpoint path and required headers for each SupaVector API call."
+      "When answering, cite the endpoint path and required headers for each Supavector API call."
     ].join("\n")
   };
 }
@@ -2210,7 +2210,7 @@ window.addEventListener("DOMContentLoaded", () => {
       saveStoredProviderOverride("openai", openAiValue);
       saveStoredProviderOverride("gemini", geminiValue);
       saveStoredProviderOverride("anthropic", anthropicValue);
-      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. SupaVector requests from this browser will send the matching provider header when needed.");
+      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. Supavector requests from this browser will send the matching provider header when needed.");
     };
   }
 

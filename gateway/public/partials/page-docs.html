@@ -80,9 +80,9 @@
                   <div class="doc-label">Recommended path: CLI</div>
                   <pre class="doc-code">./scripts/install.sh
 supavector onboard
-supavector write --doc-id welcome --collection local-demo --text "SupaVector stores memory for agents."
-supavector ask --question "What does SupaVector store?" --collection local-demo
-supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo</pre>
+supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
+supavector ask --question "What does Supavector store?" --collection local-demo
+supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use the <strong>CLI Setup</strong> tab if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
                 </div>
                 <div class="doc-block">
@@ -90,7 +90,7 @@ supavector boolean_ask --question "Does SupaVector store memory for agents?" --c
                   <ol>
                     <li>Prompts for admin username, admin password, tenant id, provider/model defaults, and whichever provider API keys are needed for those defaults.</li>
                     <li>Writes the local env file and stages the local CLI config.</li>
-                    <li>Starts the SupaVector Docker stack and runs the bootstrap helper.</li>
+                    <li>Starts the Supavector Docker stack and runs the bootstrap helper.</li>
                     <li>Creates the first admin user and the first service token.</li>
                     <li>Updates <span class="mono">~/.supavector/config.json</span> with the saved base URL and service token for later CLI use.</li>
                   </ol>
@@ -98,19 +98,19 @@ supavector boolean_ask --question "Does SupaVector store memory for agents?" --c
                 <div class="doc-block">
                   <div class="doc-label">How the first service token is obtained</div>
                   <p>On the recommended CLI path, the first service token is created automatically during <span class="mono">supavector onboard</span>. The CLI runs the same bootstrap logic for you and stores the returned token locally.</p>
-                  <p class="hint">If you self-host manually instead of using the CLI, the same first token comes from <span class="mono">scripts/bootstrap_instance.js</span>. If someone else runs SupaVector for you, ask that admin for <span class="mono">SUPAVECTOR_BASE_URL</span> and a tenant-scoped service token.</p>
+                  <p class="hint">If you self-host manually instead of using the CLI, the same first token comes from <span class="mono">scripts/bootstrap_instance.js</span>. If someone else runs Supavector for you, ask that admin for <span class="mono">SUPAVECTOR_BASE_URL</span> and a tenant-scoped service token.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Open source repository</div>
-                  <p>SupaVector is open source. The source code, installer scripts, Docker files, and docs source are available in the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                  <p>Supavector is open source. The source code, installer scripts, Docker files, and docs source are available in the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Use SupaVector on this same computer</div>
+                  <div class="doc-label">Use Supavector on this same computer</div>
                   <p>You do not need to copy the token anywhere just to use the CLI locally. After onboarding, the CLI reads the saved config and sends the saved service token automatically.</p>
-                  <pre class="doc-code">supavector write --doc-id welcome --collection local-demo --text "SupaVector stores memory for agents."
+                  <pre class="doc-code">supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
 supavector search --q "memory for agents" --collection local-demo --k 5
-supavector ask --question "What does SupaVector store?" --collection local-demo
-supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo</pre>
+supavector ask --question "What does Supavector store?" --collection local-demo
+supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use the same collection name on both write and read operations when you want tighter control over what the CLI searches. Later, refresh the installed CLI checkout with <span class="mono">supavector update</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -123,7 +123,7 @@ supavector boolean_ask --question "Does the refund policy mention store credit?"
                   <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported files are skipped. Legacy <span class="mono">.doc</span> files still need conversion to <span class="mono">.docx</span> first.</p>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Use SupaVector in your app or script on this machine</div>
+                  <div class="doc-label">Use Supavector in your app or script on this machine</div>
                   <p>If you are building your own app, backend, worker, or agent, export the saved base URL and service token into your runtime environment.</p>
                   <pre class="doc-code">export SUPAVECTOR_BASE_URL="http://localhost:3000"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
@@ -138,26 +138,26 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
   -d '{
     "docId": "welcome",
     "collection": "default",
-    "text": "SupaVector stores memory for agents."
+    "text": "Supavector stores memory for agents."
   }'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does SupaVector store?","k":3}'
+  -d '{"question":"What does Supavector store?","k":3}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does SupaVector store memory for agents?","k":3}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":3}'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Key concepts</div>
                   <ul>
-                    <li><strong>Human admin:</strong> a person who can sign in to SupaVector with username/password or SSO and manage the tenant.</li>
+                    <li><strong>Human admin:</strong> a person who can sign in to Supavector with username/password or SSO and manage the tenant.</li>
                     <li><strong>Service token:</strong> the machine credential used by apps, backends, workers, and agents. In env vars, this is usually <span class="mono">SUPAVECTOR_API_KEY</span>.</li>
-                    <li><strong>Self-hosted:</strong> you run SupaVector yourself and create the first admin and token yourself, either through the CLI or the manual setup path.</li>
-                    <li><strong>Shared deployment:</strong> SupaVector is already running somewhere else. An existing admin gives you a base URL plus a token, or signs in and creates one for you.</li>
+                    <li><strong>Self-hosted:</strong> you run Supavector yourself and create the first admin and token yourself, either through the CLI or the manual setup path.</li>
+                    <li><strong>Shared deployment:</strong> Supavector is already running somewhere else. An existing admin gives you a base URL plus a token, or signs in and creates one for you.</li>
                   </ul>
                 </div>
                 <div id="doc-byo-postgres"></div>
@@ -179,8 +179,8 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </div>
                 <div id="doc-shared-provider-key"></div>
                 <p class="hint">
-                  Use this when you want SupaVector to keep its own Postgres/auth/runtime but use your provider key for a specific request.
-                  This is request-scoped; SupaVector does not persist the key for the tenant.
+                  Use this when you want Supavector to keep its own Postgres/auth/runtime but use your provider key for a specific request.
+                  This is request-scoped; Supavector does not persist the key for the tenant.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Looking for manual Docker setup?</div>
@@ -211,11 +211,11 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   The bootstrap helper also creates the first token. Store returned tokens securely; they are shown only once.
                 </p>
                 <p>
-                  If your application already has its own user auth, keep it there. Let your backend call SupaVector with a
-                  service token instead of making every end user or agent log in directly to SupaVector.
+                  If your application already has its own user auth, keep it there. Let your backend call Supavector with a
+                  service token instead of making every end user or agent log in directly to Supavector.
                 </p>
                 <p>
-                  Optional third mode: keep SupaVector auth the same, but send the matching provider-key header
+                  Optional third mode: keep Supavector auth the same, but send the matching provider-key header
                   (<span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, or <span class="mono">X-Anthropic-API-Key</span>)
                   on supported sync requests when you want your own model-provider key to be used instead of the server default.
                 </p>
@@ -425,7 +425,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">model</span></td>
                         <td>string</td>
                         <td>No</td>
-                        <td>Optional per-request generation override. If omitted, SupaVector uses the tenant default or instance default.</td>
+                        <td>Optional per-request generation override. If omitted, Supavector uses the tenant default or instance default.</td>
                       </tr>
                     </tbody>
                   </table>
@@ -544,23 +544,23 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
               <summary>AI assistant connections</summary>
               <div class="section-body" id="docAgentConnect">
                 <p>
-                  Connect SupaVector documentation to your assistants so they can fetch current integration guidance directly from your docs stack.
+                  Connect Supavector documentation to your assistants so they can fetch current integration guidance directly from your docs stack.
                   This includes <span class="mono">llms.txt</span>, a built-in MCP endpoint, and quick access patterns for ChatGPT and Claude.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Runtime auth for agents</div>
                   <p>
                     Use a service token in your runtime agent environment. Let humans use JWTs in the browser UI.
-                    If your app already has auth, keep that layer and have the backend call SupaVector with
+                    If your app already has auth, keep that layer and have the backend call Supavector with
                     <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span>.
                   </p>
                 </div>
 
                 <div class="doc-block">
                   <div class="doc-label">Instruction for local coding agents</div>
-                  <p>If an assistant is operating on a local computer that already has this repo, it should treat the SupaVector CLI as the default local control surface.</p>
+                  <p>If an assistant is operating on a local computer that already has this repo, it should treat the Supavector CLI as the default local control surface.</p>
                   <pre class="doc-code">1. Run supavector doctor
-2. If SupaVector is not configured locally, run supavector onboard
+2. If Supavector is not configured locally, run supavector onboard
 3. Prefer supavector write/search/ask/boolean_ask over raw bootstrap commands
 4. Use --collection explicitly when scope matters
 5. For folder ingest, supavector write --folder ./name uses the folder name as the default collection
@@ -581,11 +581,11 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 <div class="doc-block">
                   <div class="doc-label">Use our MCP server</div>
                   <p>
-                    The SupaVector docs MCP server is available at
+                    The Supavector docs MCP server is available at
                     <a class="mono" id="atlasMcpInlineLink" href="#" target="_blank" rel="noopener noreferrer">(loading)</a>.
                   </p>
                   <p>
-                    Once connected, your assistant can search SupaVector documentation in real time for API usage, authentication setup,
+                    Once connected, your assistant can search Supavector documentation in real time for API usage, authentication setup,
                     memory policy modes (<span class="mono">amvl</span>, <span class="mono">ttl</span>, <span class="mono">lru</span>), lifecycle behavior, and implementation patterns.
                   </p>
                 </div>
@@ -747,7 +747,7 @@ curl -X POST http://localhost:3000/v1/memory/recall \
                 </div>
                 <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
                 <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
-                <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, SupaVector uses <span class="mono">amvl</span>.</p>
+                <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, Supavector uses <span class="mono">amvl</span>.</p>
                 <div class="doc-block">
                   <div class="doc-label">Memory types</div>
                   <table class="table">
@@ -1039,7 +1039,7 @@ while (true) {
               <div class="section-body">
                 <p>
                   If your app does not want users to log in directly, you can still enforce visibility by having
-                  your backend call SupaVector with a service token and pass <span class="mono">principalId</span> and/or
+                  your backend call Supavector with a service token and pass <span class="mono">principalId</span> and/or
                   <span class="mono">privileges</span> in the payload. The server matches these against the item's
                   visibility and ACL list. Enable this by setting <span class="mono">ALLOW_PRINCIPAL_OVERRIDE=1</span> and
                   using an <span class="mono">admin</span> service token. Never expose
@@ -1047,7 +1047,7 @@ while (true) {
                 </p>
                 <p>
                   This is the recommended pattern when your product already has its own user auth. End users and runtime
-                  agents do not need separate SupaVector logins if your backend is the caller of record.
+                  agents do not need separate Supavector logins if your backend is the caller of record.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Write with ACL (server-side principal)</div>
@@ -1125,7 +1125,7 @@ while (true) {
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">Best use</div>
-                      <p>Use this tab when you want SupaVector to feel like one command surface: install it, run the local container stack, point apps at it, maintain it over time, and keep a working command reference close by.</p>
+                      <p>Use this tab when you want Supavector to feel like one command surface: install it, run the local container stack, point apps at it, maintain it over time, and keep a working command reference close by.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
@@ -1133,7 +1133,7 @@ while (true) {
               <summary>Install</summary>
               <div class="section-body">
                 <p>
-                  The SupaVector CLI is the fastest self-hosted path in this repo. It installs a local
+                  The Supavector CLI is the fastest self-hosted path in this repo. It installs a local
                   <span class="mono">supavector</span> command, guides the first bootstrap, saves runtime config,
                   and keeps installation and upgrade steps in one place.
                 </p>
@@ -1202,7 +1202,7 @@ while (true) {
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Repository and source code</div>
-                  <p>SupaVector is open source. If you want to inspect the implementation, fork it, or follow the installer and deployment files directly, use the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
+                  <p>Supavector is open source. If you want to inspect the implementation, fork it, or follow the installer and deployment files directly, use the <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.</p>
                 </div>
               </div>
             </details>
@@ -1211,13 +1211,13 @@ while (true) {
               <summary>Container</summary>
               <div class="section-body">
                 <p>
-                  Onboarding is the command that turns an installed CLI into a working local SupaVector container stack.
+                  Onboarding is the command that turns an installed CLI into a working local Supavector container stack.
                   It writes the env file, stages the local CLI config, starts Docker, runs the bootstrap helper, and then verifies readiness before printing the final ready summary.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Default container behavior</div>
                   <p>The default path uses the bundled Postgres service from <span class="mono">docker-compose.yml</span>. If you already manage your own Postgres, use <span class="mono">supavector onboard --external-postgres</span> and the CLI will write <span class="mono">.env.external-postgres</span> and use <span class="mono">docker-compose.external-postgres.yml</span> instead.</p>
-                  <p class="hint">That choice only changes which Postgres database this self-hosted SupaVector instance uses. It does not turn the instance into a shared SupaVector deployment, and its service tokens still belong only to that self-hosted instance.</p>
+                  <p class="hint">That choice only changes which Postgres database this self-hosted Supavector instance uses. It does not turn the instance into a shared Supavector deployment, and its service tokens still belong only to that self-hosted instance.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Bundled Postgres (default)</div>
@@ -1273,12 +1273,12 @@ supavector changemodel \
   --compact-model inherit \
   --restart</pre>
                   <p class="hint">The CLI now asks for a provider first, then shows the numbered model list for that provider. Generation providers are <span class="mono">1 = openai</span>, <span class="mono">2 = gemini</span>, and <span class="mono">3 = anthropic</span>. Embedding providers are <span class="mono">1 = openai</span> and <span class="mono">2 = gemini</span>. When the provider is OpenAI, the familiar numbered model shortcuts still map to <span class="mono">gpt-4o</span>, <span class="mono">gpt-4.1</span>, <span class="mono">gpt-4o-mini</span>, <span class="mono">gpt-4.1-mini</span>, <span class="mono">gpt-4.1-nano</span>, <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o3-mini</span>, <span class="mono">o4-mini</span>, and <span class="mono">custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">supavector ask --provider ... --model ...</span> and <span class="mono">supavector boolean_ask --provider ... --model ...</span>.</p>
-                  <p class="hint">Reasoning-style presets such as <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o4-mini</span>, and the GPT-5 family are supported. SupaVector omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
+                  <p class="hint">Reasoning-style presets such as <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o4-mini</span>, and the GPT-5 family are supported. Supavector omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What you get at the end</div>
                   <ul>
-                    <li>A running local SupaVector stack</li>
+                    <li>A running local Supavector stack</li>
                     <li>A bootstrapped admin user for browser login</li>
                     <li>A first service token saved for CLI and app use</li>
                     <li>A saved base URL, usually <span class="mono">http://localhost:3000</span></li>
@@ -1336,7 +1336,7 @@ supavector changemodel \
               <summary>Hosting</summary>
               <div class="section-body">
                 <p>
-                  Once CLI setup is complete, SupaVector becomes a running local service your own app, backend,
+                  Once CLI setup is complete, Supavector becomes a running local service your own app, backend,
                   worker, or agent can call. The normal runtime inputs are the saved base URL and service token.
                 </p>
                 <div class="doc-block">
@@ -1355,7 +1355,7 @@ export SUPAVECTOR_COLLECTION="default"
 export OPENAI_API_KEY="YOUR_OPENAI_KEY"
 export GEMINI_API_KEY="YOUR_GEMINI_KEY"
 export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"</pre>
-                  <p class="hint">For a deployed SupaVector instead of a local stack, keep the same pattern but set <span class="mono">SUPAVECTOR_BASE_URL</span> to your public domain such as <span class="mono">https://supavector.example.com</span>.</p>
+                  <p class="hint">For a deployed Supavector instead of a local stack, keep the same pattern but set <span class="mono">SUPAVECTOR_BASE_URL</span> to your public domain such as <span class="mono">https://supavector.example.com</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">3. Make the first request from your app or script</div>
@@ -1365,14 +1365,14 @@ export ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY"</pre>
   -d '{
     "docId": "welcome",
     "collection": "default",
-    "text": "SupaVector stores memory for agents."
+    "text": "Supavector stores memory for agents."
   }'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What does SupaVector store?",
+    "question": "What does Supavector store?",
     "collection": "default",
     "k": 3
   }'
@@ -1381,7 +1381,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "Does SupaVector store memory for agents?",
+    "question": "Does Supavector store memory for agents?",
     "collection": "default",
     "k": 3
   }'</pre>
@@ -1389,9 +1389,9 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">4. Use the Node SDK in a real backend or worker</div>
-                  <pre class="doc-code">const { SupaVectorClient } = require("@supavector/sdk");
+                  <pre class="doc-code">const { SupavectorClient } = require("@supavector/sdk");
 
-const client = new SupaVectorClient({
+const client = new SupavectorClient({
   baseUrl: process.env.SUPAVECTOR_BASE_URL,
   apiKey: process.env.SUPAVECTOR_API_KEY,
   openAiApiKey: process.env.OPENAI_API_KEY,
@@ -1400,11 +1400,11 @@ const client = new SupaVectorClient({
 });
 
 async function main() {
-  await client.indexText("welcome", "SupaVector stores memory for agents.", {
+  await client.indexText("welcome", "Supavector stores memory for agents.", {
     collection: process.env.SUPAVECTOR_COLLECTION || "default"
   });
 
-  const answer = await client.ask("What does SupaVector store?", {
+  const answer = await client.ask("What does Supavector store?", {
     collection: process.env.SUPAVECTOR_COLLECTION || "default",
     k: 3,
     provider: "openai"
@@ -1412,7 +1412,7 @@ async function main() {
 
   console.log(answer.data.answer);
 
-  const booleanAsk = await client.booleanAsk("Does SupaVector store memory for agents?", {
+  const booleanAsk = await client.booleanAsk("Does Supavector store memory for agents?", {
     collection: process.env.SUPAVECTOR_COLLECTION || "default",
     k: 3,
     provider: "openai"
@@ -1428,18 +1428,18 @@ main().catch(console.error);</pre>
                 <div class="doc-block">
                   <div class="doc-label">5. Choose the integration shape</div>
                   <ul>
-                    <li><strong>Direct server-to-server:</strong> your backend, worker, or agent runtime calls SupaVector with <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span>.</li>
-                    <li><strong>Backend-as-caller:</strong> your frontend talks to your backend, and your backend holds the SupaVector token privately.</li>
-                    <li><strong>Remote deployment:</strong> the same code works against a public SupaVector deployment by swapping the base URL.</li>
+                    <li><strong>Direct server-to-server:</strong> your backend, worker, or agent runtime calls Supavector with <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span>.</li>
+                    <li><strong>Backend-as-caller:</strong> your frontend talks to your backend, and your backend holds the Supavector token privately.</li>
+                    <li><strong>Remote deployment:</strong> the same code works against a public Supavector deployment by swapping the base URL.</li>
                   </ul>
-                  <p class="hint">For production apps, keep the SupaVector service token on the server side. Do not ship admin credentials or long-lived service tokens into browser code.</p>
+                  <p class="hint">For production apps, keep the Supavector service token on the server side. Do not ship admin credentials or long-lived service tokens into browser code.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Remote hosting mode</div>
                   <p>
-                    If SupaVector is already deployed behind nginx or another public reverse proxy,
+                    If Supavector is already deployed behind nginx or another public reverse proxy,
                     use the CLI as a remote API client. In this mode, you do <strong>not</strong> run
-                    <span class="mono">supavector onboard</span> from the client machine unless that machine is also the self-hosted SupaVector server.
+                    <span class="mono">supavector onboard</span> from the client machine unless that machine is also the self-hosted Supavector server.
                   </p>
                   <ul>
                     <li><strong>Needed on the client:</strong> the CLI, a public base URL, and a service token</li>
@@ -1455,14 +1455,14 @@ main().catch(console.error);</pre>
                   <div class="doc-label">2. Export the live runtime values on your own machine</div>
                   <pre class="doc-code">export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
-                  <p class="hint">If you want SupaVector to use your own provider key for supported sync requests, also export <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span>.</p>
+                  <p class="hint">If you want Supavector to use your own provider key for supported sync requests, also export <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">3. Smoke test the live deployment from the CLI</div>
                   <pre class="doc-code">supavector write \
   --doc-id cli-test \
   --collection cli-smoke \
-  --text "SupaVector CLI remote test."
+  --text "Supavector CLI remote test."
 
 supavector search \
   --q "remote test" \
@@ -1474,13 +1474,13 @@ supavector ask \
   --collection cli-smoke
 
 supavector boolean_ask \
-  --question "Does the CLI test document mention SupaVector?" \
+  --question "Does the CLI test document mention Supavector?" \
   --collection cli-smoke</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">How you get the service token</div>
-                  <p>Use an existing SupaVector service token for the target tenant. If the deployment already exists, either ask the admin for a tenant-scoped token or have the admin create one with <span class="mono">POST /v1/admin/service-tokens</span>. If you are the operator, the initial token also comes from the bootstrap step on the server.</p>
-                  <p class="hint">Service tokens are deployment-scoped. A token created by your local self-hosted SupaVector instance will not work against a different shared or hosted SupaVector deployment, and vice versa.</p>
+                  <p>Use an existing Supavector service token for the target tenant. If the deployment already exists, either ask the admin for a tenant-scoped token or have the admin create one with <span class="mono">POST /v1/admin/service-tokens</span>. If you are the operator, the initial token also comes from the bootstrap step on the server.</p>
+                  <p class="hint">Service tokens are deployment-scoped. A token created by your local self-hosted Supavector instance will not work against a different shared or hosted Supavector deployment, and vice versa.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Important rule</div>
@@ -1611,7 +1611,7 @@ supavector docs list --collection customer-support</pre>
                   <pre class="doc-code">supavector write \
   --doc-id welcome \
   --collection local-demo \
-  --text "SupaVector stores memory for agents."</pre>
+  --text "Supavector stores memory for agents."</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Write from a file</div>
@@ -1673,11 +1673,11 @@ supavector search --q "tenant auth mode" --collection default --json</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Ask and boolean_ask examples</div>
-                  <pre class="doc-code">supavector ask --question "What does SupaVector store?" --collection local-demo --k 3
+                  <pre class="doc-code">supavector ask --question "What does Supavector store?" --collection local-demo --k 3
 supavector ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short --model 2
-supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo --k 3
+supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo --k 3
 supavector boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model o1</pre>
-                  <p class="hint"><span class="mono">--model</span> is optional. If you omit it, SupaVector uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">supavector changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
+                  <p class="hint"><span class="mono">--model</span> is optional. If you omit it, Supavector uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">supavector changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Useful write flags</div>
@@ -1703,7 +1703,7 @@ supavector changemodel
 supavector uninstall</pre>
                   <p class="hint"><span class="mono">supavector update</span> updates the managed checkout under <span class="mono">~/.supavector</span>. If the remote <span class="mono">main</span> branch was force-pushed, the CLI can still recover as long as that managed checkout is clean.</p>
                   <p class="hint"><span class="mono">supavector changemodel</span> updates the local self-hosted env file, supports numbered generation-model choices, and if the embedding model changes it sets <span class="mono">REINDEX_ON_START=force</span> for the next restart.</p>
-                  <p class="hint"><span class="mono">supavector uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.supavector</span> when that checkout exists, and for managed local self-hosted installs it also clears the local SupaVector Docker containers and volumes.</p>
+                  <p class="hint"><span class="mono">supavector uninstall</span> removes the local wrapper, saved CLI config, installer PATH hook, the managed checkout under <span class="mono">~/.supavector</span> when that checkout exists, and for managed local self-hosted installs it also clears the local Supavector Docker containers and volumes.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Saved config</div>
@@ -1713,7 +1713,7 @@ supavector config show --show-secrets</pre>
                 <div class="doc-block">
                   <div class="doc-label">Common overrides</div>
                   <ul>
-                    <li><span class="mono">--project-root</span> to point at a specific SupaVector checkout</li>
+                    <li><span class="mono">--project-root</span> to point at a specific Supavector checkout</li>
                     <li><span class="mono">--base-url</span> to target a different deployment</li>
                     <li><span class="mono">--api-key</span> to override the saved service token</li>
                     <li><span class="mono">--tenant</span> and <span class="mono">--collection</span> to override saved scope</li>
@@ -1751,7 +1751,7 @@ REFLECT_PROVIDER=openai
 REFLECT_MODEL=gpt-4o-mini
 COMPACT_PROVIDER=
 COMPACT_MODEL=gpt-4o-mini</pre>
-                  <p class="hint"><span class="mono">EMBED_PROVIDER</span> and <span class="mono">EMBED_MODEL</span> are instance-wide. Changing either requires a reindex because SupaVector stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, SupaVector also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
+                  <p class="hint"><span class="mono">EMBED_PROVIDER</span> and <span class="mono">EMBED_MODEL</span> are instance-wide. Changing either requires a reindex because Supavector stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, Supavector also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
                   <p class="hint">Generation providers can be <span class="mono">openai</span>, <span class="mono">gemini</span>, or <span class="mono">anthropic</span>. Embedding providers can be <span class="mono">openai</span> or <span class="mono">gemini</span>. Anthropic is generation-only today. The live provider-aware preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                   <pre class="doc-code">curl http://localhost:3000/v1/models</pre>
                 </div>
@@ -1778,9 +1778,9 @@ COMPACT_MODEL=gpt-4o-mini</pre>
                   <pre class="doc-code">./scripts/install.sh
 supavector onboard
 supavector status
-supavector write --doc-id welcome --collection local-demo --text "SupaVector stores memory for agents."
-supavector ask --question "What does SupaVector store?" --collection local-demo
-supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo</pre>
+supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
+supavector ask --question "What does Supavector store?" --collection local-demo
+supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Example 2: local external Postgres</div>
@@ -1824,10 +1824,10 @@ supavector config show</pre>
                   <div class="doc-label">Example 6: remote live deployment</div>
                   <pre class="doc-code">export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
-supavector write --doc-id cli-test --collection cli-smoke --text "SupaVector CLI remote test."
+supavector write --doc-id cli-test --collection cli-smoke --text "Supavector CLI remote test."
 supavector search --q "remote test" --collection cli-smoke --k 3
 supavector ask --question "What does the CLI test document say?" --collection cli-smoke
-supavector boolean_ask --question "Does the CLI test document mention SupaVector?" --collection cli-smoke</pre>
+supavector boolean_ask --question "Does the CLI test document mention Supavector?" --collection cli-smoke</pre>
                 </div>
               </div>
             </details>
@@ -1844,7 +1844,7 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                         <a href="#doc-setup-modes">Start here</a>
                         <a href="#doc-setup-boundaries">What changes by mode</a>
                         <a href="#doc-setup-guides">Mode-by-mode setup</a>
-                        <a href="#mode-hosted">SupaVector Hosted</a>
+                        <a href="#mode-hosted">Supavector Hosted</a>
                         <a href="#doc-setup-rules">Credential rules</a>
                         <a href="#doc-setup-mistakes">Common mistakes</a>
                       </div>
@@ -1861,20 +1861,20 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
               <div class="section-body">
                 <p>
                   This tab is the operational setup guide. “Usage mode” means two things together:
-                  who runs SupaVector, and where your first credentials come from. Pick the mode that matches both.
+                  who runs Supavector, and where your first credentials come from. Pick the mode that matches both.
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Before you use this tab</div>
-                  <p>Use <strong>CLI Setup</strong> if you want SupaVector installed, onboarded, and operated from one command-line workflow. Stay on this tab when you want the manual steps by setup mode, including what to clone, what env file to edit, when to run Docker, when not to clone at all, and where the first service token actually comes from.</p>
+                  <p>Use <strong>CLI Setup</strong> if you want Supavector installed, onboarded, and operated from one command-line workflow. Stay on this tab when you want the manual steps by setup mode, including what to clone, what env file to edit, when to run Docker, when not to clone at all, and where the first service token actually comes from.</p>
                   <p class="hint">The same explanation also lives in <span class="mono">docs/setup-modes.md</span> in the repository for people reading the markdown docs directly.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What the mode names mean</div>
                   <ul>
-                    <li><strong>SupaVector Hosted:</strong> SupaVector runs the infrastructure. You sign up, get an <span class="mono">supav_</span> token from the Dashboard, and call the API. AI generation requires a credit balance topped up from the Dashboard.</li>
-                    <li><strong>Self-host:</strong> you clone the repository, run SupaVector yourself, and create the first admin and service token yourself.</li>
-                    <li><strong>Shared deployment:</strong> SupaVector already exists as a service. You do not need to clone the repo just to consume the API.</li>
-                    <li><strong>Backend-as-caller:</strong> your own backend holds the SupaVector token and makes server-to-server requests on behalf of users.</li>
+                    <li><strong>Supavector Hosted:</strong> Supavector runs the infrastructure. You sign up, get an <span class="mono">supav_</span> token from the Dashboard, and call the API. AI generation requires a credit balance topped up from the Dashboard.</li>
+                    <li><strong>Self-host:</strong> you clone the repository, run Supavector yourself, and create the first admin and service token yourself.</li>
+                    <li><strong>Shared deployment:</strong> Supavector already exists as a service. You do not need to clone the repo just to consume the API.</li>
+                    <li><strong>Backend-as-caller:</strong> your own backend holds the Supavector token and makes server-to-server requests on behalf of users.</li>
                     <li><strong>Human admin:</strong> this is the operator path for the UI, tenant settings, SSO setup, and service-token management.</li>
                   </ul>
                 </div>
@@ -1890,45 +1890,45 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                     </thead>
                     <tbody>
                       <tr>
-                        <td><strong>SupaVector Hosted</strong></td>
-                        <td>SupaVector runs the infrastructure. You sign up, create a project in the Dashboard, and call the API with an <span class="mono">supav_</span> token.</td>
+                        <td><strong>Supavector Hosted</strong></td>
+                        <td>Supavector runs the infrastructure. You sign up, create a project in the Dashboard, and call the API with an <span class="mono">supav_</span> token.</td>
                         <td>You do not want to run any server, Docker, or Postgres. You want a working token in under five minutes.</td>
                         <td>Sign up → Dashboard → <strong>New Project</strong> → copy your token. Add credit for AI generation.</td>
                       </tr>
                       <tr>
                         <td>Self-host: bundled stack</td>
-                        <td>You run SupaVector yourself with the bundled Compose stack, including the bundled Postgres service.</td>
-                        <td>You want the fastest path from clone to a working local or single-node SupaVector instance.</td>
+                        <td>You run Supavector yourself with the bundled Compose stack, including the bundled Postgres service.</td>
+                        <td>You want the fastest path from clone to a working local or single-node Supavector instance.</td>
                         <td>Clone the repo, start Docker, then run <a href="#mode-bundled"><span class="mono">bootstrap_instance.js</span></a>.</td>
                       </tr>
                       <tr>
                         <td>Self-host: BYO Postgres + AI</td>
-                        <td>You run SupaVector yourself, but connect it to your own Postgres and secrets setup.</td>
-                        <td>You already have database and infra conventions you want to keep, but still want SupaVector inside your environment.</td>
-                        <td>Clone the repo, point SupaVector at your Postgres, then run <a href="#mode-byo-postgres"><span class="mono">bootstrap_instance.js</span></a>.</td>
+                        <td>You run Supavector yourself, but connect it to your own Postgres and secrets setup.</td>
+                        <td>You already have database and infra conventions you want to keep, but still want Supavector inside your environment.</td>
+                        <td>Clone the repo, point Supavector at your Postgres, then run <a href="#mode-byo-postgres"><span class="mono">bootstrap_instance.js</span></a>.</td>
                       </tr>
                       <tr>
-                        <td>Use an existing SupaVector deployment</td>
-                        <td>SupaVector is already running somewhere else and you are consuming it as a service.</td>
-                        <td>You only need a base URL and a service token and do not need to operate SupaVector yourself.</td>
+                        <td>Use an existing Supavector deployment</td>
+                        <td>Supavector is already running somewhere else and you are consuming it as a service.</td>
+                        <td>You only need a base URL and a service token and do not need to operate Supavector yourself.</td>
                         <td>Ask the admin for credentials, or if you are the admin, sign in and create a token in <a href="#mode-shared">shared deployment setup</a>.</td>
                       </tr>
                       <tr>
                         <td>Existing deployment + your provider key</td>
-                        <td>You still use an existing SupaVector deployment, but send your own provider key per request.</td>
-                        <td>You want SupaVector to keep its own runtime and data plane, but want your own provider billing/key on supported sync routes.</td>
+                        <td>You still use an existing Supavector deployment, but send your own provider key per request.</td>
+                        <td>You want Supavector to keep its own runtime and data plane, but want your own provider billing/key on supported sync routes.</td>
                         <td>Get the same base URL and service token as shared mode, then follow <a href="#mode-shared-provider">shared + your AI key</a>.</td>
                       </tr>
                       <tr>
                         <td>Backend-as-caller</td>
-                        <td>Your backend is the only system that talks directly to SupaVector; browsers and end users do not hold SupaVector credentials.</td>
-                        <td>Your own product already has auth and you want SupaVector behind your API/server layer.</td>
+                        <td>Your backend is the only system that talks directly to Supavector; browsers and end users do not hold Supavector credentials.</td>
+                        <td>Your own product already has auth and you want Supavector behind your API/server layer.</td>
                         <td>First get a service token from a self-host or shared deployment, then store it only on your backend as shown in <a href="#mode-backend-proxy">backend-as-caller setup</a>.</td>
                       </tr>
                       <tr>
                         <td>Human admin / browser UI</td>
                         <td>A person signs in interactively to use the UI, manage tenant settings, or mint service tokens.</td>
-                        <td>You are operating SupaVector itself, not wiring a headless app or agent runtime yet.</td>
+                        <td>You are operating Supavector itself, not wiring a headless app or agent runtime yet.</td>
                         <td>Log in with <span class="mono">/v1/login</span> or SSO, then use <a href="#mode-human-admin">human admin setup</a> to mint machine credentials.</td>
                       </tr>
                     </tbody>
@@ -1946,10 +1946,10 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
               <div class="section-body">
                 <p>The fastest way to avoid setup mistakes is to answer four questions up front:</p>
                 <ol>
-                  <li>Are you running SupaVector yourself, or is it already running somewhere else?</li>
+                  <li>Are you running Supavector yourself, or is it already running somewhere else?</li>
                   <li>Will you use the bundled Postgres container, or your own Postgres?</li>
-                  <li>Do you need SupaVector to keep its own provider key, or should each request use your provider key?</li>
-                  <li>Will browsers/users talk to SupaVector directly, or only through your backend?</li>
+                  <li>Do you need Supavector to keep its own provider key, or should each request use your provider key?</li>
+                  <li>Will browsers/users talk to Supavector directly, or only through your backend?</li>
                 </ol>
                 <div class="doc-block">
                   <div class="doc-label">Mode boundary table</div>
@@ -1965,7 +1965,7 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                     </thead>
                     <tbody>
                       <tr>
-                        <td><strong>SupaVector Hosted</strong></td>
+                        <td><strong>Supavector Hosted</strong></td>
                         <td>No</td>
                         <td>No</td>
                         <td>No</td>
@@ -1989,21 +1989,21 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                         <td>Use an existing deployment</td>
                         <td>No, unless you are also the operator</td>
                         <td>No on the client machine</td>
-                        <td>No SupaVector server env on the client machine</td>
-                        <td>An SupaVector admin gives it to you, or creates it in the UI/API</td>
+                        <td>No Supavector server env on the client machine</td>
+                        <td>An Supavector admin gives it to you, or creates it in the UI/API</td>
                       </tr>
                       <tr>
                         <td>Existing deployment + your provider key</td>
                         <td>No, unless you are also the operator</td>
                         <td>No on the client machine</td>
-                        <td>No SupaVector server env on the client machine</td>
+                        <td>No Supavector server env on the client machine</td>
                         <td>Same service token path as shared deployment</td>
                       </tr>
                       <tr>
                         <td>Backend-as-caller</td>
                         <td>Only if you self-host</td>
-                        <td>Only on the SupaVector server side</td>
-                        <td>Only on the backend / SupaVector server side</td>
+                        <td>Only on the Supavector server side</td>
+                        <td>Only on the backend / Supavector server side</td>
                         <td>From whichever self-hosted or shared deployment your backend uses</td>
                       </tr>
                       <tr>
@@ -2020,8 +2020,8 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                   <div class="doc-label">What not to mix</div>
                   <ul>
                     <li>Do not run <span class="mono">supavector onboard</span> on a client machine that is only consuming an already running shared deployment.</li>
-                    <li>Do not copy a token from one SupaVector deployment and expect it to work against another deployment.</li>
-                    <li>Do not assume <span class="mono">--external-postgres</span> means “hosted by SupaVector.” It is still your own self-hosted SupaVector deployment.</li>
+                    <li>Do not copy a token from one Supavector deployment and expect it to work against another deployment.</li>
+                    <li>Do not assume <span class="mono">--external-postgres</span> means “hosted by Supavector.” It is still your own self-hosted Supavector deployment.</li>
                     <li>Do not give browsers long-lived admin or service tokens if your backend can hold them instead.</li>
                   </ul>
                 </div>
@@ -2033,13 +2033,13 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
               <div class="section-body">
                 <p>
                   Each guide below is written as a concrete setup flow. Self-hosted modes start from repository checkout.
-                  Shared modes start from existing SupaVector credentials and do not require cloning SupaVector just to consume the API.
+                  Shared modes start from existing Supavector credentials and do not require cloning Supavector just to consume the API.
                 </p>
 
                 <div class="doc-tabs" data-doc-tabs="usageModes">
                   <button class="doc-tab active" data-doc-tab="bundled" type="button">Self-host (bundled)</button>
                   <button class="doc-tab" data-doc-tab="byoPostgres" type="button">Self-host (BYO Postgres)</button>
-                  <button class="doc-tab" data-doc-tab="hosted" type="button">SupaVector Hosted</button>
+                  <button class="doc-tab" data-doc-tab="hosted" type="button">Supavector Hosted</button>
                   <button class="doc-tab" data-doc-tab="shared" type="button">Use existing deployment</button>
                   <button class="doc-tab" data-doc-tab="sharedOpenAi" type="button">Existing deployment + your provider key</button>
                   <button class="doc-tab" data-doc-tab="backendProxy" type="button">Backend-as-caller</button>
@@ -2051,22 +2051,22 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                     <div id="mode-bundled"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>The fastest self-hosted path when you want to go from repository checkout to a working local or single-node SupaVector instance with the least infra setup.</p>
+                      <p>The fastest self-hosted path when you want to go from repository checkout to a working local or single-node Supavector instance with the least infra setup.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are setting up</div>
                       <ul>
-                        <li>Your own SupaVector server</li>
-                        <li>The bundled SupaVector Postgres container</li>
+                        <li>Your own Supavector server</li>
+                        <li>The bundled Supavector Postgres container</li>
                         <li>Your own first admin and your own first service token</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are not setting up</div>
                       <ul>
-                        <li>A shared SupaVector deployment run by someone else</li>
+                        <li>A shared Supavector deployment run by someone else</li>
                         <li>Your own external Postgres server</li>
-                        <li>A client-only integration with an already running SupaVector service</li>
+                        <li>A client-only integration with an already running Supavector service</li>
                       </ul>
                     </div>
                     <div class="doc-block">
@@ -2080,7 +2080,7 @@ supavector boolean_ask --question "Does the CLI test document mention SupaVector
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">1. Decide whether you need a fork</div>
-                      <p>Fork the repo on GitHub if you want your own copy to modify and push to. If you only need a local checkout to run SupaVector, you can skip the GitHub fork and clone directly.</p>
+                      <p>Fork the repo on GitHub if you want your own copy to modify and push to. If you only need a local checkout to run Supavector, you can skip the GitHub fork and clone directly.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">2. Clone to your machine</div>
@@ -2126,17 +2126,17 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: bundled-001" \
   -H "Content-Type: application/json" \
-  -d '{"docId":"hello","text":"SupaVector stores memory for agents."}'
+  -d '{"docId":"hello","text":"Supavector stores memory for agents."}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does SupaVector store?","k":3}'
+  -d '{"question":"What does Supavector store?","k":3}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does SupaVector store memory for agents?","k":3}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":3}'</pre>
                     </div>
                   </div>
 
@@ -2144,21 +2144,21 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
                     <div id="mode-byo-postgres"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Teams that already have Postgres, secrets management, backups, and deployment standards, but still want to self-host SupaVector.</p>
+                      <p>Teams that already have Postgres, secrets management, backups, and deployment standards, but still want to self-host Supavector.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are setting up</div>
                       <ul>
-                        <li>Your own SupaVector server</li>
-                        <li>Your own Postgres database for SupaVector</li>
+                        <li>Your own Supavector server</li>
+                        <li>Your own Postgres database for Supavector</li>
                         <li>Your own first admin and your own first service token</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are not setting up</div>
                       <ul>
-                        <li>The bundled SupaVector Postgres container as your data store</li>
-                        <li>A shared SupaVector deployment run by another team</li>
+                        <li>The bundled Supavector Postgres container as your data store</li>
+                        <li>A shared Supavector deployment run by another team</li>
                         <li>A browser-only login path without server-side service tokens</li>
                       </ul>
                     </div>
@@ -2166,14 +2166,14 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
                       <div class="doc-label">Before you start</div>
                       <ul>
                         <li>Git installed so you can clone the repository locally</li>
-                        <li>A reachable Postgres instance and credentials for a dedicated SupaVector database</li>
+                        <li>A reachable Postgres instance and credentials for a dedicated Supavector database</li>
                         <li>One or more provider keys such as <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span></li>
                         <li><span class="mono">JWT_SECRET</span> and <span class="mono">COOKIE_SECRET</span></li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">1. Decide whether you need a fork</div>
-                      <p>Fork the repo on GitHub if you want your own copy to modify and push to. If you only need to deploy SupaVector in your environment, you can clone directly without forking first.</p>
+                      <p>Fork the repo on GitHub if you want your own copy to modify and push to. If you only need to deploy Supavector in your environment, you can clone directly without forking first.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">2. Clone to your machine</div>
@@ -2202,7 +2202,7 @@ GRANT ALL PRIVILEGES ON DATABASE supavector TO supavector;</pre>
 # COOKIE_SECRET</pre>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">5. Start SupaVector without the bundled Postgres service</div>
+                      <div class="doc-label">5. Start Supavector without the bundled Postgres service</div>
                       <pre class="doc-code">docker compose -f docker-compose.external-postgres.yml \
   --env-file .env.external-postgres up -d --build
 
@@ -2235,13 +2235,13 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     <div id="mode-hosted"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Developers who want a working SupaVector API token in under five minutes without running any infrastructure. SupaVector manages the server, Postgres, and AI provider — you sign up, create a project, and call the API.</p>
+                      <p>Developers who want a working Supavector API token in under five minutes without running any infrastructure. Supavector manages the server, Postgres, and AI provider — you sign up, create a project, and call the API.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are setting up</div>
                       <ul>
                         <li>A Dashboard account (Google, GitHub, or email sign-in)</li>
-                        <li>One or more projects — each is an isolated SupaVector tenant</li>
+                        <li>One or more projects — each is an isolated Supavector tenant</li>
                         <li>A credit balance for AI generation</li>
                       </ul>
                     </div>
@@ -2250,7 +2250,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <ul>
                         <li>Any server, Docker container, or Compose file</li>
                         <li><span class="mono">.env</span> files or bootstrap scripts</li>
-                        <li>Your own Postgres database for SupaVector</li>
+                        <li>Your own Postgres database for Supavector</li>
                       </ul>
                     </div>
                     <div class="doc-block">
@@ -2285,13 +2285,13 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: hosted-001" \
   -H "Content-Type: application/json" \
-  -d '{"docId":"welcome","collection":"default","text":"SupaVector stores memory for agents."}'
+  -d '{"docId":"welcome","collection":"default","text":"Supavector stores memory for agents."}'
 
 # Ask a question (deducts credit)
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does SupaVector store?","k":5,"policy":"amvl"}'</pre>
+  -d '{"question":"What does Supavector store?","k":5,"policy":"amvl"}'</pre>
                       <p class="hint">The hosted instance supplies the AI provider. You do not need to send <span class="mono">X-OpenAI-API-Key</span> unless you want to override the server default.</p>
                     </div>
                     <div class="doc-block">
@@ -2329,7 +2329,7 @@ if (res.status === 402 && data.code === "CREDIT_REQUIRED") {
   // Prompt user to top up, or queue for retry after top-up
   throw new BillingError("No credits remaining.");
 }
-if (!res.ok) throw new Error(data.error || "SupaVector error");</pre>
+if (!res.ok) throw new Error(data.error || "Supavector error");</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Managing tokens</div>
@@ -2345,7 +2345,7 @@ if (!res.ok) throw new Error(data.error || "SupaVector error");</pre>
                       <div class="doc-label">Hosted vs self-hosted</div>
                       <table class="table">
                         <thead>
-                          <tr><th></th><th>SupaVector Hosted</th><th>Self-Hosted</th></tr>
+                          <tr><th></th><th>Supavector Hosted</th><th>Self-Hosted</th></tr>
                         </thead>
                         <tbody>
                           <tr><td>Run Docker</td><td>No</td><td>Yes</td></tr>
@@ -2364,29 +2364,29 @@ if (!res.ok) throw new Error(data.error || "SupaVector error");</pre>
                     <div id="mode-shared"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Using an SupaVector deployment that already exists. You are not hosting SupaVector yourself in this mode, and you should think of SupaVector like any other internal service you call over HTTP.</p>
+                      <p>Using an Supavector deployment that already exists. You are not hosting Supavector yourself in this mode, and you should think of Supavector like any other internal service you call over HTTP.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are setting up</div>
                       <ul>
-                        <li>A runtime integration that talks to an existing SupaVector deployment</li>
+                        <li>A runtime integration that talks to an existing Supavector deployment</li>
                         <li>Your local app or backend env with <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span></li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are not setting up</div>
                       <ul>
-                        <li>The SupaVector server itself</li>
-                        <li>Docker, Compose, Postgres, or SupaVector server env files on the client machine</li>
+                        <li>The Supavector server itself</li>
+                        <li>Docker, Compose, Postgres, or Supavector server env files on the client machine</li>
                         <li>The first service token from scratch unless you are also the admin</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Important distinction</div>
-                      <p>You do not fork or clone the SupaVector repository for this mode unless you are also the person operating the deployment. In this mode, the only things you need are credentials plus the service URL.</p>
+                      <p>You do not fork or clone the Supavector repository for this mode unless you are also the person operating the deployment. In this mode, the only things you need are credentials plus the service URL.</p>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">What you need from the SupaVector admin</div>
+                      <div class="doc-label">What you need from the Supavector admin</div>
                       <ul>
                         <li>The shared <span class="mono">SUPAVECTOR_BASE_URL</span></li>
                         <li>A service token scoped to the tenant you should use</li>
@@ -2396,7 +2396,7 @@ if (!res.ok) throw new Error(data.error || "SupaVector error");</pre>
                       <div class="doc-label">How the service token is created in this mode</div>
                       <p>There are only two normal paths:</p>
                       <ol>
-                        <li>An existing SupaVector admin creates a token and gives it to you.</li>
+                        <li>An existing Supavector admin creates a token and gives it to you.</li>
                         <li>You are that admin, so you sign in and create the token yourself.</li>
                       </ol>
                       <pre class="doc-code"># If you are the admin of the shared deployment:
@@ -2429,11 +2429,11 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Idempotency-Key: shared-001" \
   -H "Content-Type: application/json" \
-  -d '{"docId":"welcome","text":"SupaVector stores memory for agents."}'</pre>
+  -d '{"docId":"welcome","text":"Supavector stores memory for agents."}'</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">4. Use the same token from your app or agent</div>
-                      <p>Your runtime only needs <span class="mono">SUPAVECTOR_BASE_URL</span> plus <span class="mono">SUPAVECTOR_API_KEY</span>. Do not make every end user log in directly unless you intentionally want human sessions in SupaVector.</p>
+                      <p>Your runtime only needs <span class="mono">SUPAVECTOR_BASE_URL</span> plus <span class="mono">SUPAVECTOR_API_KEY</span>. Do not make every end user log in directly unless you intentionally want human sessions in Supavector.</p>
                     </div>
                   </div>
 
@@ -2441,12 +2441,12 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     <div id="mode-shared-provider"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Keeping SupaVector on the shared deployment while choosing your own provider key on a request-by-request basis.</p>
+                      <p>Keeping Supavector on the shared deployment while choosing your own provider key on a request-by-request basis.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">What changes in this mode</div>
                       <ul>
-                        <li>You still use the same <span class="mono">SUPAVECTOR_BASE_URL</span> and SupaVector service token as shared mode.</li>
+                        <li>You still use the same <span class="mono">SUPAVECTOR_BASE_URL</span> and Supavector service token as shared mode.</li>
                         <li>You add a request-scoped provider-key header on supported sync requests.</li>
                         <li>You may also set <span class="mono">provider</span> in <span class="mono">ask</span> or <span class="mono">boolean_ask</span> request bodies.</li>
                       </ul>
@@ -2454,20 +2454,20 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     <div class="doc-block">
                       <div class="doc-label">What does not change</div>
                       <ul>
-                        <li>SupaVector still owns the shared deployment, Postgres, and auth state.</li>
-                        <li>Your provider key is not persisted into SupaVector server-side config just by sending the header.</li>
+                        <li>Supavector still owns the shared deployment, Postgres, and auth state.</li>
+                        <li>Your provider key is not persisted into Supavector server-side config just by sending the header.</li>
                         <li>The service token still comes from the shared deployment admin path.</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Credential path</div>
-                      <p>This mode does not change how you get SupaVector credentials. First complete the shared deployment path to get <span class="mono">SUPAVECTOR_BASE_URL</span> plus a service token. This mode only adds a request-scoped provider-key header on top of that.</p>
+                      <p>This mode does not change how you get Supavector credentials. First complete the shared deployment path to get <span class="mono">SUPAVECTOR_BASE_URL</span> plus a service token. This mode only adds a request-scoped provider-key header on top of that.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">What you need</div>
                       <ul>
                         <li><span class="mono">SUPAVECTOR_BASE_URL</span> for the shared deployment</li>
-                        <li>An SupaVector service token or JWT</li>
+                        <li>An Supavector service token or JWT</li>
                         <li>Your own provider key: <span class="mono">OPENAI_API_KEY</span>, <span class="mono">GEMINI_API_KEY</span>, or <span class="mono">ANTHROPIC_API_KEY</span></li>
                       </ul>
                     </div>
@@ -2485,13 +2485,13 @@ ANTHROPIC_API_KEY=YOUR_ANTHROPIC_KEY</pre>
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-Gemini-API-Key: ${GEMINI_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does SupaVector store?","k":3,"policy":"amvl","provider":"gemini","model":"gemini-2.5-flash"}'
+  -d '{"question":"What does Supavector store?","k":3,"policy":"amvl","provider":"gemini","model":"gemini-2.5-flash"}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-Anthropic-API-Key: ${ANTHROPIC_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does SupaVector store memory for agents?","k":3,"policy":"amvl","provider":"anthropic","model":"claude-sonnet-4-20250514"}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":3,"policy":"amvl","provider":"anthropic","model":"claude-sonnet-4-20250514"}'</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Supported today</div>
@@ -2519,38 +2519,38 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
                     <div id="mode-backend-proxy"></div>
                     <div class="doc-block">
                       <div class="doc-label">Best for</div>
-                      <p>Products that already have their own auth and want SupaVector to stay behind their server or worker layer.</p>
+                      <p>Products that already have their own auth and want Supavector to stay behind their server or worker layer.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are setting up</div>
                       <ul>
-                        <li>Your backend as the only machine that talks directly to SupaVector</li>
-                        <li>Server-side storage for SupaVector base URL, service token, and optional provider keys</li>
+                        <li>Your backend as the only machine that talks directly to Supavector</li>
+                        <li>Server-side storage for Supavector base URL, service token, and optional provider keys</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">You are not setting up</div>
                       <ul>
-                        <li>SupaVector credentials in browser code</li>
-                        <li>A separate credential type beyond the normal SupaVector service token</li>
+                        <li>Supavector credentials in browser code</li>
+                        <li>A separate credential type beyond the normal Supavector service token</li>
                       </ul>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Architecture rule</div>
-                      <p>The browser or end-user app talks to your backend. Your backend talks to SupaVector. The SupaVector service token stays server-side.</p>
+                      <p>The browser or end-user app talks to your backend. Your backend talks to Supavector. The Supavector service token stays server-side.</p>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">1. Get or create SupaVector credentials</div>
-                      <p>This mode does not create a new credential type. You still need the same SupaVector service token as every other machine client. Get it in one of these ways:</p>
+                      <div class="doc-label">1. Get or create Supavector credentials</div>
+                      <p>This mode does not create a new credential type. You still need the same Supavector service token as every other machine client. Get it in one of these ways:</p>
                       <ul>
-                        <li>If you self-host SupaVector, run <span class="mono">bootstrap_instance.js</span> during setup.</li>
-                        <li>If SupaVector already exists, ask the admin for a token.</li>
+                        <li>If you self-host Supavector, run <span class="mono">bootstrap_instance.js</span> during setup.</li>
+                        <li>If Supavector already exists, ask the admin for a token.</li>
                         <li>If you are the admin, sign in and create a token with <span class="mono">POST /v1/admin/service-tokens</span>.</li>
                       </ul>
                       <p>Once you have that token, this backend pattern becomes the steady-state integration model.</p>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">2. Store SupaVector env only on the server</div>
+                      <div class="doc-label">2. Store Supavector env only on the server</div>
                       <pre class="doc-code">SUPAVECTOR_BASE_URL=https://supavector.example.com
 SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     </div>
@@ -2558,14 +2558,14 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <div class="doc-label">3. Forward only approved operations</div>
                       <ol>
                         <li>User authenticates to your app.</li>
-                        <li>Your backend decides what SupaVector action is allowed.</li>
-                        <li>Your backend calls SupaVector with the service token.</li>
+                        <li>Your backend decides what Supavector action is allowed.</li>
+                        <li>Your backend calls Supavector with the service token.</li>
                         <li>Your backend returns the result to the client.</li>
                       </ol>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">4. Optional user-level visibility</div>
-                      <p>Only use principal override if you intentionally want your backend to project end-user identity into SupaVector. Keep that logic server-side and do not expose admin tokens to the browser.</p>
+                      <p>Only use principal override if you intentionally want your backend to project end-user identity into Supavector. Keep that logic server-side and do not expose admin tokens to the browser.</p>
                     </div>
                   </div>
 
@@ -2584,8 +2584,8 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       </ul>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">1. Reach an SupaVector deployment</div>
-                      <p>If you are self-hosting, complete either the bundled-stack or BYO-Postgres flow first. If your team already runs SupaVector, use the shared deployment URL you were given.</p>
+                      <div class="doc-label">1. Reach an Supavector deployment</div>
+                      <p>If you are self-hosting, complete either the bundled-stack or BYO-Postgres flow first. If your team already runs Supavector, use the shared deployment URL you were given.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">2. Sign in</div>
@@ -2625,7 +2625,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                 <div class="doc-block">
                   <div class="doc-label">Service token rules</div>
                   <ul>
-                    <li>Service tokens are deployment-scoped. A token minted by one SupaVector deployment does not authenticate against another deployment.</li>
+                    <li>Service tokens are deployment-scoped. A token minted by one Supavector deployment does not authenticate against another deployment.</li>
                     <li>For apps, backends, workers, and agents, the normal runtime inputs are <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span>.</li>
                     <li>Username/password is mainly for the one-time bootstrap path or for human admin login.</li>
                   </ul>
@@ -2633,7 +2633,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                 <div class="doc-block">
                   <div class="doc-label">Provider-key rules</div>
                   <ul>
-                    <li>Self-hosted SupaVector can keep provider keys in its own env file.</li>
+                    <li>Self-hosted Supavector can keep provider keys in its own env file.</li>
                     <li>Shared deployments can also accept request-scoped provider-key headers on supported sync routes.</li>
                     <li><span class="mono">ask</span> and <span class="mono">boolean_ask</span> can override generation provider/model per request.</li>
                     <li>Embedding provider selection stays instance-wide today. Request-scoped provider headers do not change the embedding provider itself.</li>
@@ -2642,9 +2642,9 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                 <div class="doc-block">
                   <div class="doc-label">Database rules</div>
                   <ul>
-                    <li>Bundled Postgres and external Postgres are both still self-hosted SupaVector.</li>
-                    <li><span class="mono">--external-postgres</span> changes where SupaVector stores relational state. It does not turn the instance into a shared SupaVector platform deployment.</li>
-                    <li>Shared deployment users normally do not edit SupaVector server env files or Compose files at all.</li>
+                    <li>Bundled Postgres and external Postgres are both still self-hosted Supavector.</li>
+                    <li><span class="mono">--external-postgres</span> changes where Supavector stores relational state. It does not turn the instance into a shared Supavector platform deployment.</li>
+                    <li>Shared deployment users normally do not edit Supavector server env files or Compose files at all.</li>
                   </ul>
                 </div>
               </div>
@@ -2657,10 +2657,10 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                   <div class="doc-label">Avoid these setup mistakes</div>
                   <ul>
                     <li><strong>Running local bootstrap on the wrong machine:</strong> if you are only consuming an existing shared deployment, do not clone the repo just to get credentials unless you are also the operator.</li>
-                    <li><strong>Treating external Postgres as hosted SupaVector:</strong> using your own Postgres still means you are self-hosting SupaVector yourself.</li>
+                    <li><strong>Treating external Postgres as hosted Supavector:</strong> using your own Postgres still means you are self-hosting Supavector yourself.</li>
                     <li><strong>Mixing human login and machine runtime:</strong> the browser/admin path is not the normal long-running runtime path for apps and agents.</li>
                     <li><strong>Expecting provider headers to persist server-side config:</strong> request-scoped provider-key headers are request-scoped; they do not automatically reconfigure the server default provider.</li>
-                    <li><strong>Putting long-lived tokens in the browser:</strong> if you have your own backend, keep the SupaVector service token there instead.</li>
+                    <li><strong>Putting long-lived tokens in the browser:</strong> if you have your own backend, keep the Supavector service token there instead.</li>
                     <li><strong>Forgetting where the first token comes from:</strong> self-hosted flows create it during bootstrap; shared flows receive it from an existing admin path.</li>
                   </ul>
                 </div>
@@ -2683,7 +2683,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">How to choose</div>
-                      <p>Pick TTL when time should decide retention, LRU when recent use should decide, and AMVL when SupaVector should optimize for longer-term usefulness. If you are unsure, start with AMVL.</p>
+                      <p>Pick TTL when time should decide retention, LRU when recent use should decide, and AMVL when Supavector should optimize for longer-term usefulness. If you are unsure, start with AMVL.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
@@ -2692,7 +2692,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                         <p class="amv-kicker">Memory Policy Guide</p>
                         <h3>TTL, LRU, and AMVL</h3>
                         <p class="amv-subtitle">
-                          SupaVector supports three memory policies. They use the same API surface, but they make different
+                          Supavector supports three memory policies. They use the same API surface, but they make different
                           tradeoffs about retention and retrieval.
                         </p>
                         <div class="amv-meta-grid">
@@ -2706,7 +2706,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                           </div>
                           <div class="amv-meta-item">
                             <div class="amv-meta-label">Rule Of Thumb</div>
-                            <div class="amv-meta-value">Use TTL for fixed freshness windows, LRU for cache-like recency, and AMVL for SupaVector’s main long-term memory behavior.</div>
+                            <div class="amv-meta-value">Use TTL for fixed freshness windows, LRU for cache-like recency, and AMVL for Supavector’s main long-term memory behavior.</div>
                           </div>
                         </div>
                       </header>
@@ -2746,7 +2746,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                             <div class="doc-label">Use LRU when</div>
                             <ul>
                               <li>You want a familiar recency-based baseline.</li>
-                              <li>You are benchmarking SupaVector against simpler cache behavior.</li>
+                              <li>You are benchmarking Supavector against simpler cache behavior.</li>
                               <li>Your workload is mostly about the current working set, not long-term usefulness.</li>
                             </ul>
                           </div>
@@ -2755,7 +2755,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                             <ul>
                               <li>Recent access matters more than contribution or long-term value.</li>
                               <li>This is useful for short-horizon workloads, but older high-value memories can lose priority if they stop getting touched.</li>
-                              <li>Choose this when you want simpler recency behavior, not SupaVector’s value-driven memory policy.</li>
+                              <li>Choose this when you want simpler recency behavior, not Supavector’s value-driven memory policy.</li>
                             </ul>
                           </div>
                           <div class="doc-block">
@@ -2768,11 +2768,11 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <details class="details section" id="amv-amvl" open>
                         <summary>AMVL</summary>
                         <div class="section-body">
-                          <p><span class="mono">amvl</span> is SupaVector’s default and recommended policy. It is designed for longer-lived memory where retention and retrieval should reflect usefulness, not just age or recent access.</p>
+                          <p><span class="mono">amvl</span> is Supavector’s default and recommended policy. It is designed for longer-lived memory where retention and retrieval should reflect usefulness, not just age or recent access.</p>
                           <div class="doc-block">
                             <div class="doc-label">Use AMVL when</div>
                             <ul>
-                              <li>You want SupaVector’s main intended behavior.</li>
+                              <li>You want Supavector’s main intended behavior.</li>
                               <li>You want retention and retrieval influenced by access, contribution, and lifecycle signals.</li>
                               <li>You want better long-term usefulness than plain TTL or LRU can offer.</li>
                             </ul>
@@ -2787,7 +2787,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                           </div>
                           <div class="doc-block">
                             <div class="doc-label">Good default if</div>
-                            <p>You are building a long-running agent, assistant, or knowledge workflow and want SupaVector to optimize for useful memory rather than only age or last-touch time.</p>
+                            <p>You are building a long-running agent, assistant, or knowledge workflow and want Supavector to optimize for useful memory rather than only age or last-touch time.</p>
                           </div>
                         </div>
                       </details>

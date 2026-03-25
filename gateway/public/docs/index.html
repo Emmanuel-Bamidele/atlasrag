@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>SupaVector API Docs</title>
+    <title>Supavector API Docs</title>
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
     <style>
       :root {
@@ -95,10 +95,10 @@
   <body>
     <main class="page">
       <section class="hero">
-        <h1>SupaVector API Documentation</h1>
+        <h1>Supavector API Documentation</h1>
         <p>
           This page is focused on API consumers building apps and agents.
-          The recommended model is: bootstrap once, store a service token, then let your backend or agent call SupaVector directly.
+          The recommended model is: bootstrap once, store a service token, then let your backend or agent call Supavector directly.
         </p>
         <div class="meta-grid">
           <article class="meta-card">
@@ -115,17 +115,17 @@
             <ul>
               <li>Fork and self-deploy with the bundled stack for the fastest start.</li>
               <li>Fork and self-deploy with your own Postgres and OpenAI key if you already have infra in place.</li>
-              <li>Use a shared SupaVector deployment if your app or agent just needs to call an existing instance.</li>
-              <li>Use a shared SupaVector deployment with your own OpenAI key when the request should use your provider key.</li>
-              <li>Keep your own product auth in front when SupaVector should sit behind your backend.</li>
+              <li>Use a shared Supavector deployment if your app or agent just needs to call an existing instance.</li>
+              <li>Use a shared Supavector deployment with your own OpenAI key when the request should use your provider key.</li>
+              <li>Keep your own product auth in front when Supavector should sit behind your backend.</li>
             </ul>
           </article>
           <article class="meta-card">
             <h2>Important Notes</h2>
             <ul>
               <li>JWTs are best for human admin sessions. Service tokens are best for apps, agents, workers, and CI.</li>
-              <li>SupaVector can use your existing Postgres. Set <code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, and <code>PGPASSWORD</code>.</li>
-              <li>If you want SupaVector to keep its own Postgres/auth but use your OpenAI key for a request, also send <code>X-OpenAI-API-Key</code>.</li>
+              <li>Supavector can use your existing Postgres. Set <code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, and <code>PGPASSWORD</code>.</li>
+              <li>If you want Supavector to keep its own Postgres/auth but use your OpenAI key for a request, also send <code>X-OpenAI-API-Key</code>.</li>
               <li><code>Idempotency-Key</code> is required for <code>/v1/docs</code>, <code>/v1/docs/url</code>, <code>/v1/memory/write</code>, <code>/v1/memory/reflect</code>.</li>
               <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
               <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
