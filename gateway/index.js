@@ -5973,6 +5973,14 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
       }
     });
 
+    const storageBytes = Number(storageRow.bytes || 0);
+    const totalEmbedTokens = Number(usageAll?.embedding_tokens || 0);
+    const totalGenTokens = Number(usageAll?.generation_total_tokens || 0);
+    const totalAiTokens = totalEmbedTokens + totalGenTokens;
+    const storagePricePerGB = parseFloat(process.env.BILLING_PRICE_PER_GB_STORAGE || "0");
+    const aiTokenPricePer1K = parseFloat(process.env.BILLING_PRICE_PER_1K_AI_TOKENS || "0");
+    const storageGB = storageBytes / (1024 * 1024 * 1024);
+
     const usage = {
       windows: {
         all: buildUsageWindow(usageAll),
@@ -5980,11 +5988,23 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
         "7d": buildUsageWindow(usage7d)
       },
       storage: {
-        bytes: Number(storageRow.bytes || 0),
+        bytes: storageBytes,
         chunks: Number(storageRow.chunks || 0),
         documents: Number(itemRow.documents || 0),
         memoryItems: Number(itemRow.memory_items || 0),
         collections: Number(itemRow.collections || 0)
+      },
+      billing: {
+        rates: {
+          storagePerGB: storagePricePerGB || null,
+          aiTokensPer1K: aiTokenPricePer1K || null
+        },
+        costs: {
+          storageGB,
+          storageCharge: storagePricePerGB > 0 ? parseFloat((storageGB * storagePricePerGB).toFixed(6)) : null,
+          aiTokens1K: totalAiTokens / 1000,
+          aiTokensCharge: aiTokenPricePer1K > 0 ? parseFloat(((totalAiTokens / 1000) * aiTokenPricePer1K).toFixed(6)) : null
+        }
       },
       updatedAt: usageAll?.updated_at || null
     };

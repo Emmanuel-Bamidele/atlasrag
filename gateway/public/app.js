@@ -1392,6 +1392,8 @@ function renderUsage(stats){
   const win24 = windows["24h"] || {};
   const win7 = windows["7d"] || {};
   const storage = usage.storage || {};
+  const billing = usage.billing || {};
+  const billingCosts = billing.costs || {};
 
   const embedTotals = {
     all: Number(winAll.tokens?.embedding?.total || 0),
@@ -1499,7 +1501,23 @@ function renderUsage(stats){
       label: "Vector ops",
       values: { all: (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "24h": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0), "7d": (stats?.vset_count || 0) + (stats?.vsearch_count || 0) + (stats?.vdel_count || 0) },
       meta: { all: "total", "24h": "since restart", "7d": "since restart" }
-    }
+    },
+    ...(billingCosts.storageCharge != null ? [{
+      id: "storage_charge",
+      label: "Storage charge",
+      value: `$${Number(billingCosts.storageCharge).toFixed(4)}`,
+      values: { all: `$${Number(billingCosts.storageCharge).toFixed(4)}`, "24h": `$${Number(billingCosts.storageCharge).toFixed(4)}`, "7d": `$${Number(billingCosts.storageCharge).toFixed(4)}` },
+      format: (v) => v,
+      meta: { all: `$${billing.rates?.storagePerGB}/GB`, "24h": "current", "7d": "current" }
+    }] : []),
+    ...(billingCosts.aiTokensCharge != null ? [{
+      id: "ai_tokens_charge",
+      label: "AI tokens charge",
+      value: `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`,
+      values: { all: `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`, "24h": `$${Number(billingCosts.aiTokensCharge).toFixed(4)}`, "7d": `$${Number(billingCosts.aiTokensCharge).toFixed(4)}` },
+      format: (v) => v,
+      meta: { all: `$${billing.rates?.aiTokensPer1K}/1K tokens`, "24h": "all time", "7d": "all time" }
+    }] : [])
   ];
 
   const html = cards.map((card) => {
@@ -1614,6 +1632,8 @@ async function loadUsage(){
   usageLoading = true;
   $("usageRefreshBtn").disabled = true;
   $("usageRefreshBtn").textContent = "Loading...";
+  const usageCardsEl = $("usageCards");
+  if (usageCardsEl) usageCardsEl.innerHTML = '<p class="hint" style="padding:16px;text-align:center;">Loading usage data…</p>';
 
   try{
     const res = await fetch("/v1/admin/usage", { headers: apiHeaders() });
@@ -1637,9 +1657,11 @@ async function loadUsage(){
       setBanner($("usageBanner"), "ok", "Usage loaded.");
       usageLoaded = true;
     }else{
+      renderUsage(null);
       setBanner($("usageBanner"), "err", data?.error?.message || "Usage failed.");
     }
   }catch(e){
+    renderUsage(null);
     setBanner($("usageBanner"), "err", "Error loading usage.");
   }finally{
     usageLoading = false;
