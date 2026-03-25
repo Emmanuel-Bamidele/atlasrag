@@ -136,7 +136,7 @@ body.light-theme .bg-orb.orb-b{
   gap:18px;
   align-items:flex-start;
   justify-content:space-between;
-  margin-bottom: 20px;
+  margin-bottom: 32px;
   padding-right: 56px;
 }
 
@@ -153,8 +153,21 @@ body.light-theme .bg-orb.orb-b{
 .brand h1{
   margin:0;
   font-family:var(--display);
-  font-size: 28px;
-  letter-spacing:-0.3px;
+  font-size: 26px;
+  letter-spacing:-0.4px;
+}
+
+.brand-identity{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.brand-logo{
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
 .brand-name{
@@ -190,10 +203,49 @@ body.light-theme .bg-orb.orb-b{
   line-height: 1.6;
 }
 
-.theme-toggle{
+.topbar-actions {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.github-topbar-link {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(19,42,47,0.68);
+  color: var(--accent-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-shadow: 0 10px 22px rgba(5,18,20,0.22);
+  transition: transform .2s ease, border-color .2s ease, background .2s ease, color .2s ease;
+}
+
+.github-topbar-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(61,213,200,0.52);
+  background: rgba(19,42,47,0.86);
+}
+
+body.light-theme .github-topbar-link {
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(26,54,70,0.2);
+  color: #0e9e94;
+  box-shadow: 0 8px 18px rgba(28,57,73,0.14);
+}
+
+body.light-theme .github-topbar-link:hover {
+  border-color: rgba(14,158,148,0.52);
+  background: rgba(255,255,255,1);
+}
+
+.theme-toggle{
   width: 40px;
   height: 40px;
   border-radius: 999px;

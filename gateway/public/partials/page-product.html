@@ -4,7 +4,7 @@
             <section class="product-showcase">
               <div class="product-showcase-copy">
                 <p class="product-showcase-kicker">Product</p>
-                <h2>Supavector gives AI apps a governed memory layer.</h2>
+                <h2>Supavector is a memory layer for AI Agents</h2>
                 <p class="product-showcase-lead">
                   Put retrieval, memory retention, access control, and feedback loops behind one backend surface
                   instead of spreading them across your app.
@@ -12,11 +12,8 @@
                 <div class="product-showcase-actions">
                   <a class="btn product-cta-start" href="#" role="button">Start your project</a>
                   <a class="btn secondary" href="#" role="button">Watch a demo</a>
+                  <a class="btn secondary" href="#" role="button" onclick="event.preventDefault();document.getElementById('tabDocs').click()">View Docs</a>
                 </div>
-                <p class="product-showcase-lead" style="margin-top:14px;">
-                  Supavector is open source. The source code, installer scripts, and self-hosted setup files are available in the
-                  <a href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">GitHub repository</a>.
-                </p>
                 <div class="product-showcase-notes" aria-label="Supavector product highlights">
                   <span class="product-showcase-note">Self-hosted</span>
                   <span class="product-showcase-note">Tenant-aware</span>
@@ -25,9 +22,9 @@
               </div>
 
               <div class="product-showcase-stage" aria-hidden="true">
-                <div class="product-stage-shell">
+                <div class="product-stage-shell product-stage-shell--compact">
+                  <p class="product-card-eyebrow">Runtime loop</p>
                   <div class="product-stage-header">
-                    <p class="product-card-eyebrow">Runtime loop</p>
                     <h3>One backend surface for memory.</h3>
                     <p>Keep your app in front and move ingest, recall, governance, and improvement behind a single platform.</p>
                   </div>
@@ -78,12 +75,37 @@
               </div>
             </section>
 
+            <!-- ── OPEN SOURCE SECTION ────────────────────────────────────────────── -->
+            <section class="product-opensource" aria-label="Open source">
+              <div class="product-opensource-centered">
+                <p class="product-card-eyebrow">Open Source</p>
+                <h3>Built in the open. MIT licensed.</h3>
+                <p>
+                  Supavector is fully open source. Every line — the C++ vector core, Node.js gateway,
+                  installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
+                  There is no hosted service, no vendor lock-in, and no black-box dependencies.
+                </p>
+                <div class="product-opensource-badges">
+                  <span class="product-os-badge">MIT License</span>
+                  <span class="product-os-badge">Self-hostable</span>
+                  <span class="product-os-badge">No vendor lock-in</span>
+                  <span class="product-os-badge">No telemetry by default</span>
+                </div>
+                <a class="product-github-btn" href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                  View on GitHub
+                </a>
+                <p class="product-opensource-tagline">Fork it, deploy it, or contribute. The whole platform is yours to run.</p>
+              </div>
+            </section>
+            <!-- ── END OPEN SOURCE SECTION ────────────────────────────────────────── -->
+
             <!-- ── HOSTED API SECTION ───────────────────────────────────────────── -->
             <section class="product-hosted" aria-label="Use the hosted API">
               <div class="product-hosted-head">
                 <p class="product-card-eyebrow">Hosted API</p>
-                <h3>Get a token, add credit, start calling.</h3>
-                <p>No servers to run. Sign up, create a project in the Dashboard, add credit, and you're calling the API in minutes.</p>
+                <h3>Get a token, start calling.</h3>
+                <p>No servers to run? we got you. Sign up, create a project in the Dashboard, and you're calling the API in minutes.</p>
                 <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? Supavector is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
               </div>
 
@@ -117,16 +139,21 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
                 </div>
               </div>
 
-              <div class="product-hosted-code-section">
-                <div class="product-hosted-code-head">
-                  <span>API examples</span>
+              <details class="product-hosted-code-section">
+                <summary class="product-hosted-code-head">
+                  <span class="product-hosted-code-head-label">
+                    API examples
+                    <svg class="product-code-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
                   <div class="doc-tabs doc-tabs-compact product-hosted-lang-tabs" data-doc-tabs="hostedExamples">
                     <button class="doc-tab active" data-doc-tab="curl"   type="button">cURL</button>
                     <button class="doc-tab"        data-doc-tab="python" type="button">Python</button>
                     <button class="doc-tab"        data-doc-tab="node"   type="button">Node.js</button>
                     <button class="doc-tab"        data-doc-tab="js"     type="button">JavaScript</button>
                   </div>
-                </div>
+                </summary>
 
                 <div class="doc-panels" data-doc-panels="hostedExamples">
 
@@ -301,25 +328,7 @@ console.log(data.answer);</pre>
                   </div>
 
                 </div><!-- /doc-panels -->
-              </div><!-- /product-hosted-code-section -->
-
-              <div class="product-hosted-errors">
-                <div class="product-hosted-error-head">If AI generation is blocked</div>
-                <div class="product-hosted-error-row">
-                  <div class="product-hosted-error-item">
-                    <span class="product-hosted-error-code">402</span>
-                    <span class="product-hosted-error-label"><code class="mono">CREDIT_REQUIRED</code> — balance is zero. Add credit from the Dashboard.</span>
-                  </div>
-                  <div class="product-hosted-error-item">
-                    <span class="product-hosted-error-code">503</span>
-                    <span class="product-hosted-error-label"><code class="mono">CREDIT_CHECK_FAILED</code> — transient error. Retry with backoff.</span>
-                  </div>
-                  <div class="product-hosted-error-item">
-                    <span class="product-hosted-error-code note">—</span>
-                    <span class="product-hosted-error-label">Self-hosted tokens (no <code class="mono">supav_</code> prefix) bypass the credit system entirely.</span>
-                  </div>
-                </div>
-              </div>
+              </details><!-- /product-hosted-code-section -->
 
             </section>
             <!-- ── END HOSTED API SECTION ──────────────────────────────────────── -->
@@ -386,57 +395,25 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
               </div>
             </section>
 
-            <section class="product-story" aria-label="What Supavector changes">
+            <section class="product-story" aria-label="Build faster, better">
               <div class="product-story-copy">
-                <p class="product-card-eyebrow">What shifts</p>
-                <h3>Move memory out of app glue and into infrastructure.</h3>
-                <p>
-                  Teams stop stitching together retrieval logic, ACL rules, expiry behavior, and quality loops
-                  in five different places. Supavector centralizes the memory layer so product code can stay focused
-                  on the actual experience.
-                </p>
-                <ul class="product-story-list">
-                  <li>Keep your frontend, backend, and agent orchestration where they already belong.</li>
-                  <li>Use one governed path for writes, search, ask, and memory recall.</li>
-                  <li>Push setup, auth, API, and policy details into Documentation instead of bloating this tab.</li>
-                </ul>
+                <p class="product-card-eyebrow">Why it matters</p>
+                <h3>Build faster. Ship better.</h3>
+                <p>Stop rebuilding the memory layer for every project. One backend, lower cost, better recall.</p>
               </div>
               <div class="product-story-panels">
                 <article class="product-story-panel">
-                  <span class="product-panel-label">Best fit</span>
-                  <p>Customer assistants, internal copilots, research agents, and controlled automation where memory quality matters after day one.</p>
+                  <span class="product-panel-label">Speed</span>
+                  <p>Integrate in minutes. No infra to wire, no retrieval logic to write from scratch.</p>
                 </article>
                 <article class="product-story-panel">
-                  <span class="product-panel-label">Built in</span>
-                  <p>Tenant scoping, service-token auth, retrieval policies, and lifecycle controls are already part of the platform surface.</p>
+                  <span class="product-panel-label">Quality</span>
+                  <p>Policy-driven recall keeps memory relevant. Feedback loops improve results over time.</p>
                 </article>
-              </div>
-            </section>
-
-            <section class="product-opensource" aria-label="Open source">
-              <div class="product-opensource-inner">
-                <div class="product-opensource-copy">
-                  <p class="product-card-eyebrow">Open Source</p>
-                  <h3>Built in the open. MIT licensed.</h3>
-                  <p>
-                    Supavector is fully open source. Every line — the C++ vector core, Node.js gateway,
-                    installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
-                    There is no hosted service, no vendor lock-in, and no black-box dependencies.
-                  </p>
-                  <div class="product-opensource-badges">
-                    <span class="product-os-badge">MIT License</span>
-                    <span class="product-os-badge">Self-hostable</span>
-                    <span class="product-os-badge">No vendor lock-in</span>
-                    <span class="product-os-badge">No telemetry by default</span>
-                  </div>
-                </div>
-                <div class="product-opensource-action">
-                  <a class="product-github-btn" href="https://github.com/Emmanuel-Bamidele/supavector" target="_blank" rel="noreferrer">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-                    View on GitHub
-                  </a>
-                  <p>Fork it, deploy it, or contribute. The whole platform is yours to run.</p>
-                </div>
+                <article class="product-story-panel">
+                  <span class="product-panel-label">Cost</span>
+                  <p>Self-host free forever, or use the hosted API. Only AI generation uses credit.</p>
+                </article>
               </div>
             </section>
 

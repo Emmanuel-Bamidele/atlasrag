@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://supavector.com/sitemap.xml
