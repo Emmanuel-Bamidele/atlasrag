@@ -806,7 +806,7 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 
 .product-belt{
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid rgba(226,232,240,0.1);
   border-radius: 18px;
   padding: 12px;
@@ -820,11 +820,11 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 
 .product-belt-track{
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
-  width: auto;
+  width: max-content;
   padding: 0;
-  animation: none;
+  animation: productMarquee 32s linear infinite;
 }
 
 .product-belt-track span{
@@ -1165,5 +1165,563 @@ body.light-theme .product-doc-link:hover{
   .product-showcase::before,
   .product-doc-link{
     transition: none;
+  }
+}
+
+/* ============================================================
+   DOCS ORIENTATION SECTION
+   ============================================================ */
+
+.docs-orient {
+  margin-bottom: 20px;
+  padding: clamp(16px, 2.2vw, 22px);
+  border: 1px solid rgba(226,232,240,0.12);
+  border-radius: 20px;
+  background:
+    radial-gradient(300px 160px at 100% 0%, rgba(61,213,200,0.08), transparent 64%),
+    linear-gradient(180deg, rgba(13,28,32,0.92), rgba(8,18,20,0.88));
+}
+
+.docs-orient-head {
+  margin-bottom: 16px;
+}
+
+.docs-orient-h {
+  margin: 6px 0 6px;
+  font-size: clamp(16px, 2vw, 20px);
+  font-family: var(--display);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.docs-orient-sub {
+  margin: 0;
+  color: rgba(232,242,242,0.76);
+  font-size: 13px;
+}
+
+.docs-orient-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.docs-orient-card {
+  padding: 14px;
+  border: 1px solid rgba(226,232,240,0.1);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.docs-orient-card:hover {
+  border-color: rgba(61,213,200,0.28);
+  background: rgba(61,213,200,0.05);
+  transform: translateY(-2px);
+}
+
+.docs-orient-name {
+  font-size: 12.5px;
+  font-family: var(--display);
+  font-weight: 600;
+  color: rgba(232,242,242,0.94);
+}
+
+.docs-orient-card > p {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(232,242,242,0.7);
+  line-height: 1.55;
+  flex: 1;
+}
+
+.docs-orient-hint {
+  display: block;
+  font-size: 11px;
+  font-style: italic;
+  color: rgba(61,213,200,0.82);
+  margin-top: 2px;
+}
+
+body.light-theme .docs-orient {
+  border-color: rgba(26,54,70,0.12);
+  background:
+    radial-gradient(260px 140px at 100% 0%, rgba(14,158,148,0.07), transparent 64%),
+    linear-gradient(180deg, #ffffff, #f6fbfd);
+}
+
+body.light-theme .docs-orient-h {
+  color: #163242;
+}
+
+body.light-theme .docs-orient-sub {
+  color: #5d7684;
+}
+
+body.light-theme .docs-orient-card {
+  border-color: rgba(26,54,70,0.1);
+  background: rgba(255,255,255,0.88);
+}
+
+body.light-theme .docs-orient-card:hover {
+  border-color: rgba(14,158,148,0.28);
+  background: rgba(14,158,148,0.04);
+}
+
+body.light-theme .docs-orient-name {
+  color: #163242;
+}
+
+body.light-theme .docs-orient-card > p {
+  color: #4c6775;
+}
+
+body.light-theme .docs-orient-hint {
+  color: #0a7a72;
+}
+
+@media (max-width: 900px) {
+  .docs-orient-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .docs-orient-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   PRODUCT PAGE — ANIMATIONS & NEW SECTIONS
+   ============================================================ */
+
+@keyframes productFadeUp {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes productMarquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* — Entrance: hero always animates on load — */
+.product-showcase {
+  animation: productFadeUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* — Staggered entrance for remaining sections when page tab is active — */
+.page.active .product-belt        { animation: productFadeUp 0.52s 0.08s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-quickstart  { animation: productFadeUp 0.52s 0.16s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-story       { animation: productFadeUp 0.52s 0.24s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-opensource  { animation: productFadeUp 0.52s 0.32s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-trajectory  { animation: productFadeUp 0.52s 0.38s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-doc-bridge  { animation: productFadeUp 0.52s 0.44s cubic-bezier(0.16,1,0.3,1) both; }
+
+/* — Stage blocks stagger — */
+.page.active .product-stage-block:nth-child(1) { animation: productFadeUp 0.38s 0.38s ease both; }
+.page.active .product-stage-block:nth-child(2) { animation: productFadeUp 0.38s 0.46s ease both; }
+.page.active .product-stage-block:nth-child(3) { animation: productFadeUp 0.38s 0.54s ease both; }
+.page.active .product-stage-block:nth-child(4) { animation: productFadeUp 0.38s 0.62s ease both; }
+
+/* — Quickstart steps stagger — */
+.page.active .product-qs-step:nth-child(1) { animation: productFadeUp 0.38s 0.20s ease both; }
+.page.active .product-qs-step:nth-child(2) { animation: productFadeUp 0.38s 0.27s ease both; }
+.page.active .product-qs-step:nth-child(3) { animation: productFadeUp 0.38s 0.34s ease both; }
+.page.active .product-qs-step:nth-child(4) { animation: productFadeUp 0.38s 0.41s ease both; }
+.page.active .product-qs-step:nth-child(5) { animation: productFadeUp 0.38s 0.48s ease both; }
+.page.active .product-qs-step:nth-child(6) { animation: productFadeUp 0.38s 0.55s ease both; }
+
+/* — Trajectory steps stagger — */
+.page.active .product-trajectory-step:nth-child(1) { animation: productFadeUp 0.38s 0.42s ease both; }
+.page.active .product-trajectory-step:nth-child(2) { animation: productFadeUp 0.38s 0.50s ease both; }
+.page.active .product-trajectory-step:nth-child(3) { animation: productFadeUp 0.38s 0.58s ease both; }
+
+/* — Hover lift + glow on cards — */
+.product-stage-block,
+.product-trajectory-step,
+.product-story-panel {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease, background 0.22s ease;
+}
+
+.product-stage-block:hover,
+.product-trajectory-step:hover {
+  border-color: rgba(61,213,200,0.34);
+  box-shadow: 0 0 0 1px rgba(61,213,200,0.1), 0 10px 24px rgba(0,0,0,0.2);
+  transform: translateY(-3px);
+  background: rgba(61,213,200,0.06);
+}
+
+.product-story-panel:hover {
+  border-color: rgba(61,213,200,0.26);
+  box-shadow: 0 6px 18px rgba(61,213,200,0.07);
+  transform: translateY(-2px);
+}
+
+/* — Doc link arrow slide — */
+.product-doc-link::after {
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+.product-doc-link:hover::after {
+  transform: translateX(5px);
+}
+
+/* — Primary CTA shimmer — */
+.product-cta-start {
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+}
+.product-cta-start::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.16) 50%, transparent 100%);
+  transform: translateX(-110%);
+  transition: transform 0.52s ease;
+}
+.product-cta-start:hover::after {
+  transform: translateX(110%);
+}
+
+/* ============================================================
+   QUICKSTART SECTION
+   ============================================================ */
+
+.product-quickstart {
+  border: 1px solid rgba(226,232,240,0.12);
+  border-radius: 20px;
+  padding: clamp(18px, 2.6vw, 28px);
+  background:
+    radial-gradient(280px 160px at 0% 0%, rgba(61,213,200,0.1), transparent 66%),
+    linear-gradient(180deg, rgba(13,28,32,0.92), rgba(8,18,20,0.88));
+  box-shadow: 0 12px 28px rgba(2,8,10,0.16);
+}
+
+.product-quickstart-head {
+  max-width: 58ch;
+  margin-bottom: 22px;
+}
+
+.product-quickstart-head h3 {
+  margin: 8px 0 10px;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-family: var(--display);
+}
+
+.product-quickstart-head p {
+  margin: 0;
+  color: rgba(232,242,242,0.82);
+}
+
+.product-quickstart-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.product-qs-step {
+  position: relative;
+  padding: 18px;
+  border: 1px solid rgba(226,232,240,0.1);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.product-qs-step:hover {
+  border-color: rgba(61,213,200,0.32);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(61,213,200,0.08);
+  background: rgba(61,213,200,0.05);
+}
+
+.product-qs-step h4 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-family: var(--display);
+  color: rgba(232,242,242,0.94);
+}
+
+.product-qs-step > p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(232,242,242,0.7);
+  flex: 1;
+}
+
+.product-qs-code {
+  margin-top: auto;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(61,213,200,0.14);
+  background: rgba(2,8,10,0.7);
+  overflow-x: auto;
+}
+
+.product-qs-code .doc-code {
+  font-size: 10.5px;
+  color: rgba(61,213,200,0.94);
+  margin: 0;
+  white-space: pre;
+  min-width: 0;
+}
+
+/* ============================================================
+   OPEN SOURCE SECTION
+   ============================================================ */
+
+.product-opensource {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(61,213,200,0.18);
+  border-radius: 20px;
+  padding: clamp(18px, 2.6vw, 28px);
+  background:
+    radial-gradient(360px 220px at 100% 0%, rgba(61,213,200,0.12), transparent 66%),
+    linear-gradient(180deg, rgba(13,28,32,0.92), rgba(8,18,20,0.88));
+  box-shadow: 0 12px 32px rgba(2,8,10,0.18);
+}
+
+.product-opensource::before {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(61,213,200,0.12) 0%, transparent 68%);
+  pointer-events: none;
+}
+
+.product-opensource-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 24px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.product-opensource-copy > p {
+  margin: 0 0 16px;
+  color: rgba(232,242,242,0.84);
+  max-width: 56ch;
+}
+
+.product-opensource-copy h3 {
+  margin: 8px 0 12px;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-family: var(--display);
+}
+
+.product-opensource-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.product-os-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,213,200,0.3);
+  background: rgba(61,213,200,0.08);
+  color: rgba(61,213,200,0.94);
+  font-size: 11px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
+.product-opensource-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.product-github-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(226,232,240,0.18);
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-family: var(--display);
+  transition: border-color 0.22s ease, background 0.22s ease, transform 0.18s ease, box-shadow 0.22s ease;
+}
+
+.product-github-btn:hover {
+  border-color: rgba(61,213,200,0.42);
+  background: rgba(61,213,200,0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(61,213,200,0.1);
+}
+
+.product-opensource-action > p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(232,242,242,0.64);
+}
+
+/* ============================================================
+   LIGHT THEME — NEW SECTIONS
+   ============================================================ */
+
+body.light-theme .product-quickstart {
+  border-color: rgba(26,54,70,0.12);
+  background:
+    radial-gradient(240px 130px at 0% 0%, rgba(14,158,148,0.07), transparent 66%),
+    linear-gradient(180deg, #ffffff, #f6fbfd);
+  box-shadow: 0 10px 22px rgba(28,57,73,0.06);
+}
+
+body.light-theme .product-qs-step {
+  border-color: rgba(26,54,70,0.12);
+  background: rgba(255,255,255,0.9);
+}
+
+body.light-theme .product-qs-step:hover {
+  border-color: rgba(14,158,148,0.3);
+  box-shadow: 0 8px 20px rgba(14,158,148,0.07);
+  background: rgba(14,158,148,0.04);
+}
+
+body.light-theme .product-qs-step h4 {
+  color: #163242;
+}
+
+body.light-theme .product-qs-step > p {
+  color: #4c6775;
+}
+
+body.light-theme .product-qs-code {
+  border-color: rgba(14,158,148,0.18);
+  background: #eef6f8;
+}
+
+body.light-theme .product-qs-code .doc-code {
+  color: #0a7a72;
+}
+
+body.light-theme .product-opensource {
+  border-color: rgba(14,158,148,0.2);
+  background:
+    radial-gradient(320px 200px at 100% 0%, rgba(14,158,148,0.08), transparent 66%),
+    linear-gradient(180deg, #ffffff, #f6fbfd);
+  box-shadow: 0 10px 22px rgba(28,57,73,0.06);
+}
+
+body.light-theme .product-opensource::before {
+  background: radial-gradient(circle, rgba(14,158,148,0.07) 0%, transparent 68%);
+}
+
+body.light-theme .product-opensource-copy > p {
+  color: #4c6775;
+}
+
+body.light-theme .product-os-badge {
+  border-color: rgba(14,158,148,0.34);
+  background: rgba(14,158,148,0.08);
+  color: #0a7a72;
+}
+
+body.light-theme .product-github-btn {
+  border-color: rgba(26,54,70,0.14);
+  background: rgba(255,255,255,0.9);
+  color: #163242;
+}
+
+body.light-theme .product-github-btn:hover {
+  border-color: rgba(14,158,148,0.34);
+  background: rgba(14,158,148,0.08);
+  box-shadow: 0 6px 18px rgba(14,158,148,0.08);
+}
+
+body.light-theme .product-opensource-action > p {
+  color: #5d7684;
+}
+
+body.light-theme .product-stage-block:hover,
+body.light-theme .product-trajectory-step:hover {
+  border-color: rgba(14,158,148,0.3);
+  box-shadow: 0 8px 20px rgba(14,158,148,0.06);
+  background: rgba(14,158,148,0.04);
+}
+
+body.light-theme .product-story-panel:hover {
+  border-color: rgba(14,158,148,0.24);
+  box-shadow: 0 4px 14px rgba(14,158,148,0.06);
+}
+
+/* ============================================================
+   RESPONSIVE — NEW SECTIONS
+   ============================================================ */
+
+@media (max-width: 960px) {
+  .product-quickstart-steps {
+    grid-template-columns: 1fr;
+  }
+  .product-opensource-inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .product-quickstart,
+  .product-opensource {
+    border-radius: 18px;
+  }
+  .product-quickstart-head h3,
+  .product-opensource-copy h3 {
+    font-size: 20px;
+  }
+}
+
+/* ============================================================
+   REDUCED MOTION — NEW ANIMATIONS
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .product-showcase,
+  .page.active .product-belt,
+  .page.active .product-quickstart,
+  .page.active .product-story,
+  .page.active .product-opensource,
+  .page.active .product-trajectory,
+  .page.active .product-doc-bridge,
+  .page.active .product-stage-block,
+  .page.active .product-qs-step,
+  .page.active .product-trajectory-step,
+  .product-belt-track {
+    animation: none !important;
+  }
+  .product-stage-block,
+  .product-trajectory-step,
+  .product-story-panel,
+  .product-qs-step,
+  .product-github-btn,
+  .product-cta-start {
+    transition: none !important;
   }
 }

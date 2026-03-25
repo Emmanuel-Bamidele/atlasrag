@@ -10,10 +10,10 @@
                   instead of spreading them across your app.
                 </p>
                 <div class="product-showcase-actions">
-                  <a class="btn" href="#doc-setup-modes">See setup paths</a>
-                  <a class="btn secondary" href="#doc-api-ref">API reference</a>
+                  <a class="btn product-cta-start" href="#" role="button">Start your project</a>
+                  <a class="btn secondary" href="#" role="button">Watch a demo</a>
                 </div>
-                <p class="product-showcase-lead">
+                <p class="product-showcase-lead" style="margin-top:14px;">
                   AtlasRAG is open source. The source code, installer scripts, and self-hosted setup files are available in the
                   <a href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">GitHub repository</a>.
                 </p>
@@ -69,6 +69,74 @@
                 <span>Research copilots</span>
                 <span>Operations agents</span>
                 <span>Specs and documentation systems</span>
+                <span aria-hidden="true">Customer support copilots</span>
+                <span aria-hidden="true">Internal knowledge agents</span>
+                <span aria-hidden="true">Workflow assistants</span>
+                <span aria-hidden="true">Research copilots</span>
+                <span aria-hidden="true">Operations agents</span>
+                <span aria-hidden="true">Specs and documentation systems</span>
+              </div>
+            </section>
+
+            <section class="product-quickstart" aria-label="Start building immediately">
+              <div class="product-quickstart-head">
+                <p class="product-card-eyebrow">Start Building Immediately</p>
+                <h3>Up and running in minutes.</h3>
+                <p>Install the CLI, start the stack, and write your first memory in under five minutes.</p>
+              </div>
+              <div class="product-quickstart-steps">
+                <div class="product-qs-step">
+                  <span class="product-flow-number">01</span>
+                  <h4>Clone and install the CLI</h4>
+                  <p>Clone the repo, then run the installer. Works on macOS, Linux, and Windows.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">git clone https://github.com/Emmanuel-Bamidele/atlasrag.git
+cd atlasrag && ./scripts/install.sh</pre>
+                  </div>
+                </div>
+                <div class="product-qs-step">
+                  <span class="product-flow-number">02</span>
+                  <h4>Start the stack</h4>
+                  <p>One command brings up the vector core, gateway, and Postgres locally.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">atlasrag start</pre>
+                  </div>
+                </div>
+                <div class="product-qs-step">
+                  <span class="product-flow-number">03</span>
+                  <h4>Write your first memory</h4>
+                  <p>Use the CLI or call the API directly with your service token.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">atlasrag write --text "Hello, memory"</pre>
+                  </div>
+                </div>
+                <div class="product-qs-step">
+                  <span class="product-flow-number">04</span>
+                  <h4>Ask a question</h4>
+                  <p>Query the memory you just wrote. AtlasRAG retrieves and answers grounded in your data.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">atlasrag ask --question "What did I store?"</pre>
+                  </div>
+                </div>
+                <div class="product-qs-step">
+                  <span class="product-flow-number">05</span>
+                  <h4>Add to your app env</h4>
+                  <p>Export the base URL and service token so your backend can reach AtlasRAG.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">export ATLASRAG_BASE_URL="http://localhost:3000"
+export ATLASRAG_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                  </div>
+                </div>
+                <div class="product-qs-step">
+                  <span class="product-flow-number">06</span>
+                  <h4>Call server-to-server</h4>
+                  <p>Your backend calls AtlasRAG directly. No browser, no end-user login needed.</p>
+                  <div class="product-qs-code">
+                    <pre class="doc-code">curl -X POST "$ATLASRAG_BASE_URL/v1/ask" \
+  -H "X-API-Key: $ATLASRAG_API_KEY" \
+  -d '{"question":"What did I store?","k":3}'</pre>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -96,6 +164,33 @@
                   <span class="product-panel-label">Built in</span>
                   <p>Tenant scoping, service-token auth, retrieval policies, and lifecycle controls are already part of the platform surface.</p>
                 </article>
+              </div>
+            </section>
+
+            <section class="product-opensource" aria-label="Open source">
+              <div class="product-opensource-inner">
+                <div class="product-opensource-copy">
+                  <p class="product-card-eyebrow">Open Source</p>
+                  <h3>Built in the open. MIT licensed.</h3>
+                  <p>
+                    AtlasRAG is fully open source. Every line — the C++ vector core, Node.js gateway,
+                    installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
+                    There is no hosted service, no vendor lock-in, and no black-box dependencies.
+                  </p>
+                  <div class="product-opensource-badges">
+                    <span class="product-os-badge">MIT License</span>
+                    <span class="product-os-badge">Self-hostable</span>
+                    <span class="product-os-badge">No vendor lock-in</span>
+                    <span class="product-os-badge">No telemetry by default</span>
+                  </div>
+                </div>
+                <div class="product-opensource-action">
+                  <a class="product-github-btn" href="https://github.com/Emmanuel-Bamidele/atlasrag" target="_blank" rel="noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                    View on GitHub
+                  </a>
+                  <p>Fork it, deploy it, or contribute. The whole platform is yours to run.</p>
+                </div>
               </div>
             </section>
 

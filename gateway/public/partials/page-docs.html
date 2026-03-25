@@ -3,6 +3,36 @@
           <article class="docs-article">
             <div id="pageDocsTop"></div>
 
+            <div class="docs-orient">
+              <div class="docs-orient-head">
+                <p class="product-card-eyebrow">Documentation</p>
+                <h2 class="docs-orient-h">Pick the right tab for where you are.</h2>
+                <p class="docs-orient-sub">Each tab is self-contained. You do not need to read them in order.</p>
+              </div>
+              <div class="docs-orient-grid">
+                <div class="docs-orient-card">
+                  <div class="docs-orient-name">Overview</div>
+                  <p>Auth model, API reference, error codes, security controls, SDK setup, and request examples with curl, Python, and Node.js.</p>
+                  <span class="docs-orient-hint">Read this when you need API or security details.</span>
+                </div>
+                <div class="docs-orient-card">
+                  <div class="docs-orient-name">CLI Setup</div>
+                  <p>Install the CLI, onboard the local Docker stack, connect your app, and use the full command reference.</p>
+                  <span class="docs-orient-hint">Start here if you are setting up for the first time.</span>
+                </div>
+                <div class="docs-orient-card">
+                  <div class="docs-orient-name">Setup Modes</div>
+                  <p>Self-hosted, external Postgres, shared deployment, backend-as-caller, and human admin paths with credential rules.</p>
+                  <span class="docs-orient-hint">Read this when choosing how to deploy.</span>
+                </div>
+                <div class="docs-orient-card">
+                  <div class="docs-orient-name">Memory Policies</div>
+                  <p>TTL, LRU, and AMVL retention policies explained with trade-offs, use cases, and API request examples.</p>
+                  <span class="docs-orient-hint">Read this when choosing a memory retention policy.</span>
+                </div>
+              </div>
+            </div>
+
             <div class="doc-tabs" data-doc-tabs="docs">
               <button class="doc-tab active" data-doc-tab="core" type="button">Overview</button>
               <button class="doc-tab" data-doc-tab="cli" type="button">CLI Setup</button>
@@ -31,8 +61,8 @@
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
-                      <div class="doc-label">How to read this page</div>
-                      <p>Use this tab for architecture, auth, and API behavior. If you need command-line install and usage flow, open CLI Setup. If you want clear self-hosted versus shared deployment setup paths, open Setup Modes.</p>
+                      <div class="doc-label">What is in this tab</div>
+                      <p>Quickstart, auth model, API reference, error codes, security controls, AI assistant connections, SDKs, curl/Python/Node.js examples, visibility rules, and architecture. Go to CLI Setup for installer commands. Go to Setup Modes for deployment paths.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
@@ -122,7 +152,7 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
   -d '{"question":"Does AtlasRAG store memory for agents?","k":3}'</pre>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Fundamentals first</div>
+                  <div class="doc-label">Key concepts</div>
                   <ul>
                     <li><strong>Human admin:</strong> a person who can sign in to AtlasRAG with username/password or SSO and manage the tenant.</li>
                     <li><strong>Service token:</strong> the machine credential used by apps, backends, workers, and agents. In env vars, this is usually <span class="mono">ATLASRAG_API_KEY</span>.</li>
@@ -141,7 +171,7 @@ curl -X POST "${ATLASRAG_BASE_URL}/v1/boolean_ask" \
                   </ul>
                 </div>
                 <div class="doc-block">
-                  <div class="doc-label">Optional third mode</div>
+                  <div class="doc-label">Per-request provider key</div>
                   <pre class="doc-code">X-API-Key: YOUR_SERVICE_TOKEN
 X-OpenAI-API-Key: YOUR_OPENAI_KEY
 X-Gemini-API-Key: YOUR_GEMINI_KEY
@@ -153,7 +183,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   This is request-scoped; AtlasRAG does not persist the key for the tenant.
                 </p>
                 <div class="doc-block">
-                  <div class="doc-label">Need the raw manual bootstrap path?</div>
+                  <div class="doc-label">Looking for manual Docker setup?</div>
                   <p>Open the <strong>Setup</strong> tab. That tab has the bundled-stack, BYO Postgres, shared-deployment, backend-as-caller, and human-admin paths, including the raw <span class="mono">bootstrap_instance.js</span> commands.</p>
                 </div>
               </div>
@@ -246,9 +276,9 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
     }
   }'</pre>
                 </div>
+                <p class="hint">Valid authMode values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>. Set a provider/model field to <span class="mono">null</span> to clear the tenant override and fall back to the instance default. <span class="mono">embedProvider</span> and <span class="mono">embedModel</span> remain instance-wide.</p>
               </div>
             </details>
-            <p class="hint">Valid authMode values: <span class="mono">sso_only</span>, <span class="mono">sso_plus_password</span>, <span class="mono">password_only</span>. Set a provider/model field to <span class="mono">null</span> to clear the tenant override and fall back to the instance default. <span class="mono">embedProvider</span> and <span class="mono">embedModel</span> remain instance-wide.</p>
 
             <details class="details section" id="doc-security">
               <summary>Security</summary>
@@ -715,30 +745,30 @@ curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Content-Type: application/json" \
   -d '{ "memoryId": "mem_123", "eventType": "task_success", "eventValue": 0.9 }'</pre>
                 </div>
+                <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
+                <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
+                <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, AtlasRAG uses <span class="mono">amvl</span>.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Memory types</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Use case</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><span class="mono">artifact</span></td><td>Source documents or raw inputs.</td></tr>
+                      <tr><td><span class="mono">semantic</span></td><td>Facts or knowledge extracted from artifacts.</td></tr>
+                      <tr><td><span class="mono">procedural</span></td><td>How-to steps or workflows.</td></tr>
+                      <tr><td><span class="mono">episodic</span></td><td>Events with time/context.</td></tr>
+                      <tr><td><span class="mono">conversation</span></td><td>Dialogue snippets or chat history.</td></tr>
+                      <tr><td><span class="mono">summary</span></td><td>Compressed rollups or compactions.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </details>
-            <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
-            <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
-            <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, AtlasRAG uses <span class="mono">amvl</span>.</p>
-            <div class="doc-block">
-              <div class="doc-label">Memory types</div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Use case</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td><span class="mono">artifact</span></td><td>Source documents or raw inputs.</td></tr>
-                  <tr><td><span class="mono">semantic</span></td><td>Facts or knowledge extracted from artifacts.</td></tr>
-                  <tr><td><span class="mono">procedural</span></td><td>How-to steps or workflows.</td></tr>
-                  <tr><td><span class="mono">episodic</span></td><td>Events with time/context.</td></tr>
-                  <tr><td><span class="mono">conversation</span></td><td>Dialogue snippets or chat history.</td></tr>
-                  <tr><td><span class="mono">summary</span></td><td>Compressed rollups or compactions.</td></tr>
-                </tbody>
-              </table>
-            </div>
 
             <details class="details section" id="doc-client-examples">
               <summary>Client examples (Python + Node.js)</summary>
