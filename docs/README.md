@@ -1,6 +1,6 @@
 # SupaVector Guides
 
-This directory is the detailed documentation set for teams that fork or self-host SupaVector.
+This directory is the detailed documentation set for teams using SupaVector in hosted, self-hosted, and enterprise setups.
 
 ## Decision Matrix
 
@@ -10,6 +10,7 @@ If you are not sure which guide to open first, use this table.
 | --- | --- | --- |
 | Not sure which setup path matches your situation | You need to understand what is self-hosted, what is shared, and where the first token comes from before you start | [`setup-modes.md`](setup-modes.md) |
 | **Use SupaVector as a hosted service** | **You do not want to run any infrastructure — sign up, get a token, and call the API** | [**`hosted.md`**](hosted.md) |
+| Enterprise rollout across hosted or self-hosted SupaVector | You need SSO, tenant admin controls, role mapping, and billing boundaries explained together | [`enterprise.md`](enterprise.md) |
 | Fork and self-deploy with the bundled stack | You want the fastest path from clone to a working SupaVector instance | [`self-hosting.md`](self-hosting.md) |
 | Fork and self-deploy with your own Postgres and provider keys | You already have database/secrets infrastructure and want SupaVector inside your environment | [`bring-your-own-postgres.md`](bring-your-own-postgres.md) |
 | Use a shared SupaVector deployment | SupaVector already has its own Postgres/auth/runtime and your app or agent just needs to call it | [`agents.md`](agents.md) |
@@ -23,16 +24,19 @@ If you are not sure which guide to open first, use this table.
    Use this if you are not sure which setup mode you need yet.
 2. [`hosted.md`](hosted.md)
    Use this if you are using the SupaVector hosted service — no Docker or Postgres required.
-3. [`self-hosting.md`](self-hosting.md)
+3. [`enterprise.md`](enterprise.md)
+   Use this if you are planning enterprise access, SSO, or hosted-vs-self-hosted enterprise rollout.
+4. [`self-hosting.md`](self-hosting.md)
    Use this if you want the fastest path from clone to working local or single-node deployment.
-4. [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
+5. [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
    Use this if you already have Postgres, secret management, and your own deployment conventions.
-5. [`agents.md`](agents.md)
+6. [`agents.md`](agents.md)
    Use this if you are integrating SupaVector into an app backend, worker, or AI agent runtime.
 
 Short version:
 
 - Human admins log in with username/password or SSO.
+- Enterprise teams that need tenant-scoped SSO and rollout guidance should read [`enterprise.md`](enterprise.md).
 - Apps, backends, workers, and agents should use a service token.
 - Bootstrap once, then store `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` in your runtime environment.
 - Optional third mode: keep using the shared SupaVector deployment, but send your own `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests.

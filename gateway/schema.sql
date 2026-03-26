@@ -15,8 +15,11 @@ CREATE INDEX IF NOT EXISTS chunks_text_fts_idx ON chunks USING GIN (to_tsvector(
 CREATE TABLE IF NOT EXISTS tenants (
   tenant_id TEXT PRIMARY KEY,
   name TEXT,
+  external_id TEXT,
+  metadata JSONB DEFAULT '{}'::JSONB,
   auth_mode TEXT DEFAULT 'sso_plus_password',
   sso_providers TEXT[],
+  sso_config JSONB DEFAULT '{}'::JSONB,
   answer_provider TEXT,
   answer_model TEXT,
   boolean_ask_provider TEXT,
@@ -27,6 +30,8 @@ CREATE TABLE IF NOT EXISTS tenants (
   compact_model TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Keep the external_id index in the migration section below so older deployments
+-- add the column before attempting to create the index.
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
@@ -213,9 +218,97 @@ CREATE TABLE IF NOT EXISTS tenant_usage_rollups (
 CREATE INDEX IF NOT EXISTS tenant_usage_rollups_idx
   ON tenant_usage_rollups(tenant_id, bucket_kind, bucket_start);
 
+CREATE TABLE IF NOT EXISTS tenant_storage_usage (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  bytes BIGINT DEFAULT 0,
+  chunk_text_bytes BIGINT DEFAULT 0,
+  metadata_bytes BIGINT DEFAULT 0,
+  vector_bytes BIGINT DEFAULT 0,
+  vector_dim INT DEFAULT 0,
+  formula_version TEXT DEFAULT 'storage_v1',
+  chunks BIGINT DEFAULT 0,
+  documents BIGINT DEFAULT 0,
+  memory_items BIGINT DEFAULT 0,
+  collections BIGINT DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_storage_billing_state (
+  tenant_id TEXT PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  current_bytes BIGINT DEFAULT 0,
+  current_chunk_text_bytes BIGINT DEFAULT 0,
+  current_metadata_bytes BIGINT DEFAULT 0,
+  current_vector_bytes BIGINT DEFAULT 0,
+  current_vector_dim INT DEFAULT 0,
+  formula_version TEXT DEFAULT 'storage_v1',
+  last_accrued_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_storage_billing_periods (
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  period_start TIMESTAMPTZ NOT NULL,
+  period_end TIMESTAMPTZ NOT NULL,
+  storage_byte_seconds DOUBLE PRECISION DEFAULT 0,
+  closing_bytes BIGINT DEFAULT 0,
+  closing_chunk_text_bytes BIGINT DEFAULT 0,
+  closing_metadata_bytes BIGINT DEFAULT 0,
+  closing_vector_bytes BIGINT DEFAULT 0,
+  closing_vector_dim INT DEFAULT 0,
+  formula_version TEXT DEFAULT 'storage_v1',
+  last_event_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, period_start)
+);
+
+CREATE INDEX IF NOT EXISTS tenant_storage_billing_periods_tenant_end_idx
+  ON tenant_storage_billing_periods(tenant_id, period_end DESC, period_start DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_usage_history (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  event_kind TEXT NOT NULL,
+  request_id TEXT,
+  collection TEXT,
+  source TEXT,
+  estimated BOOLEAN DEFAULT FALSE,
+  billable BOOLEAN DEFAULT TRUE,
+  embedding_tokens BIGINT DEFAULT 0,
+  generation_input_tokens BIGINT DEFAULT 0,
+  generation_output_tokens BIGINT DEFAULT 0,
+  generation_total_tokens BIGINT DEFAULT 0,
+  storage_bytes_delta BIGINT DEFAULT 0,
+  storage_bytes_total BIGINT DEFAULT 0,
+  storage_chunks_delta BIGINT DEFAULT 0,
+  storage_chunks_total BIGINT DEFAULT 0,
+  storage_documents_delta BIGINT DEFAULT 0,
+  storage_documents_total BIGINT DEFAULT 0,
+  storage_memory_items_delta BIGINT DEFAULT 0,
+  storage_memory_items_total BIGINT DEFAULT 0,
+  storage_collections_delta BIGINT DEFAULT 0,
+  storage_collections_total BIGINT DEFAULT 0,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS tenant_usage_history_tenant_created_idx
+  ON tenant_usage_history(tenant_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS tenant_usage_history_tenant_kind_created_idx
+  ON tenant_usage_history(tenant_id, event_kind, created_at DESC, id DESC);
+
 -- Idempotent migrations for existing databases
+ALTER TABLE IF EXISTS tenant_storage_usage ADD COLUMN IF NOT EXISTS chunk_text_bytes BIGINT DEFAULT 0;
+ALTER TABLE IF EXISTS tenant_storage_usage ADD COLUMN IF NOT EXISTS metadata_bytes BIGINT DEFAULT 0;
+ALTER TABLE IF EXISTS tenant_storage_usage ADD COLUMN IF NOT EXISTS vector_bytes BIGINT DEFAULT 0;
+ALTER TABLE IF EXISTS tenant_storage_usage ADD COLUMN IF NOT EXISTS vector_dim INT DEFAULT 0;
+ALTER TABLE IF EXISTS tenant_storage_usage ADD COLUMN IF NOT EXISTS formula_version TEXT DEFAULT 'storage_v1';
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS auth_mode TEXT DEFAULT 'sso_plus_password';
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::JSONB;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS sso_providers TEXT[];
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS sso_config JSONB DEFAULT '{}'::JSONB;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS answer_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS answer_model TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS boolean_ask_provider TEXT;
@@ -225,6 +318,9 @@ ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS reflect_model TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS compact_provider TEXT;
 ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS compact_model TEXT;
 UPDATE tenants SET auth_mode = 'sso_plus_password' WHERE auth_mode IS NULL;
+UPDATE tenants SET metadata = '{}'::JSONB WHERE metadata IS NULL;
+UPDATE tenants SET sso_config = '{}'::JSONB WHERE sso_config IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS tenants_external_id_idx ON tenants(external_id) WHERE external_id IS NOT NULL;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS failed_attempts INT DEFAULT 0;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ;
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;

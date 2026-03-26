@@ -1,285 +1,788 @@
         <!-- PAGE: SETTINGS -->
         <section class="page" id="pageSettings" role="tabpanel">
-          <div class="doc-tabs" data-doc-tabs="settings">
-            <button class="doc-tab active" data-doc-tab="auth" type="button">Authenticate</button>
-            <button class="doc-tab" data-doc-tab="keys" type="button">API Keys</button>
-            <button class="doc-tab" data-doc-tab="tenant" type="button">Tenant</button>
-          </div>
-          <div class="doc-panels" data-doc-panels="settings">
-            <div class="doc-panel active" data-doc-panel="auth">
+          <div class="settings-shell">
+            <div class="settings-main">
+              <div class="doc-panels" data-doc-panels="settings">
+                <div class="doc-panel active" data-doc-panel="auth">
+                  <div class="settings-panel-card">
+                    <div class="settings-panel-hero">
+                      <div>
+                        <div class="settings-kicker" id="settingsAuthKicker">Access</div>
+                        <h2 id="settingsAuthTitle">Authenticate this browser</h2>
+                        <p id="settingsAuthBody">Choose how this browser signs in to SupaVector. Use a service token for local runtime work, admin login for a human session, or SSO if your tenant requires it.</p>
+                      </div>
+                    </div>
 
-              <!-- Service token — primary auth method -->
-              <div class="field">
-                <label for="apiKey">Service token</label>
-                <div style="position:relative;">
-                  <input id="apiKey" type="password" autocomplete="off"
-                    placeholder="Paste your service token — saves automatically">
-                  <span id="apiKeySavedBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--good);pointer-events:none;">Saved</span>
+                    <div class="settings-surface-note" id="settingsHostedNotice" hidden>
+                      <div>
+                        <div class="doc-label">Hosted control plane</div>
+                        <p id="settingsHostedNoticeBody">Use Dashboard for projects, tokens, users, billing, and SSO. Use this page only for this browser.</p>
+                      </div>
+                      <div class="actions">
+                        <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
+                      </div>
+                    </div>
+
+                    <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsAuthSections" data-settings-scope="self_hosted">
+                      <button class="doc-tab active" data-doc-tab="serviceToken" type="button" data-settings-scope="self_hosted">Service token</button>
+                      <button class="doc-tab" data-doc-tab="adminLogin" type="button" data-settings-scope="self_hosted">Admin login</button>
+                      <button class="doc-tab" data-doc-tab="ssoLogin" type="button" data-settings-scope="self_hosted">SSO login</button>
+                    </div>
+
+                    <div class="doc-panels" data-doc-panels="settingsAuthSections">
+                      <div class="doc-panel active" data-doc-panel="serviceToken" data-settings-scope="self_hosted">
+                        <div class="settings-section-card">
+                          <div class="settings-section-head">
+                            <div>
+                              <div class="doc-label">Current runtime credential</div>
+                              <div class="hint">Stored in <span class="mono">localStorage</span>. It is only sent to your own SupaVector deployment.</div>
+                            </div>
+                          </div>
+
+                          <div class="field">
+                            <label for="apiKey">Service token</label>
+                            <div style="position:relative;">
+                              <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your service token — saves automatically">
+                              <span id="apiKeySavedBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--good);pointer-events:none;">Saved</span>
+                            </div>
+                            <div class="hint">
+                              Token is masked. <button id="apiKeyToggleBtn" type="button" style="background:none;border:none;color:var(--accent-2);cursor:pointer;font-size:11px;padding:0;font-family:var(--sans);">Show</button>
+                            </div>
+                          </div>
+
+                          <div class="actions" style="margin-top:14px;">
+                            <button class="btn danger" id="clearKeyBtn">Forget token</button>
+                          </div>
+
+                          <select id="authType" style="display:none;">
+                            <option value="bearer">JWT (Bearer)</option>
+                            <option value="api_key">Service token (API key)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="doc-panel" data-doc-panel="adminLogin" data-settings-scope="self_hosted">
+                        <div class="settings-section-card">
+                          <div class="settings-section-head">
+                            <div>
+                              <div class="doc-label">Username and password login</div>
+                              <div class="hint">Use this when you want a short-lived human admin JWT saved into the browser.</div>
+                            </div>
+                          </div>
+
+                          <div class="row">
+                            <div class="field">
+                              <label for="loginUser">Username</label>
+                              <input id="loginUser" placeholder="username" autocomplete="username">
+                            </div>
+                            <div class="field">
+                              <label for="loginPass">Password</label>
+                              <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
+                            </div>
+                          </div>
+
+                          <div class="actions" style="margin-top:14px;">
+                            <button class="btn secondary" id="loginBtn">Login and save token</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="doc-panel" data-doc-panel="ssoLogin" data-settings-scope="self_hosted">
+                        <div class="settings-section-card">
+                          <div class="settings-section-head">
+                            <div>
+                              <div class="doc-label">Enterprise SSO sign-in</div>
+                              <div class="hint">Use the tenant id configured for your enterprise tenant. Leave it blank only if your SSO flow resolves tenant from IdP claims.</div>
+                            </div>
+                          </div>
+
+                          <div class="row">
+                            <div class="field">
+                              <label for="ssoLoginTenant">Tenant ID</label>
+                              <input id="ssoLoginTenant" placeholder="default" autocomplete="organization">
+                            </div>
+                          </div>
+
+                          <div class="actions" style="margin-top:14px;">
+                            <button class="btn secondary" id="ssoProvidersLoadBtn">Check SSO providers</button>
+                            <button class="btn secondary" id="ssoLoginGoogleBtn" disabled>Sign in with Google</button>
+                            <button class="btn secondary" id="ssoLoginAzureBtn" disabled>Sign in with Azure</button>
+                            <button class="btn secondary" id="ssoLoginOktaBtn" disabled>Sign in with Okta</button>
+                          </div>
+
+                          <div class="hint" id="ssoProvidersStatus" style="margin-top:10px;">No SSO provider status loaded yet.</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-card" data-settings-scope="hosted" hidden>
+                      <div class="settings-section-head">
+                        <div>
+                          <div class="doc-label">Hosted mode</div>
+                          <div class="hint">Use only the pieces that matter here.</div>
+                        </div>
+                      </div>
+
+                      <ul>
+                        <li>Use Dashboard for service tokens, projects, users, billing, and SSO.</li>
+                        <li>Use this page only for this browser session and optional AI provider keys.</li>
+                        <li>If your app already has a hosted token in its environment, you do not need to paste it here.</li>
+                      </ul>
+                    </div>
+
+                    <div class="banner" id="settingsBanner"></div>
+                  </div>
                 </div>
-                <div class="hint">
-                  Stored in <span class="mono">localStorage</span> — never sent to any server except your own Supavector instance.
-                  Token is masked. <button id="apiKeyToggleBtn" type="button" style="background:none;border:none;color:var(--accent-2);cursor:pointer;font-size:11px;padding:0;font-family:var(--sans);">Show</button>
+
+                <div class="doc-panel" data-doc-panel="keys" data-settings-scope="self_hosted">
+                  <div class="settings-panel-card">
+                    <div class="settings-panel-hero">
+                      <div>
+                        <div class="settings-kicker">Machine auth</div>
+                        <h2>Issue service tokens</h2>
+                        <p>Create tenant-scoped machine credentials for apps, backends, workers, CI, and agents. Plain token values are shown only once.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-grid">
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Create service token</div>
+                            <div class="hint">Admins can issue runtime credentials without leaving the Settings page.</div>
+                          </div>
+                        </div>
+
+                        <div class="field">
+                          <label for="apiKeyName">Token name</label>
+                          <input id="apiKeyName" placeholder="ci-pipeline">
+                        </div>
+
+                        <div class="row" style="margin-top:12px;">
+                          <div class="field">
+                            <label for="apiKeyPrincipal">Principal ID (optional)</label>
+                            <input id="apiKeyPrincipal" placeholder="svc:ci">
+                            <div class="hint">Defaults to your current token subject when omitted.</div>
+                          </div>
+                          <div class="field">
+                            <label for="apiKeyExpires">Expires at</label>
+                            <input id="apiKeyExpires" type="datetime-local">
+                          </div>
+                        </div>
+
+                        <div class="field" style="margin-top:12px;">
+                          <label for="apiKeyRoles">Roles (comma separated)</label>
+                          <input id="apiKeyRoles" placeholder="indexer,reader">
+                          <div class="hint">Valid roles: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span>.</div>
+                        </div>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn secondary" id="createApiKeyBtn">Create service token</button>
+                        </div>
+                      </div>
+
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Latest token output</div>
+                            <div class="hint">Mask shown in the browser. Copy or switch immediately if you want to use the new token here.</div>
+                          </div>
+                        </div>
+
+                        <pre class="doc-code" id="createdApiKey">(not created)</pre>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this service token</button>
+                          <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy service token</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="banner" id="apiKeyBanner"></div>
+                  </div>
+                </div>
+
+                <div class="doc-panel" data-doc-panel="providers">
+                  <div class="settings-panel-card">
+                    <div class="settings-panel-hero">
+                      <div>
+                        <div class="settings-kicker" id="settingsProvidersKicker">Provider keys</div>
+                        <h2 id="settingsProvidersTitle">Optional AI keys for this browser</h2>
+                        <p id="settingsProvidersBody">Save an OpenAI, Gemini, or Anthropic key here only if you want requests from this browser to use your own provider account.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-grid">
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label" id="settingsProviderOverridesLabel">Saved in this browser</div>
+                            <div class="hint" id="settingsProviderOverridesHint">These stay in this browser and are only sent when a request supports provider keys.</div>
+                          </div>
+                        </div>
+
+                        <div class="row">
+                          <div class="field">
+                            <label for="openAiApiKeyOverride">OpenAI</label>
+                            <input id="openAiApiKeyOverride" type="password" autocomplete="off" placeholder="sk-...">
+                            <div class="hint">Sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
+                          </div>
+                          <div class="field">
+                            <label for="geminiApiKeyOverride">Gemini</label>
+                            <input id="geminiApiKeyOverride" type="password" autocomplete="off" placeholder="AIza...">
+                            <div class="hint">Sent as <span class="mono">X-Gemini-API-Key</span>.</div>
+                          </div>
+                        </div>
+
+                        <div class="row" style="margin-top:12px;">
+                          <div class="field">
+                            <label for="anthropicApiKeyOverride">Anthropic</label>
+                            <input id="anthropicApiKeyOverride" type="password" autocomplete="off" placeholder="sk-ant-...">
+                            <div class="hint">Sent as <span class="mono">X-Anthropic-API-Key</span>.</div>
+                          </div>
+                        </div>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
+                          <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
+                        </div>
+                      </div>
+
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label" id="settingsProviderWhenLabel">Use this if</div>
+                          </div>
+                        </div>
+
+                        <ul>
+                          <li id="settingsProviderUseCase1">You want this browser to send your own provider key.</li>
+                          <li id="settingsProviderUseCase2">It does not change how SupaVector authenticates you.</li>
+                          <li id="settingsProviderUseCase3">It affects only requests made from this browser.</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div class="banner" id="providerOverridesBanner"></div>
+                  </div>
+                </div>
+
+                <div class="doc-panel" data-doc-panel="tenant" data-settings-scope="self_hosted">
+                  <div class="settings-panel-card">
+                    <div class="settings-panel-hero settings-panel-hero-split">
+                      <div>
+                        <div class="settings-kicker">Tenant controls</div>
+                        <h2>Tenant auth, models, and users</h2>
+                        <p>Review the current tenant, manage SSO rules, override generation defaults, and handle local break-glass users without leaving this page.</p>
+                      </div>
+                      <div class="actions settings-hero-actions">
+                        <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
+                        <button class="btn" id="tenantAuthSaveBtn">Save tenant settings</button>
+                      </div>
+                    </div>
+
+                    <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsTenantSections">
+                      <button class="doc-tab active" data-doc-tab="access" type="button">Access</button>
+                      <button class="doc-tab" data-doc-tab="sso" type="button">SSO config</button>
+                      <button class="doc-tab" data-doc-tab="models" type="button">Models</button>
+                      <button class="doc-tab" data-doc-tab="users" type="button">Users</button>
+                    </div>
+
+                    <div class="doc-panels" data-doc-panels="settingsTenantSections">
+                      <div class="doc-panel active" data-doc-panel="access">
+                        <div class="settings-section-grid">
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Tenant identity</div>
+                              </div>
+                            </div>
+
+                            <div class="row">
+                              <div class="field">
+                                <label for="tenantAuthTenantId">Tenant ID</label>
+                                <input id="tenantAuthTenantId" readonly>
+                              </div>
+                              <div class="field">
+                                <label for="tenantAuthTenantName">Tenant name</label>
+                                <input id="tenantAuthTenantName" readonly>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Login policy</div>
+                                <div class="hint">Admins can enforce SSO-only or password-only login per tenant.</div>
+                              </div>
+                            </div>
+
+                            <div class="field">
+                              <label for="tenantAuthMode">Auth mode</label>
+                              <select id="tenantAuthMode">
+                                <option value="sso_plus_password">SSO + password</option>
+                                <option value="sso_only">SSO only</option>
+                                <option value="password_only">Password only</option>
+                              </select>
+                            </div>
+
+                            <div class="field" style="margin-top:14px;">
+                              <label>Allowed SSO providers</label>
+                              <div class="hint" style="margin-bottom:8px;">Uncheck all to disable SSO for this tenant.</div>
+                              <div class="settings-check-grid">
+                                <label class="check">
+                                  <input type="checkbox" id="tenantSsoGoogle" value="google">
+                                  Google
+                                </label>
+                                <label class="check">
+                                  <input type="checkbox" id="tenantSsoAzure" value="azure">
+                                  Azure
+                                </label>
+                                <label class="check">
+                                  <input type="checkbox" id="tenantSsoOkta" value="okta">
+                                  Okta
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="doc-panel" data-doc-panel="sso">
+                        <div class="settings-section-card">
+                          <div class="settings-section-head">
+                            <div>
+                              <div class="doc-label">Tenant-scoped enterprise SSO</div>
+                              <div class="hint">Tenant-scoped OIDC config overrides instance-wide provider env for this tenant. Leave client secret blank when saving if you want to keep the stored secret unchanged.</div>
+                            </div>
+                          </div>
+
+                          <div class="doc-tabs doc-tabs-compact settings-section-tabs settings-provider-tabs" data-doc-tabs="settingsTenantSsoProviders">
+                            <button class="doc-tab active" data-doc-tab="google" type="button">Google</button>
+                            <button class="doc-tab" data-doc-tab="azure" type="button">Azure</button>
+                            <button class="doc-tab" data-doc-tab="okta" type="button">Okta</button>
+                          </div>
+
+                          <div class="doc-panels" data-doc-panels="settingsTenantSsoProviders">
+                            <div class="doc-panel active" data-doc-panel="google">
+                              <div class="settings-subpanel">
+                                <div class="row">
+                                  <div class="field">
+                                    <label class="check"><input type="checkbox" id="tenantSsoGoogleEnabled"> Enable tenant-scoped Google SSO</label>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleClientId">Client ID</label>
+                                    <input id="tenantSsoGoogleClientId" placeholder="google client id">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleClientSecret">Client secret</label>
+                                    <input id="tenantSsoGoogleClientSecret" type="password" placeholder="leave blank to keep saved secret">
+                                    <label class="check" style="margin-top:8px;"><input type="checkbox" id="tenantSsoGoogleClearClientSecret"> Clear saved secret on next save</label>
+                                    <div class="hint" id="tenantSsoGoogleSecretState">No tenant-scoped client secret saved.</div>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleIssuer">Issuer</label>
+                                    <input id="tenantSsoGoogleIssuer" placeholder="https://accounts.google.com">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleScopes">Scopes</label>
+                                    <input id="tenantSsoGoogleScopes" placeholder="openid email profile">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleTenantClaim">Tenant claim</label>
+                                    <input id="tenantSsoGoogleTenantClaim" placeholder="hd">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleRoleClaim">Role/group claim</label>
+                                    <input id="tenantSsoGoogleRoleClaim" placeholder="groups">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleDefaultRoles">Default roles</label>
+                                    <input id="tenantSsoGoogleDefaultRoles" placeholder="reader">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoGoogleAllowedDomains">Allowed email domains</label>
+                                    <input id="tenantSsoGoogleAllowedDomains" placeholder="acme.com, subsidiary.com">
+                                  </div>
+                                </div>
+                                <div class="field" style="margin-top:12px;">
+                                  <label for="tenantSsoGoogleRoleMappings">Role mappings (JSON)</label>
+                                  <textarea id="tenantSsoGoogleRoleMappings" rows="4" placeholder='{"supavector-admins":["admin","indexer","reader"],"supavector-editors":["indexer","reader"]}'></textarea>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div class="doc-panel" data-doc-panel="azure">
+                              <div class="settings-subpanel">
+                                <div class="row">
+                                  <div class="field">
+                                    <label class="check"><input type="checkbox" id="tenantSsoAzureEnabled"> Enable tenant-scoped Azure SSO</label>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoAzureClientId">Client ID</label>
+                                    <input id="tenantSsoAzureClientId" placeholder="azure client id">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoAzureClientSecret">Client secret</label>
+                                    <input id="tenantSsoAzureClientSecret" type="password" placeholder="leave blank to keep saved secret">
+                                    <label class="check" style="margin-top:8px;"><input type="checkbox" id="tenantSsoAzureClearClientSecret"> Clear saved secret on next save</label>
+                                    <div class="hint" id="tenantSsoAzureSecretState">No tenant-scoped client secret saved.</div>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoAzureIssuer">Issuer</label>
+                                    <input id="tenantSsoAzureIssuer" placeholder="https://login.microsoftonline.com/.../v2.0">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoAzureScopes">Scopes</label>
+                                    <input id="tenantSsoAzureScopes" placeholder="openid email profile">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoAzureTenantClaim">Tenant claim</label>
+                                    <input id="tenantSsoAzureTenantClaim" placeholder="tid">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoAzureRoleClaim">Role/group claim</label>
+                                    <input id="tenantSsoAzureRoleClaim" placeholder="groups">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoAzureDefaultRoles">Default roles</label>
+                                    <input id="tenantSsoAzureDefaultRoles" placeholder="reader">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoAzureAllowedDomains">Allowed email domains</label>
+                                    <input id="tenantSsoAzureAllowedDomains" placeholder="acme.com">
+                                  </div>
+                                </div>
+                                <div class="field" style="margin-top:12px;">
+                                  <label for="tenantSsoAzureRoleMappings">Role mappings (JSON)</label>
+                                  <textarea id="tenantSsoAzureRoleMappings" rows="4" placeholder='{"SupaVector-Admins":["admin","indexer","reader"]}'></textarea>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div class="doc-panel" data-doc-panel="okta">
+                              <div class="settings-subpanel">
+                                <div class="row">
+                                  <div class="field">
+                                    <label class="check"><input type="checkbox" id="tenantSsoOktaEnabled"> Enable tenant-scoped Okta SSO</label>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoOktaClientId">Client ID</label>
+                                    <input id="tenantSsoOktaClientId" placeholder="okta client id">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoOktaClientSecret">Client secret</label>
+                                    <input id="tenantSsoOktaClientSecret" type="password" placeholder="leave blank to keep saved secret">
+                                    <label class="check" style="margin-top:8px;"><input type="checkbox" id="tenantSsoOktaClearClientSecret"> Clear saved secret on next save</label>
+                                    <div class="hint" id="tenantSsoOktaSecretState">No tenant-scoped client secret saved.</div>
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoOktaIssuer">Issuer</label>
+                                    <input id="tenantSsoOktaIssuer" placeholder="https://acme.okta.com/oauth2/default">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoOktaScopes">Scopes</label>
+                                    <input id="tenantSsoOktaScopes" placeholder="openid email profile">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoOktaTenantClaim">Tenant claim</label>
+                                    <input id="tenantSsoOktaTenantClaim" placeholder="iss">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoOktaRoleClaim">Role/group claim</label>
+                                    <input id="tenantSsoOktaRoleClaim" placeholder="groups">
+                                  </div>
+                                  <div class="field">
+                                    <label for="tenantSsoOktaDefaultRoles">Default roles</label>
+                                    <input id="tenantSsoOktaDefaultRoles" placeholder="reader">
+                                  </div>
+                                </div>
+                                <div class="row" style="margin-top:12px;">
+                                  <div class="field">
+                                    <label for="tenantSsoOktaAllowedDomains">Allowed email domains</label>
+                                    <input id="tenantSsoOktaAllowedDomains" placeholder="acme.com">
+                                  </div>
+                                </div>
+                                <div class="field" style="margin-top:12px;">
+                                  <label for="tenantSsoOktaRoleMappings">Role mappings (JSON)</label>
+                                  <textarea id="tenantSsoOktaRoleMappings" rows="4" placeholder='{"SupaVectorAdmins":["admin","indexer","reader"]}'></textarea>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="doc-panel" data-doc-panel="models">
+                        <div class="settings-section-grid">
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Ask and boolean ask</div>
+                              </div>
+                            </div>
+
+                            <div class="row">
+                              <div class="field">
+                                <label for="tenantAnswerProvider">Ask provider</label>
+                                <select id="tenantAnswerProvider">
+                                  <option value="">blank = instance default</option>
+                                  <option value="openai">OpenAI</option>
+                                  <option value="gemini">Google Gemini</option>
+                                  <option value="anthropic">Anthropic</option>
+                                </select>
+                                <div class="hint">Optional tenant override for the <span class="mono">ask</span> provider.</div>
+                              </div>
+                              <div class="field">
+                                <label for="tenantAnswerModel">Ask model</label>
+                                <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
+                                <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default.</div>
+                              </div>
+                            </div>
+
+                            <div class="row" style="margin-top:12px;">
+                              <div class="field">
+                                <label for="tenantBooleanAskProvider">Boolean ask provider</label>
+                                <select id="tenantBooleanAskProvider">
+                                  <option value="">blank = follow ask provider</option>
+                                  <option value="openai">OpenAI</option>
+                                  <option value="gemini">Google Gemini</option>
+                                  <option value="anthropic">Anthropic</option>
+                                </select>
+                                <div class="hint">Optional tenant override for the <span class="mono">boolean_ask</span> provider.</div>
+                              </div>
+                              <div class="field">
+                                <label for="tenantBooleanAskModel">Boolean ask model</label>
+                                <input id="tenantBooleanAskModel" list="tenantGenerationModels" placeholder="blank = follow ask model">
+                                <div class="hint">Leave blank to follow the tenant ask model.</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Background job models</div>
+                              </div>
+                            </div>
+
+                            <div class="row">
+                              <div class="field">
+                                <label for="tenantReflectProvider">Reflect provider</label>
+                                <select id="tenantReflectProvider">
+                                  <option value="">blank = instance default</option>
+                                  <option value="openai">OpenAI</option>
+                                  <option value="gemini">Google Gemini</option>
+                                  <option value="anthropic">Anthropic</option>
+                                </select>
+                                <div class="hint">Optional tenant override for reflection jobs.</div>
+                              </div>
+                              <div class="field">
+                                <label for="tenantReflectModel">Reflect model</label>
+                                <input id="tenantReflectModel" list="tenantGenerationModels" placeholder="blank = instance default">
+                                <div class="hint">Optional tenant override for the reflection model.</div>
+                              </div>
+                            </div>
+
+                            <div class="row" style="margin-top:12px;">
+                              <div class="field">
+                                <label for="tenantCompactProvider">Compact provider</label>
+                                <select id="tenantCompactProvider">
+                                  <option value="">blank = follow reflect provider</option>
+                                  <option value="openai">OpenAI</option>
+                                  <option value="gemini">Google Gemini</option>
+                                  <option value="anthropic">Anthropic</option>
+                                </select>
+                                <div class="hint">Optional tenant override for compaction jobs.</div>
+                              </div>
+                              <div class="field">
+                                <label for="tenantCompactModel">Compact model</label>
+                                <input id="tenantCompactModel" list="tenantGenerationModels" placeholder="blank = follow reflect model">
+                                <div class="hint">Leave blank to follow the tenant reflect model.</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Embedding model</div>
+                                <div class="hint">Embedding settings remain instance-wide.</div>
+                              </div>
+                            </div>
+
+                            <div class="row">
+                              <div class="field">
+                                <label for="tenantEmbedProvider">Embedding provider</label>
+                                <input id="tenantEmbedProvider" readonly>
+                                <div class="hint">Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>.</div>
+                              </div>
+                              <div class="field">
+                                <label for="tenantEmbedModel">Embedding model</label>
+                                <input id="tenantEmbedModel" readonly>
+                                <div class="hint">Changing the embedding model requires a reindex on restart.</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <datalist id="tenantGenerationModels">
+                            <option value="gpt-4o"></option>
+                            <option value="gpt-4.1"></option>
+                            <option value="gpt-4o-mini"></option>
+                            <option value="gpt-4.1-mini"></option>
+                            <option value="gpt-4.1-nano"></option>
+                            <option value="gpt-5.2"></option>
+                            <option value="gpt-5-mini"></option>
+                            <option value="gpt-5-nano"></option>
+                            <option value="o1"></option>
+                            <option value="o3"></option>
+                            <option value="o3-mini"></option>
+                            <option value="o4-mini"></option>
+                            <option value="gemini-2.5-flash"></option>
+                            <option value="gemini-2.5-pro"></option>
+                            <option value="gemini-2.5-flash-lite"></option>
+                            <option value="gemini-2.0-flash"></option>
+                            <option value="claude-sonnet-4-20250514"></option>
+                            <option value="claude-opus-4-20250514"></option>
+                            <option value="claude-3-7-sonnet-latest"></option>
+                            <option value="claude-3-5-haiku-latest"></option>
+                          </datalist>
+                        </div>
+                      </div>
+
+                      <div class="doc-panel" data-doc-panel="users">
+                        <div class="settings-section-grid">
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Current tenant users</div>
+                                <div class="hint">SSO users are created on first successful login. Use this section to review users, promote roles, or disable accounts.</div>
+                              </div>
+                            </div>
+
+                            <div class="actions" style="margin-bottom:10px;">
+                              <button class="btn secondary" id="tenantUsersLoadBtn">Load tenant users</button>
+                            </div>
+
+                            <div id="tenantUsersTableWrap" class="doc-block" style="margin:0;">
+                              <div class="hint">No user list loaded yet.</div>
+                            </div>
+                          </div>
+
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Create local user</div>
+                                <div class="hint">Use this for break-glass access or password login paths that should exist alongside SSO.</div>
+                              </div>
+                            </div>
+
+                            <div class="row">
+                              <div class="field">
+                                <label for="tenantUserCreateUsername">Username</label>
+                                <input id="tenantUserCreateUsername" placeholder="admin2">
+                              </div>
+                              <div class="field">
+                                <label for="tenantUserCreatePassword">Password</label>
+                                <input id="tenantUserCreatePassword" type="password" placeholder="at least 8 characters">
+                              </div>
+                            </div>
+
+                            <div class="row" style="margin-top:12px;">
+                              <div class="field">
+                                <label for="tenantUserCreateEmail">Email</label>
+                                <input id="tenantUserCreateEmail" placeholder="ops@acme.com">
+                              </div>
+                              <div class="field">
+                                <label for="tenantUserCreateFullName">Full name</label>
+                                <input id="tenantUserCreateFullName" placeholder="Ops Admin">
+                              </div>
+                            </div>
+
+                            <div class="row" style="margin-top:12px;">
+                              <div class="field">
+                                <label for="tenantUserCreateRoles">Roles</label>
+                                <input id="tenantUserCreateRoles" placeholder="admin,indexer,reader">
+                              </div>
+                              <div class="field">
+                                <label class="check" style="margin-top:30px;"><input type="checkbox" id="tenantUserCreateSsoOnly"> SSO only</label>
+                              </div>
+                            </div>
+
+                            <div class="actions" style="margin-top:14px;">
+                              <button class="btn secondary" id="tenantUserCreateBtn">Create local user</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="banner" id="tenantAuthBanner"></div>
+                  </div>
                 </div>
               </div>
-
-              <div class="actions" style="margin-top:10px;">
-                <button class="btn danger" id="clearKeyBtn">Forget token</button>
-              </div>
-
-              <!-- Provider key overrides -->
-              <details class="details" style="margin-top:16px;">
-                <summary>Provider key overrides <span style="color:var(--muted);font-size:12px;font-weight:400;">(optional)</span></summary>
-                <div class="row" style="margin-top:12px;">
-                  <div class="field">
-                    <label for="openAiApiKeyOverride">OpenAI</label>
-                    <input id="openAiApiKeyOverride" type="password" autocomplete="off" placeholder="sk-...">
-                    <div class="hint">Sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
-                  </div>
-                  <div class="field">
-                    <label for="geminiApiKeyOverride">Gemini</label>
-                    <input id="geminiApiKeyOverride" type="password" autocomplete="off" placeholder="AIza...">
-                    <div class="hint">Sent as <span class="mono">X-Gemini-API-Key</span>.</div>
-                  </div>
-                </div>
-                <div class="row" style="margin-top:12px;">
-                  <div class="field">
-                    <label for="anthropicApiKeyOverride">Anthropic</label>
-                    <input id="anthropicApiKeyOverride" type="password" autocomplete="off" placeholder="sk-ant-...">
-                    <div class="hint">Sent as <span class="mono">X-Anthropic-API-Key</span>.</div>
-                  </div>
-                </div>
-                <div class="actions" style="margin-top:12px;">
-                  <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
-                  <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
-                </div>
-              </details>
-
-              <!-- Admin: login with username/password -->
-              <details class="details" style="margin-top:12px;">
-                <summary>Admin login <span style="color:var(--muted);font-size:12px;font-weight:400;">(username + password)</span></summary>
-                <!-- authType hidden input keeps app.js save logic working -->
-                <select id="authType" style="display:none;">
-                  <option value="bearer">JWT (Bearer)</option>
-                  <option value="api_key">Service token (API key)</option>
-                </select>
-                <div class="row" style="margin-top:12px;">
-                  <div class="field">
-                    <label for="loginUser">Username</label>
-                    <input id="loginUser" placeholder="username" autocomplete="username">
-                  </div>
-                  <div class="field">
-                    <label for="loginPass">Password</label>
-                    <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
-                  </div>
-                </div>
-                <div class="actions" style="margin-top:12px;">
-                  <button class="btn secondary" id="loginBtn">Login and save token</button>
-                </div>
-              </details>
-
-              <div class="banner" id="settingsBanner"></div>
             </div>
-            <div class="doc-panel" data-doc-panel="keys">
-              <div class="row">
-                <div class="field">
-                  <label for="apiKeyName">Create API key (admin)</label>
-                  <input id="apiKeyName" placeholder="ci-pipeline">
-                  <div class="hint">Admins can issue service tokens for apps and agents. The bootstrap helper can mint the first one for you.</div>
+
+            <aside class="settings-sidebar">
+              <div class="settings-sidebar-card">
+                <div class="settings-kicker" id="settingsSidebarKicker">Settings</div>
+                <h3 id="settingsSidebarTitle">Manage this workspace</h3>
+                <p id="settingsSidebarBody">Pick a section on the right. The left pane stays focused on one setup flow at a time.</p>
+
+                <div class="doc-tabs settings-nav" data-doc-tabs="settings">
+                  <button class="doc-tab active" data-doc-tab="auth" type="button">
+                    <span class="settings-nav-index">01</span>
+                    <span>
+                      <strong id="settingsNavAuthTitle">Authenticate</strong>
+                      <small id="settingsNavAuthBody">Tokens, admin login, SSO</small>
+                    </span>
+                  </button>
+                  <button class="doc-tab" data-doc-tab="keys" type="button" data-settings-scope="self_hosted">
+                    <span class="settings-nav-index">02</span>
+                    <span>
+                      <strong>Service Tokens</strong>
+                      <small>Issue machine credentials</small>
+                    </span>
+                  </button>
+                  <button class="doc-tab" data-doc-tab="providers" type="button">
+                    <span class="settings-nav-index">03</span>
+                    <span>
+                      <strong id="settingsNavProvidersTitle">Providers</strong>
+                      <small id="settingsNavProvidersBody">Request-scoped provider overrides</small>
+                    </span>
+                  </button>
+                  <button class="doc-tab" data-doc-tab="tenant" type="button" data-settings-scope="self_hosted">
+                    <span class="settings-nav-index">04</span>
+                    <span>
+                      <strong>Tenant</strong>
+                      <small>Auth rules, models, users</small>
+                    </span>
+                  </button>
                 </div>
               </div>
-
-              <details class="details" style="margin-top:12px;">
-                <summary>Advanced options</summary>
-                <div class="row" style="margin-top:12px;">
-                  <div class="field">
-                    <label for="apiKeyPrincipal">Principal ID (optional)</label>
-                    <input id="apiKeyPrincipal" placeholder="svc:ci">
-                    <div class="hint">Defaults to your token subject if omitted.</div>
-                  </div>
-                </div>
-              </details>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="apiKeyRoles">Roles (comma separated)</label>
-                  <input id="apiKeyRoles" placeholder="indexer,reader">
-                  <div class="hint">Valid roles: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span>.</div>
-                </div>
-                <div class="field">
-                  <label for="apiKeyExpires">Expires at</label>
-                  <input id="apiKeyExpires" type="datetime-local">
-                </div>
-              </div>
-
-              <div class="actions">
-                <button class="btn secondary" id="createApiKeyBtn">Create API key</button>
-                <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this API key</button>
-                <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy API key</button>
-              </div>
-
-              <div class="doc-block">
-                <div class="doc-label">New API key (masked)</div>
-                <pre class="doc-code" id="createdApiKey">(not created)</pre>
-              </div>
-              <div class="banner" id="apiKeyBanner"></div>
-            </div>
-            <div class="doc-panel" data-doc-panel="tenant">
-              <div class="row">
-                <div class="field">
-                  <label for="tenantAuthTenantId">Tenant ID</label>
-                  <input id="tenantAuthTenantId" readonly>
-                </div>
-                <div class="field">
-                  <label for="tenantAuthTenantName">Tenant name</label>
-                  <input id="tenantAuthTenantName" readonly>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="tenantAuthMode">Auth mode</label>
-                  <select id="tenantAuthMode">
-                    <option value="sso_plus_password">SSO + password</option>
-                    <option value="sso_only">SSO only</option>
-                    <option value="password_only">Password only</option>
-                  </select>
-                  <div class="hint">Admins can enforce SSO-only or password-only login per tenant.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label>Allowed SSO providers</label>
-                  <div class="hint" style="margin-bottom:6px;">Uncheck all to disable SSO for this tenant.</div>
-                  <label class="check">
-                    <input type="checkbox" id="tenantSsoGoogle" value="google">
-                    Google
-                  </label>
-                  <label class="check">
-                    <input type="checkbox" id="tenantSsoAzure" value="azure">
-                    Azure
-                  </label>
-                  <label class="check">
-                    <input type="checkbox" id="tenantSsoOkta" value="okta">
-                    Okta
-                  </label>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:16px;">
-                <div class="field">
-                  <label for="tenantAnswerProvider">Ask provider</label>
-                  <select id="tenantAnswerProvider">
-                    <option value="">blank = instance default</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                  <div class="hint">Optional tenant override for the <span class="mono">ask</span> provider.</div>
-                </div>
-                <div class="field">
-                  <label for="tenantAnswerModel">Ask model</label>
-                  <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                  <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default. The live preset catalog is also available from <span class="mono">GET /v1/models</span>.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="tenantBooleanAskProvider">Boolean ask provider</label>
-                  <select id="tenantBooleanAskProvider">
-                    <option value="">blank = follow ask provider</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                  <div class="hint">Optional tenant override for the <span class="mono">boolean_ask</span> provider.</div>
-                </div>
-                <div class="field">
-                  <label for="tenantBooleanAskModel">Boolean ask model</label>
-                  <input id="tenantBooleanAskModel" list="tenantGenerationModels" placeholder="blank = follow ask model">
-                  <div class="hint">Optional tenant override for <span class="mono">boolean_ask</span>. Leave blank to follow the tenant ask model.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="tenantReflectProvider">Reflect provider</label>
-                  <select id="tenantReflectProvider">
-                    <option value="">blank = instance default</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                  <div class="hint">Optional tenant override for reflection jobs.</div>
-                </div>
-                <div class="field">
-                  <label for="tenantReflectModel">Reflect model</label>
-                  <input id="tenantReflectModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                  <div class="hint">Optional tenant override for the reflection model.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="tenantCompactProvider">Compact provider</label>
-                  <select id="tenantCompactProvider">
-                    <option value="">blank = follow reflect provider</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                  <div class="hint">Optional tenant override for compaction jobs.</div>
-                </div>
-                <div class="field">
-                  <label for="tenantCompactModel">Compact model</label>
-                  <input id="tenantCompactModel" list="tenantGenerationModels" placeholder="blank = follow reflect model">
-                  <div class="hint">Optional tenant override for compaction jobs. Leave blank to follow the tenant reflect model.</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <div class="field">
-                  <label for="tenantEmbedProvider">Embedding provider</label>
-                  <input id="tenantEmbedProvider" readonly>
-                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>.</div>
-                </div>
-                <div class="field">
-                  <label for="tenantEmbedModel">Embedding model</label>
-                  <input id="tenantEmbedModel" readonly>
-                  <div class="hint">Instance-wide setting. Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>. Changing the embedding model requires a reindex on restart.</div>
-                </div>
-              </div>
-
-              <datalist id="tenantGenerationModels">
-                <option value="gpt-4o"></option>
-                <option value="gpt-4.1"></option>
-                <option value="gpt-4o-mini"></option>
-                <option value="gpt-4.1-mini"></option>
-                <option value="gpt-4.1-nano"></option>
-                <option value="gpt-5.2"></option>
-                <option value="gpt-5-mini"></option>
-                <option value="gpt-5-nano"></option>
-                <option value="o1"></option>
-                <option value="o3"></option>
-                <option value="o3-mini"></option>
-                <option value="o4-mini"></option>
-                <option value="gemini-2.5-flash"></option>
-                <option value="gemini-2.5-pro"></option>
-                <option value="gemini-2.5-flash-lite"></option>
-                <option value="gemini-2.0-flash"></option>
-                <option value="claude-sonnet-4-20250514"></option>
-                <option value="claude-opus-4-20250514"></option>
-                <option value="claude-3-7-sonnet-latest"></option>
-                <option value="claude-3-5-haiku-latest"></option>
-              </datalist>
-
-              <div class="actions">
-                <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
-                <button class="btn" id="tenantAuthSaveBtn">Save tenant settings</button>
-              </div>
-
-              <div class="banner" id="tenantAuthBanner"></div>
-            </div>
+            </aside>
           </div>
         </section>

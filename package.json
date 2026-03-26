@@ -11,7 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test:cli": "node cli/tests/cli_helpers.test.js"
+    "test:cli": "node cli/tests/cli_helpers.test.js && node cli/tests/admin_commands.test.js"
   },
   "dependencies": {
     "mammoth": "^1.12.0",

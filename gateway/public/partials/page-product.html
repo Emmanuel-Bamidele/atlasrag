@@ -120,12 +120,12 @@
                 </div>
                 <div class="product-hosted-step">
                   <span class="product-flow-number">02</span>
-                  <h4>Add credit for AI generation</h4>
-                  <p>Dashboard → <strong>+ Add Credit</strong>. Choose an amount, pay via Stripe. Indexing and search are free — only <code class="mono">/ask</code> and <code class="mono">/boolean_ask</code> deduct credit.</p>
+                  <h4>Set up hosted billing</h4>
+                  <p>Dashboard → <strong>+ Add Credit</strong> for hosted AI generation. Hosted storage is billed separately each month from retained <code class="mono">GB-month</code> usage, so keep a payment method on file in the Billing Portal too.</p>
                   <div class="product-hosted-credit-badges">
-                    <span class="product-hosted-badge free">Indexing — free</span>
-                    <span class="product-hosted-badge free">Search — free</span>
-                    <span class="product-hosted-badge paid">Ask — uses credit</span>
+                    <span class="product-hosted-badge free">Indexing — no credit gate</span>
+                    <span class="product-hosted-badge free">Search — no credit gate</span>
+                    <span class="product-hosted-badge paid">Ask — credit or BYO key</span>
                   </div>
                 </div>
                 <div class="product-hosted-step">
@@ -175,7 +175,7 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit unless you send your own provider key</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedCurlAsk">curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
@@ -217,7 +217,7 @@ requests.post(
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit unless you send your own provider key</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedPyAsk">r = requests.post(
     f"{BASE}/v1/ask",
@@ -266,7 +266,7 @@ await ar("/v1/docs",
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit unless you send your own provider key</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedNodeAsk">const { data } = await ar("/v1/ask", {
   question: "What does Supavector store?",
@@ -305,7 +305,7 @@ await fetch(`${BASE}/v1/docs`, {
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit</span></div>
+                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit unless you send your own provider key</span></div>
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedJsAsk">const res = await fetch(`${BASE}/v1/ask`, {
   method:  "POST",
@@ -412,7 +412,7 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                 </article>
                 <article class="product-story-panel">
                   <span class="product-panel-label">Cost</span>
-                  <p>Self-host free forever, or use the hosted API. Only AI generation uses credit.</p>
+                  <p>Self-host free forever, or use the hosted API. Hosted AI uses prepaid credit by default, and hosted storage is billed separately from retained <span class="mono">GB-month</span> usage.</p>
                 </article>
               </div>
             </section>

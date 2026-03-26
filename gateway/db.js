@@ -12,6 +12,13 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const {
+  STORAGE_BILLING_FORMULA_VERSION,
+  buildUtcMonthWindow,
+  splitRangeByUtcMonth,
+  estimateVectorBytes,
+  normalizeStorageBreakdown
+} = require("./storage_billing");
 
 const DB_CONNECT_TIMEOUT_MS = parseInt(process.env.DB_CONNECT_TIMEOUT_MS || "5000", 10);
 const DB_QUERY_TIMEOUT_MS = parseInt(process.env.DB_QUERY_TIMEOUT_MS || "15000", 10);
@@ -37,11 +44,26 @@ if (Number.isFinite(DB_STATEMENT_TIMEOUT_MS) && DB_STATEMENT_TIMEOUT_MS > 0) {
 }
 
 const pool = new Pool(poolConfig);
-const TENANT_SELECT_FIELDS = "tenant_id, name, auth_mode, sso_providers, answer_provider, answer_model, boolean_ask_provider, boolean_ask_model, reflect_provider, reflect_model, compact_provider, compact_model, created_at";
+const TENANT_SELECT_FIELDS = "tenant_id, name, external_id, metadata, auth_mode, sso_providers, sso_config, answer_provider, answer_model, boolean_ask_provider, boolean_ask_model, reflect_provider, reflect_model, compact_provider, compact_model, created_at";
 
 const MEMORY_ITEM_SELECT_COLUMNS = `id, namespace_id, tenant_id, collection, item_type, external_id, principal_id, agent_id, tags, visibility, acl_principals, title,
             source_type, source_url, metadata, parent_id, created_at, expires_at, value_score, tier, value_last_update_ts, tier_last_update_ts, reuse_count, last_used_at, utility_ema,
             redundancy_score, trust_score, importance_hint, pinned`;
+
+const MEMORY_ITEM_STORAGE_BYTES_EXPR = `(
+  octet_length(COALESCE(title, '')) +
+  octet_length(COALESCE(source_type, '')) +
+  octet_length(COALESCE(source_url, '')) +
+  octet_length(COALESCE(external_id, '')) +
+  octet_length(COALESCE(principal_id, '')) +
+  octet_length(COALESCE(agent_id, '')) +
+  octet_length(COALESCE(collection, '')) +
+  octet_length(COALESCE(item_type, '')) +
+  octet_length(COALESCE(visibility, '')) +
+  octet_length(COALESCE(array_to_string(tags, ','), '')) +
+  octet_length(COALESCE(array_to_string(acl_principals, ','), '')) +
+  octet_length(COALESCE(metadata::text, ''))
+)`;
 
 // Save a chunk row
 async function saveChunk({ chunkId, docId, idx, text }) {
@@ -600,6 +622,10 @@ async function deleteMemoryItemById(id) {
   await pool.query(`DELETE FROM memory_items WHERE id = $1`, [id]);
 }
 
+async function deleteMemoryItemByNamespaceId(namespaceId) {
+  await pool.query(`DELETE FROM memory_items WHERE namespace_id = $1`, [namespaceId]);
+}
+
 async function getArtifactByExternalId(tenantId, collection, externalId, principalId) {
   const clauses = ["tenant_id = $1", "collection = $2", "item_type = 'artifact'", "external_id = $3"];
   const params = [tenantId, collection, externalId];
@@ -915,6 +941,34 @@ async function createAuditLog({ tenantId, actorId, actorType, action, targetType
   return res.rows[0] || null;
 }
 
+async function listAuditLogs({ tenantId = null, action = null, targetType = null, targetId = null, limit = 100 } = {}) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 100;
+  const params = [tenantId || null];
+  const clauses = ["($1::text IS NULL OR tenant_id = $1)"];
+  if (action) {
+    params.push(String(action).trim());
+    clauses.push(`action = $${params.length}`);
+  }
+  if (targetType) {
+    params.push(String(targetType).trim());
+    clauses.push(`target_type = $${params.length}`);
+  }
+  if (targetId) {
+    params.push(String(targetId).trim());
+    clauses.push(`target_id = $${params.length}`);
+  }
+  params.push(cleanLimit);
+  const res = await pool.query(
+    `SELECT id, tenant_id, actor_id, actor_type, action, target_type, target_id, metadata, request_id, ip, created_at
+     FROM audit_logs
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at DESC, id DESC
+     LIMIT $${params.length}`,
+    params
+  );
+  return res.rows;
+}
+
 async function createMemoryLink({ tenantId, fromItemId, toItemId, relation, metadata }) {
   const res = await pool.query(
     `INSERT INTO memory_links(tenant_id, from_item_id, to_item_id, relation, metadata)
@@ -1058,6 +1112,26 @@ async function listServiceTokens(tenantId) {
     [tenantId]
   );
   return res.rows;
+}
+
+async function countTenantUsers(tenantId) {
+  const res = await pool.query(
+    `SELECT COUNT(*)::bigint AS count
+     FROM users
+     WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  return Number(res.rows[0]?.count || 0);
+}
+
+async function countTenantServiceTokens(tenantId) {
+  const res = await pool.query(
+    `SELECT COUNT(*)::bigint AS count
+     FROM service_tokens
+     WHERE tenant_id = $1 AND revoked_at IS NULL`,
+    [tenantId]
+  );
+  return Number(res.rows[0]?.count || 0);
 }
 
 async function getServiceTokenByHash(keyHash) {
@@ -1251,6 +1325,173 @@ async function getTenantById(tenantId) {
   return res.rows[0] || null;
 }
 
+async function createTenant({
+  tenantId,
+  name,
+  externalId,
+  metadata,
+  authMode,
+  ssoProviders,
+  ssoConfig,
+  answerProvider,
+  answerModel,
+  booleanAskProvider,
+  booleanAskModel,
+  reflectProvider,
+  reflectModel,
+  compactProvider,
+  compactModel
+}) {
+  const res = await pool.query(
+    `INSERT INTO tenants(
+        tenant_id, name, external_id, metadata,
+        auth_mode, sso_providers, sso_config,
+        answer_provider, answer_model,
+        boolean_ask_provider, boolean_ask_model,
+        reflect_provider, reflect_model,
+        compact_provider, compact_model
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+     RETURNING ${TENANT_SELECT_FIELDS}`,
+    [
+      tenantId,
+      name || null,
+      externalId || null,
+      metadata ? JSON.stringify(metadata) : JSON.stringify({}),
+      authMode || null,
+      ssoProviders !== undefined ? ssoProviders : null,
+      ssoConfig ? JSON.stringify(ssoConfig) : JSON.stringify({}),
+      answerProvider || null,
+      answerModel || null,
+      booleanAskProvider || null,
+      booleanAskModel || null,
+      reflectProvider || null,
+      reflectModel || null,
+      compactProvider || null,
+      compactModel || null
+    ]
+  );
+  return res.rows[0] || null;
+}
+
+async function createTenantWithBootstrap({
+  tenant,
+  bootstrapUser = null,
+  bootstrapServiceToken = null
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tenantRes = await client.query(
+      `INSERT INTO tenants(
+          tenant_id, name, external_id, metadata,
+          auth_mode, sso_providers, sso_config,
+          answer_provider, answer_model,
+          boolean_ask_provider, boolean_ask_model,
+          reflect_provider, reflect_model,
+          compact_provider, compact_model
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING ${TENANT_SELECT_FIELDS}`,
+      [
+        tenant?.tenantId,
+        tenant?.name || null,
+        tenant?.externalId || null,
+        tenant?.metadata ? JSON.stringify(tenant.metadata) : JSON.stringify({}),
+        tenant?.authMode || null,
+        tenant?.ssoProviders !== undefined ? tenant.ssoProviders : null,
+        tenant?.ssoConfig ? JSON.stringify(tenant.ssoConfig) : JSON.stringify({}),
+        tenant?.answerProvider || null,
+        tenant?.answerModel || null,
+        tenant?.booleanAskProvider || null,
+        tenant?.booleanAskModel || null,
+        tenant?.reflectProvider || null,
+        tenant?.reflectModel || null,
+        tenant?.compactProvider || null,
+        tenant?.compactModel || null
+      ]
+    );
+
+    let userRecord = null;
+    if (bootstrapUser) {
+      const userRes = await client.query(
+        `INSERT INTO users(username, password_hash, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name)
+         VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7, $8, $9)
+         RETURNING id, username, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name, failed_attempts, lock_until, last_login, created_at`,
+        [
+          bootstrapUser.username,
+          bootstrapUser.passwordHash,
+          tenant?.tenantId,
+          bootstrapUser.roles || [],
+          Boolean(bootstrapUser.ssoOnly),
+          bootstrapUser.authProvider || null,
+          bootstrapUser.authSubject || null,
+          bootstrapUser.email || null,
+          bootstrapUser.fullName || null
+        ]
+      );
+      userRecord = userRes.rows[0] || null;
+    }
+
+    let tokenRecord = null;
+    if (bootstrapServiceToken) {
+      const tokenRes = await client.query(
+        `INSERT INTO service_tokens(tenant_id, name, principal_id, roles, key_hash, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, tenant_id, name, principal_id, roles, last_used_at, expires_at, revoked_at, created_at`,
+        [
+          tenant?.tenantId,
+          bootstrapServiceToken.name,
+          bootstrapServiceToken.principalId,
+          bootstrapServiceToken.roles || [],
+          bootstrapServiceToken.keyHash,
+          bootstrapServiceToken.expiresAt ? new Date(bootstrapServiceToken.expiresAt) : null
+        ]
+      );
+      tokenRecord = tokenRes.rows[0] || null;
+    }
+
+    await client.query("COMMIT");
+    return {
+      tenant: tenantRes.rows[0] || null,
+      bootstrapUser: userRecord,
+      bootstrapServiceToken: tokenRecord
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function listTenants({ limit = 100, search = "" } = {}) {
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 100;
+  const cleanSearch = String(search || "").trim().toLowerCase();
+  const params = [cleanLimit];
+  const clauses = [];
+  if (cleanSearch) {
+    params.push(`%${cleanSearch}%`);
+    clauses.push(`(
+      LOWER(tenant_id) LIKE $${params.length}
+      OR LOWER(COALESCE(name, '')) LIKE $${params.length}
+      OR LOWER(COALESCE(external_id, '')) LIKE $${params.length}
+    )`);
+  }
+  const res = await pool.query(
+    `SELECT ${TENANT_SELECT_FIELDS},
+            (SELECT COUNT(*)::bigint FROM users u WHERE u.tenant_id = tenants.tenant_id) AS user_count,
+            (SELECT COUNT(*)::bigint FROM service_tokens st WHERE st.tenant_id = tenants.tenant_id AND st.revoked_at IS NULL) AS service_token_count
+     FROM tenants
+     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+     ORDER BY created_at DESC, tenant_id ASC
+     LIMIT $1`,
+    params
+  );
+  return res.rows;
+}
+
 async function getTenantAuthMode(tenantId) {
   const tenant = await getTenantById(tenantId);
   return tenant ? tenant.auth_mode : null;
@@ -1281,8 +1522,12 @@ async function setTenantSsoProviders(tenantId, providers) {
 }
 
 async function setTenantSettings(tenantId, {
+  name,
+  externalId,
+  metadata,
   authMode,
   ssoProviders,
+  ssoConfig,
   answerProvider,
   answerModel,
   booleanAskProvider,
@@ -1295,6 +1540,18 @@ async function setTenantSettings(tenantId, {
   await ensureTenant(tenantId);
   const updates = [];
   const params = [tenantId];
+  if (name !== undefined) {
+    params.push(name || null);
+    updates.push(`name = $${params.length}`);
+  }
+  if (externalId !== undefined) {
+    params.push(externalId || null);
+    updates.push(`external_id = $${params.length}`);
+  }
+  if (metadata !== undefined) {
+    params.push(metadata ? JSON.stringify(metadata) : null);
+    updates.push(`metadata = $${params.length}`);
+  }
   if (authMode !== undefined) {
     params.push(authMode);
     updates.push(`auth_mode = $${params.length}`);
@@ -1302,6 +1559,10 @@ async function setTenantSettings(tenantId, {
   if (ssoProviders !== undefined) {
     params.push(ssoProviders);
     updates.push(`sso_providers = $${params.length}`);
+  }
+  if (ssoConfig !== undefined) {
+    params.push(ssoConfig ? JSON.stringify(ssoConfig) : null);
+    updates.push(`sso_config = $${params.length}`);
   }
   if (answerProvider !== undefined) {
     params.push(answerProvider);
@@ -1360,6 +1621,87 @@ async function createUser({ username, passwordHash, tenantId, roles }) {
   return res.rows[0];
 }
 
+async function listTenantUsers(tenantId) {
+  const res = await pool.query(
+    `SELECT id, username, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name, failed_attempts, lock_until, last_login, created_at
+     FROM users
+     WHERE tenant_id = $1
+     ORDER BY created_at ASC, id ASC`,
+    [tenantId]
+  );
+  return res.rows;
+}
+
+async function getTenantUserById(tenantId, userId) {
+  const res = await pool.query(
+    `SELECT id, username, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name, failed_attempts, lock_until, last_login, created_at
+     FROM users
+     WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, userId]
+  );
+  return res.rows[0] || null;
+}
+
+async function createTenantUser({ tenantId, username, passwordHash, roles, email, fullName, ssoOnly = false, authProvider = null, authSubject = null }) {
+  await ensureTenant(tenantId);
+  const res = await pool.query(
+    `INSERT INTO users(username, password_hash, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name)
+     VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7, $8, $9)
+     RETURNING id, username, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name, failed_attempts, lock_until, last_login, created_at`,
+    [username, passwordHash, tenantId, roles || [], Boolean(ssoOnly), authProvider, authSubject, email || null, fullName || null]
+  );
+  return res.rows[0] || null;
+}
+
+async function updateTenantUser(tenantId, userId, {
+  roles,
+  disabled,
+  passwordHash,
+  email,
+  fullName,
+  ssoOnly
+}) {
+  const updates = [];
+  const params = [tenantId, userId];
+  if (roles !== undefined) {
+    params.push(roles);
+    updates.push(`roles = $${params.length}`);
+  }
+  if (disabled !== undefined) {
+    params.push(Boolean(disabled));
+    updates.push(`disabled = $${params.length}`);
+  }
+  if (passwordHash !== undefined) {
+    params.push(passwordHash);
+    updates.push(`password_hash = $${params.length}`);
+    updates.push(`failed_attempts = 0`);
+    updates.push(`lock_until = NULL`);
+  }
+  if (email !== undefined) {
+    params.push(email || null);
+    updates.push(`email = $${params.length}`);
+  }
+  if (fullName !== undefined) {
+    params.push(fullName || null);
+    updates.push(`full_name = $${params.length}`);
+  }
+  if (ssoOnly !== undefined) {
+    params.push(Boolean(ssoOnly));
+    updates.push(`sso_only = $${params.length}`);
+  }
+  if (updates.length === 0) {
+    return getTenantUserById(tenantId, userId);
+  }
+  const res = await pool.query(
+    `UPDATE users
+     SET ${updates.join(", ")}
+     WHERE tenant_id = $1 AND id = $2
+     RETURNING id, username, tenant_id, roles, disabled, sso_only, auth_provider, auth_subject, email, full_name, failed_attempts, lock_until, last_login, created_at`,
+    params
+  );
+  return res.rows[0] || null;
+}
+
 async function upsertSsoUser({ provider, subject, tenantId, email, fullName, passwordHash }) {
   await ensureTenant(tenantId);
   const username = `${provider}:${subject}`;
@@ -1414,7 +1756,14 @@ async function recordTenantUsage({
   generationInputTokens = 0,
   generationOutputTokens = 0,
   generationTotalTokens = 0,
-  generationRequests = 0
+  generationRequests = 0,
+  eventKind = null,
+  requestId = null,
+  collection = null,
+  source = null,
+  estimated = false,
+  billable = true,
+  metadata = null
 }) {
   await ensureTenant(tenantId);
   const payload = [
@@ -1472,6 +1821,24 @@ async function recordTenantUsage({
 
   await pool.query(rollupSql, [tenantId, "hour", "hour", ...payload.slice(1)]);
   await pool.query(rollupSql, [tenantId, "day", "day", ...payload.slice(1)]);
+
+  const cleanEventKind = String(eventKind || "").trim().toLowerCase();
+  if (cleanEventKind === "embedding" || cleanEventKind === "generation") {
+    await insertTenantUsageHistory({
+      tenantId,
+      eventKind: cleanEventKind,
+      requestId,
+      collection,
+      source,
+      estimated,
+      billable,
+      embeddingTokens: payload[1],
+      generationInputTokens: payload[3],
+      generationOutputTokens: payload[4],
+      generationTotalTokens: payload[5],
+      metadata
+    });
+  }
 }
 
 async function getTenantUsage(tenantId) {
@@ -1542,28 +1909,838 @@ async function getTenantUsageWindow(tenantId, window) {
   };
 }
 
-async function getTenantStorageStats(tenantId) {
-  const pattern = `${tenantId}::%`;
-  const res = await pool.query(
-    `SELECT COUNT(*)::bigint AS chunks,
-            COALESCE(SUM(LENGTH(text)), 0)::bigint AS bytes
-     FROM chunks
-     WHERE doc_id LIKE $1`,
-    [pattern]
+async function insertTenantUsageHistory({
+  tenantId,
+  eventKind,
+  requestId = null,
+  collection = null,
+  source = null,
+  estimated = false,
+  billable = true,
+  embeddingTokens = 0,
+  generationInputTokens = 0,
+  generationOutputTokens = 0,
+  generationTotalTokens = 0,
+  storageBytesDelta = 0,
+  storageBytesTotal = 0,
+  storageChunksDelta = 0,
+  storageChunksTotal = 0,
+  storageDocumentsDelta = 0,
+  storageDocumentsTotal = 0,
+  storageMemoryItemsDelta = 0,
+  storageMemoryItemsTotal = 0,
+  storageCollectionsDelta = 0,
+  storageCollectionsTotal = 0,
+  metadata = null
+}) {
+  await pool.query(
+    `INSERT INTO tenant_usage_history(
+        tenant_id,
+        event_kind,
+        request_id,
+        collection,
+        source,
+        estimated,
+        billable,
+        embedding_tokens,
+        generation_input_tokens,
+        generation_output_tokens,
+        generation_total_tokens,
+        storage_bytes_delta,
+        storage_bytes_total,
+        storage_chunks_delta,
+        storage_chunks_total,
+        storage_documents_delta,
+        storage_documents_total,
+        storage_memory_items_delta,
+        storage_memory_items_total,
+        storage_collections_delta,
+        storage_collections_total,
+        metadata
+      )
+     VALUES (
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10, $11,
+       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+       $22
+     )`,
+    [
+      tenantId,
+      eventKind,
+      requestId || null,
+      collection || null,
+      source || null,
+      estimated === true,
+      billable !== false,
+      Number(embeddingTokens || 0),
+      Number(generationInputTokens || 0),
+      Number(generationOutputTokens || 0),
+      Number(generationTotalTokens || 0),
+      Number(storageBytesDelta || 0),
+      Number(storageBytesTotal || 0),
+      Number(storageChunksDelta || 0),
+      Number(storageChunksTotal || 0),
+      Number(storageDocumentsDelta || 0),
+      Number(storageDocumentsTotal || 0),
+      Number(storageMemoryItemsDelta || 0),
+      Number(storageMemoryItemsTotal || 0),
+      Number(storageCollectionsDelta || 0),
+      Number(storageCollectionsTotal || 0),
+      metadata ? JSON.stringify(metadata) : null
+    ]
   );
-  return res.rows[0] || { chunks: 0, bytes: 0 };
 }
 
-async function getTenantItemStats(tenantId) {
+function resolveUsageWindowClause(window) {
+  const win = String(window || "all").toLowerCase();
+  if (win === "24h" || win === "24hr" || win === "1d") {
+    return "created_at >= NOW() - INTERVAL '24 hours'";
+  }
+  if (win === "7d" || win === "7day" || win === "7days") {
+    return "created_at >= NOW() - INTERVAL '7 days'";
+  }
+  return "";
+}
+
+async function getTenantBillableGenerationUsageWindow(tenantId, window) {
+  const clause = resolveUsageWindowClause(window);
+  const where = [
+    "tenant_id = $1",
+    "event_kind = 'generation'",
+    "billable = TRUE"
+  ];
+  if (clause) where.push(clause);
   const res = await pool.query(
-    `SELECT COUNT(*) FILTER (WHERE item_type = 'artifact')::bigint AS documents,
-            COUNT(*)::bigint AS memory_items,
-            COUNT(DISTINCT collection)::bigint AS collections
-     FROM memory_items
+    `SELECT COALESCE(SUM(generation_total_tokens), 0)::bigint AS generation_total_tokens
+     FROM tenant_usage_history
+     WHERE ${where.join(" AND ")}`,
+    [tenantId]
+  );
+  return {
+    generation_total_tokens: Number(res.rows[0]?.generation_total_tokens || 0)
+  };
+}
+
+async function listTenantUsageHistory(tenantId, options = {}) {
+  const cleanLimit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.min(Math.floor(options.limit), 200)
+    : 50;
+  const clause = resolveUsageWindowClause(options.window);
+  const where = ["tenant_id = $1"];
+  if (clause) where.push(clause);
+  const res = await pool.query(
+    `SELECT id,
+            tenant_id,
+            event_kind,
+            request_id,
+            collection,
+            source,
+            estimated,
+            billable,
+            embedding_tokens,
+            generation_input_tokens,
+            generation_output_tokens,
+            generation_total_tokens,
+            storage_bytes_delta,
+            storage_bytes_total,
+            storage_chunks_delta,
+            storage_chunks_total,
+            storage_documents_delta,
+            storage_documents_total,
+            storage_memory_items_delta,
+            storage_memory_items_total,
+            storage_collections_delta,
+            storage_collections_total,
+            metadata,
+            created_at
+     FROM tenant_usage_history
+     WHERE ${where.join(" AND ")}
+     ORDER BY created_at DESC, id DESC
+     LIMIT $2`,
+    [tenantId, cleanLimit]
+  );
+  return res.rows;
+}
+
+function normalizeStorageUsageRow(row) {
+  const normalized = normalizeStorageBreakdown({
+    chunk_text_bytes: row?.chunk_text_bytes,
+    metadata_bytes: row?.metadata_bytes,
+    vector_bytes: row?.vector_bytes,
+    vector_dim: row?.vector_dim,
+    chunks: row?.chunks,
+    documents: row?.documents,
+    memory_items: row?.memory_items,
+    collections: row?.collections
+  });
+  return {
+    ...normalized,
+    formula_version: row?.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+    updated_at: row?.updated_at || null
+  };
+}
+
+function normalizeStorageBillingStateRow(row) {
+  return {
+    tenant_id: row?.tenant_id || null,
+    current_bytes: Number(row?.current_bytes || 0),
+    current_chunk_text_bytes: Number(row?.current_chunk_text_bytes || 0),
+    current_metadata_bytes: Number(row?.current_metadata_bytes || 0),
+    current_vector_bytes: Number(row?.current_vector_bytes || 0),
+    current_vector_dim: Number(row?.current_vector_dim || 0),
+    formula_version: row?.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+    last_accrued_at: row?.last_accrued_at || null,
+    updated_at: row?.updated_at || null
+  };
+}
+
+function normalizeStorageBillingPeriodRow(row) {
+  return {
+    tenant_id: row?.tenant_id || null,
+    period_start: row?.period_start || null,
+    period_end: row?.period_end || null,
+    storage_byte_seconds: Number(row?.storage_byte_seconds || 0),
+    closing_bytes: Number(row?.closing_bytes || 0),
+    closing_chunk_text_bytes: Number(row?.closing_chunk_text_bytes || 0),
+    closing_metadata_bytes: Number(row?.closing_metadata_bytes || 0),
+    closing_vector_bytes: Number(row?.closing_vector_bytes || 0),
+    closing_vector_dim: Number(row?.closing_vector_dim || 0),
+    formula_version: row?.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+    last_event_at: row?.last_event_at || null,
+    closed_at: row?.closed_at || null,
+    updated_at: row?.updated_at || null
+  };
+}
+
+async function queryTenantStorageSnapshot(executor, tenantId, options = {}) {
+  const cleanVectorDim = Number.isFinite(options.vectorDim) && options.vectorDim > 0
+    ? Math.floor(options.vectorDim)
+    : 0;
+  const pattern = `${tenantId}::%`;
+  const res = await executor.query(
+    `WITH chunk_stats AS (
+        SELECT COUNT(*)::bigint AS chunks,
+               COALESCE(SUM(octet_length(text)), 0)::bigint AS chunk_text_bytes
+        FROM chunks
+        WHERE doc_id LIKE $2
+      ),
+      item_stats AS (
+        SELECT COUNT(*) FILTER (WHERE item_type = 'artifact')::bigint AS documents,
+               COUNT(*)::bigint AS memory_items,
+               COUNT(DISTINCT collection)::bigint AS collections,
+               COALESCE(SUM(${MEMORY_ITEM_STORAGE_BYTES_EXPR}), 0)::bigint AS metadata_bytes
+        FROM memory_items
+        WHERE tenant_id = $1
+      )
+      SELECT chunk_stats.chunks,
+             chunk_stats.chunk_text_bytes,
+             item_stats.metadata_bytes,
+             item_stats.documents,
+             item_stats.memory_items,
+             item_stats.collections
+      FROM chunk_stats
+      CROSS JOIN item_stats`,
+    [tenantId, pattern]
+  );
+  const row = res.rows[0] || {};
+  const normalized = normalizeStorageBreakdown({
+    chunk_text_bytes: row.chunk_text_bytes,
+    metadata_bytes: row.metadata_bytes,
+    vector_bytes: estimateVectorBytes({
+      chunkCount: row.chunks,
+      vectorDim: cleanVectorDim
+    }),
+    vector_dim: cleanVectorDim,
+    chunks: row.chunks,
+    documents: row.documents,
+    memory_items: row.memory_items,
+    collections: row.collections
+  });
+  return {
+    ...normalized,
+    formula_version: STORAGE_BILLING_FORMULA_VERSION,
+    updated_at: null
+  };
+}
+
+async function getTenantStorageSnapshot(tenantId, options = {}) {
+  return queryTenantStorageSnapshot(pool, tenantId, options);
+}
+
+async function getTenantStorageUsage(tenantId) {
+  const res = await pool.query(
+    `SELECT bytes,
+            chunk_text_bytes,
+            metadata_bytes,
+            vector_bytes,
+            vector_dim,
+            formula_version,
+            chunks,
+            documents,
+            memory_items,
+            collections,
+            updated_at
+     FROM tenant_storage_usage
      WHERE tenant_id = $1`,
     [tenantId]
   );
-  return res.rows[0] || { documents: 0, memory_items: 0, collections: 0 };
+  if (!res.rows.length) return null;
+  return normalizeStorageUsageRow(res.rows[0]);
+}
+
+async function getTenantStorageBillingState(tenantId) {
+  const res = await pool.query(
+    `SELECT tenant_id,
+            current_bytes,
+            current_chunk_text_bytes,
+            current_metadata_bytes,
+            current_vector_bytes,
+            current_vector_dim,
+            formula_version,
+            last_accrued_at,
+            updated_at
+     FROM tenant_storage_billing_state
+     WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  return res.rows.length ? normalizeStorageBillingStateRow(res.rows[0]) : null;
+}
+
+async function getCurrentTenantStorageBillingPeriod(tenantId, options = {}) {
+  const { periodStart } = buildUtcMonthWindow(options.now || new Date());
+  const res = await pool.query(
+    `SELECT tenant_id,
+            period_start,
+            period_end,
+            storage_byte_seconds,
+            closing_bytes,
+            closing_chunk_text_bytes,
+            closing_metadata_bytes,
+            closing_vector_bytes,
+            closing_vector_dim,
+            formula_version,
+            last_event_at,
+            closed_at,
+            updated_at
+     FROM tenant_storage_billing_periods
+     WHERE tenant_id = $1 AND period_start = $2`,
+    [tenantId, periodStart]
+  );
+  return res.rows.length ? normalizeStorageBillingPeriodRow(res.rows[0]) : null;
+}
+
+async function listTenantStorageBillingPeriods(tenantId, options = {}) {
+  const cleanLimit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.min(Math.floor(options.limit), 24)
+    : 6;
+  const res = await pool.query(
+    `SELECT tenant_id,
+            period_start,
+            period_end,
+            storage_byte_seconds,
+            closing_bytes,
+            closing_chunk_text_bytes,
+            closing_metadata_bytes,
+            closing_vector_bytes,
+            closing_vector_dim,
+            formula_version,
+            last_event_at,
+            closed_at,
+            updated_at
+     FROM tenant_storage_billing_periods
+     WHERE tenant_id = $1
+     ORDER BY period_start DESC
+     LIMIT $2`,
+    [tenantId, cleanLimit]
+  );
+  return res.rows.map(normalizeStorageBillingPeriodRow);
+}
+
+async function listTenantIdsWithStorageBillingState(options = {}) {
+  const cleanLimit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.min(Math.floor(options.limit), 500)
+    : 100;
+  const afterTenantId = options.afterTenantId ? String(options.afterTenantId) : null;
+  const params = afterTenantId ? [afterTenantId, cleanLimit] : [cleanLimit];
+  const res = await pool.query(
+    afterTenantId
+      ? `SELECT tenant_id
+         FROM (
+           SELECT tenant_id FROM tenant_storage_billing_state
+           UNION
+           SELECT tenant_id FROM tenant_storage_usage
+         ) storage_tenants
+         WHERE tenant_id > $1
+         ORDER BY tenant_id ASC
+         LIMIT $2`
+      : `SELECT tenant_id
+         FROM (
+           SELECT tenant_id FROM tenant_storage_billing_state
+           UNION
+           SELECT tenant_id FROM tenant_storage_usage
+         ) storage_tenants
+         ORDER BY tenant_id ASC
+         LIMIT $1`,
+    params
+  );
+  return res.rows.map((row) => String(row.tenant_id || "").trim()).filter(Boolean);
+}
+
+async function loadOrSeedTenantStorageBillingState(client, { tenantId, seedSnapshot, now }) {
+  const existing = await client.query(
+    `SELECT tenant_id,
+            current_bytes,
+            current_chunk_text_bytes,
+            current_metadata_bytes,
+            current_vector_bytes,
+            current_vector_dim,
+            formula_version,
+            last_accrued_at,
+            updated_at
+     FROM tenant_storage_billing_state
+     WHERE tenant_id = $1
+     FOR UPDATE`,
+    [tenantId]
+  );
+  if (existing.rows.length) {
+    return normalizeStorageBillingStateRow(existing.rows[0]);
+  }
+
+  const seed = normalizeStorageUsageRow(seedSnapshot || {});
+  const seededAtRaw = seedSnapshot?.updated_at ? new Date(seedSnapshot.updated_at) : now;
+  const seededAt = Number.isNaN(seededAtRaw?.getTime?.()) ? now : seededAtRaw;
+  const res = await client.query(
+    `INSERT INTO tenant_storage_billing_state(
+        tenant_id,
+        current_bytes,
+        current_chunk_text_bytes,
+        current_metadata_bytes,
+        current_vector_bytes,
+        current_vector_dim,
+        formula_version,
+        last_accrued_at
+      )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (tenant_id) DO UPDATE SET
+       current_bytes = tenant_storage_billing_state.current_bytes
+     RETURNING tenant_id,
+               current_bytes,
+               current_chunk_text_bytes,
+               current_metadata_bytes,
+               current_vector_bytes,
+               current_vector_dim,
+               formula_version,
+               last_accrued_at,
+               updated_at`,
+    [
+      tenantId,
+      seed.bytes,
+      seed.chunk_text_bytes,
+      seed.metadata_bytes,
+      seed.vector_bytes,
+      seed.vector_dim,
+      seed.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+      seededAt
+    ]
+  );
+  return normalizeStorageBillingStateRow(res.rows[0]);
+}
+
+async function upsertTenantStorageBillingPeriod(client, {
+  tenantId,
+  periodStart,
+  periodEnd,
+  storageByteSeconds = 0,
+  snapshot,
+  lastEventAt,
+  closedAt = null
+}) {
+  const normalized = normalizeStorageUsageRow(snapshot || {});
+  await client.query(
+    `INSERT INTO tenant_storage_billing_periods(
+        tenant_id,
+        period_start,
+        period_end,
+        storage_byte_seconds,
+        closing_bytes,
+        closing_chunk_text_bytes,
+        closing_metadata_bytes,
+        closing_vector_bytes,
+        closing_vector_dim,
+        formula_version,
+        last_event_at,
+        closed_at
+      )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (tenant_id, period_start) DO UPDATE SET
+       period_end = EXCLUDED.period_end,
+       storage_byte_seconds = tenant_storage_billing_periods.storage_byte_seconds + EXCLUDED.storage_byte_seconds,
+       closing_bytes = EXCLUDED.closing_bytes,
+       closing_chunk_text_bytes = EXCLUDED.closing_chunk_text_bytes,
+       closing_metadata_bytes = EXCLUDED.closing_metadata_bytes,
+       closing_vector_bytes = EXCLUDED.closing_vector_bytes,
+       closing_vector_dim = EXCLUDED.closing_vector_dim,
+       formula_version = EXCLUDED.formula_version,
+       last_event_at = EXCLUDED.last_event_at,
+       closed_at = CASE
+         WHEN EXCLUDED.closed_at IS NOT NULL THEN EXCLUDED.closed_at
+         ELSE tenant_storage_billing_periods.closed_at
+       END,
+       updated_at = NOW()`,
+    [
+      tenantId,
+      periodStart,
+      periodEnd,
+      Number(storageByteSeconds || 0),
+      normalized.bytes,
+      normalized.chunk_text_bytes,
+      normalized.metadata_bytes,
+      normalized.vector_bytes,
+      normalized.vector_dim,
+      normalized.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+      lastEventAt || null,
+      closedAt || null
+    ]
+  );
+}
+
+async function accrueTenantStorageBillingStateTx(client, { tenantId, now, state }) {
+  const currentState = state ? normalizeStorageBillingStateRow(state) : await loadOrSeedTenantStorageBillingState(client, {
+    tenantId,
+    seedSnapshot: null,
+    now
+  });
+  const lastAccruedAt = currentState.last_accrued_at ? new Date(currentState.last_accrued_at) : null;
+  if (!lastAccruedAt || now <= lastAccruedAt) {
+    return currentState;
+  }
+
+  const segments = splitRangeByUtcMonth(lastAccruedAt, now);
+  for (const segment of segments) {
+    const storageByteSeconds = currentState.current_bytes > 0
+      ? currentState.current_bytes * Number(segment.elapsedSeconds || 0)
+      : 0;
+    const closesPeriod = segment.segmentEnd.getTime() === segment.periodEnd.getTime();
+    if (storageByteSeconds > 0 || closesPeriod) {
+      await upsertTenantStorageBillingPeriod(client, {
+        tenantId,
+        periodStart: segment.periodStart,
+        periodEnd: segment.periodEnd,
+        storageByteSeconds,
+        snapshot: {
+          bytes: currentState.current_bytes,
+          chunk_text_bytes: currentState.current_chunk_text_bytes,
+          metadata_bytes: currentState.current_metadata_bytes,
+          vector_bytes: currentState.current_vector_bytes,
+          vector_dim: currentState.current_vector_dim
+        },
+        lastEventAt: segment.segmentEnd,
+        closedAt: closesPeriod ? segment.periodEnd : null
+      });
+    }
+  }
+
+  await client.query(
+    `UPDATE tenant_storage_billing_state
+     SET last_accrued_at = $2,
+         updated_at = NOW()
+     WHERE tenant_id = $1`,
+    [tenantId, now]
+  );
+
+  return {
+    ...currentState,
+    last_accrued_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+}
+
+async function updateTenantStorageBillingStateCurrentTx(client, { tenantId, snapshot, now }) {
+  const normalized = normalizeStorageUsageRow(snapshot || {});
+  await client.query(
+    `INSERT INTO tenant_storage_billing_state(
+        tenant_id,
+        current_bytes,
+        current_chunk_text_bytes,
+        current_metadata_bytes,
+        current_vector_bytes,
+        current_vector_dim,
+        formula_version,
+        last_accrued_at
+      )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (tenant_id) DO UPDATE SET
+       current_bytes = EXCLUDED.current_bytes,
+       current_chunk_text_bytes = EXCLUDED.current_chunk_text_bytes,
+       current_metadata_bytes = EXCLUDED.current_metadata_bytes,
+       current_vector_bytes = EXCLUDED.current_vector_bytes,
+       current_vector_dim = EXCLUDED.current_vector_dim,
+       formula_version = EXCLUDED.formula_version,
+       updated_at = NOW()`,
+    [
+      tenantId,
+      normalized.bytes,
+      normalized.chunk_text_bytes,
+      normalized.metadata_bytes,
+      normalized.vector_bytes,
+      normalized.vector_dim,
+      normalized.formula_version || STORAGE_BILLING_FORMULA_VERSION,
+      now
+    ]
+  );
+}
+
+async function touchCurrentTenantStorageBillingPeriodTx(client, { tenantId, snapshot, now }) {
+  const { periodStart, periodEnd } = buildUtcMonthWindow(now);
+  await upsertTenantStorageBillingPeriod(client, {
+    tenantId,
+    periodStart,
+    periodEnd,
+    storageByteSeconds: 0,
+    snapshot,
+    lastEventAt: now,
+    closedAt: null
+  });
+}
+
+async function syncTenantStorageUsage({
+  tenantId,
+  requestId = null,
+  collection = null,
+  source = null,
+  metadata = null,
+  recordHistory = true,
+  vectorDim = 0,
+  now = new Date()
+}) {
+  await ensureTenant(tenantId);
+  const currentTime = now instanceof Date ? now : new Date(now);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const previousRes = await client.query(
+      `SELECT bytes,
+              chunk_text_bytes,
+              metadata_bytes,
+              vector_bytes,
+              vector_dim,
+              formula_version,
+              chunks,
+              documents,
+              memory_items,
+              collections,
+              updated_at
+       FROM tenant_storage_usage
+       WHERE tenant_id = $1
+       FOR UPDATE`,
+      [tenantId]
+    );
+    const previous = previousRes.rows.length
+      ? normalizeStorageUsageRow(previousRes.rows[0])
+      : normalizeStorageUsageRow(null);
+    const current = await queryTenantStorageSnapshot(client, tenantId, { vectorDim });
+
+    await client.query(
+      `INSERT INTO tenant_storage_usage(
+          tenant_id,
+          bytes,
+          chunk_text_bytes,
+          metadata_bytes,
+          vector_bytes,
+          vector_dim,
+          formula_version,
+          chunks,
+          documents,
+          memory_items,
+          collections
+        )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         bytes = EXCLUDED.bytes,
+         chunk_text_bytes = EXCLUDED.chunk_text_bytes,
+         metadata_bytes = EXCLUDED.metadata_bytes,
+         vector_bytes = EXCLUDED.vector_bytes,
+         vector_dim = EXCLUDED.vector_dim,
+         formula_version = EXCLUDED.formula_version,
+         chunks = EXCLUDED.chunks,
+         documents = EXCLUDED.documents,
+         memory_items = EXCLUDED.memory_items,
+         collections = EXCLUDED.collections,
+         updated_at = NOW()`,
+      [
+        tenantId,
+        current.bytes,
+        current.chunk_text_bytes,
+        current.metadata_bytes,
+        current.vector_bytes,
+        current.vector_dim,
+        current.formula_version,
+        current.chunks,
+        current.documents,
+        current.memory_items,
+        current.collections
+      ]
+    );
+
+    const state = await loadOrSeedTenantStorageBillingState(client, {
+      tenantId,
+      seedSnapshot: previousRes.rows.length ? previous : null,
+      now: currentTime
+    });
+    await accrueTenantStorageBillingStateTx(client, {
+      tenantId,
+      now: currentTime,
+      state
+    });
+    await updateTenantStorageBillingStateCurrentTx(client, {
+      tenantId,
+      snapshot: current,
+      now: currentTime
+    });
+    await touchCurrentTenantStorageBillingPeriodTx(client, {
+      tenantId,
+      snapshot: current,
+      now: currentTime
+    });
+
+    const delta = {
+      bytes: current.bytes - previous.bytes,
+      chunk_text_bytes: current.chunk_text_bytes - previous.chunk_text_bytes,
+      metadata_bytes: current.metadata_bytes - previous.metadata_bytes,
+      vector_bytes: current.vector_bytes - previous.vector_bytes,
+      chunks: current.chunks - previous.chunks,
+      documents: current.documents - previous.documents,
+      memory_items: current.memory_items - previous.memory_items,
+      collections: current.collections - previous.collections
+    };
+
+    const changed = Object.values(delta).some((value) => Number(value) !== 0);
+    if (recordHistory && changed) {
+      await client.query(
+        `INSERT INTO tenant_usage_history(
+            tenant_id,
+            event_kind,
+            request_id,
+            collection,
+            source,
+            estimated,
+            billable,
+            storage_bytes_delta,
+            storage_bytes_total,
+            storage_chunks_delta,
+            storage_chunks_total,
+            storage_documents_delta,
+            storage_documents_total,
+            storage_memory_items_delta,
+            storage_memory_items_total,
+            storage_collections_delta,
+            storage_collections_total,
+            metadata
+          )
+         VALUES (
+           $1, 'storage', $2, $3, $4, FALSE, TRUE,
+           $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+         )`,
+        [
+          tenantId,
+          requestId || null,
+          collection || null,
+          source || null,
+          delta.bytes,
+          current.bytes,
+          delta.chunks,
+          current.chunks,
+          delta.documents,
+          current.documents,
+          delta.memory_items,
+          current.memory_items,
+          delta.collections,
+          current.collections,
+          JSON.stringify({
+            ...(metadata || {}),
+            formulaVersion: current.formula_version,
+            storageComponents: {
+              chunkTextBytesDelta: delta.chunk_text_bytes,
+              chunkTextBytesTotal: current.chunk_text_bytes,
+              metadataBytesDelta: delta.metadata_bytes,
+              metadataBytesTotal: current.metadata_bytes,
+              vectorBytesDelta: delta.vector_bytes,
+              vectorBytesTotal: current.vector_bytes,
+              vectorDim: current.vector_dim
+            }
+          })
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+    return {
+      previous,
+      current,
+      delta,
+      changed
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function accrueTenantStorageBillingState({ tenantId, now = new Date() }) {
+  await ensureTenant(tenantId);
+  const currentTime = now instanceof Date ? now : new Date(now);
+  const seedSnapshot = await getTenantStorageUsage(tenantId) || await getTenantStorageSnapshot(tenantId);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const state = await loadOrSeedTenantStorageBillingState(client, {
+      tenantId,
+      seedSnapshot,
+      now: currentTime
+    });
+    const updatedState = await accrueTenantStorageBillingStateTx(client, {
+      tenantId,
+      now: currentTime,
+      state
+    });
+    await touchCurrentTenantStorageBillingPeriodTx(client, {
+      tenantId,
+      snapshot: {
+        bytes: updatedState.current_bytes,
+        chunk_text_bytes: updatedState.current_chunk_text_bytes,
+        metadata_bytes: updatedState.current_metadata_bytes,
+        vector_bytes: updatedState.current_vector_bytes,
+        vector_dim: updatedState.current_vector_dim
+      },
+      now: currentTime
+    });
+    await client.query("COMMIT");
+    return updatedState;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function getTenantStorageStats(tenantId, options = {}) {
+  const snapshot = await getTenantStorageSnapshot(tenantId, options);
+  return {
+    chunks: snapshot.chunks,
+    bytes: snapshot.bytes
+  };
+}
+
+async function getTenantItemStats(tenantId, options = {}) {
+  const snapshot = await getTenantStorageSnapshot(tenantId, options);
+  return {
+    documents: snapshot.documents,
+    memory_items: snapshot.memory_items,
+    collections: snapshot.collections
+  };
 }
 
 async function getMemoryStateSnapshot(tenantId) {
@@ -1683,6 +2860,7 @@ module.exports = {
   countMemoryItemsByTier,
   getMemoryItemById,
   deleteMemoryItemById,
+  deleteMemoryItemByNamespaceId,
   getArtifactByExternalId,
   listExpiredMemoryItems,
   listExpiredMemoryItemsGlobal,
@@ -1694,25 +2872,43 @@ module.exports = {
   listMemoryItemsForRedundancy,
   listMemoryItemsForLifecycle,
   createAuditLog,
+  listAuditLogs,
   createMemoryLink,
   createMemoryJob,
   claimMemoryJob,
   updateMemoryJob,
   getMemoryJobById,
   ensureTenant,
+  listTenants,
   getUserByUsername,
+  createTenant,
+  createTenantWithBootstrap,
   getTenantById,
   getTenantAuthMode,
   setTenantAuthMode,
   setTenantSsoProviders,
   setTenantSettings,
   createUser,
+  listTenantUsers,
+  getTenantUserById,
+  createTenantUser,
+  updateTenantUser,
   upsertSsoUser,
   recordFailedLogin,
   recordSuccessfulLogin,
   recordTenantUsage,
   getTenantUsage,
   getTenantUsageWindow,
+  getTenantBillableGenerationUsageWindow,
+  listTenantUsageHistory,
+  getTenantStorageUsage,
+  getTenantStorageSnapshot,
+  getTenantStorageBillingState,
+  getCurrentTenantStorageBillingPeriod,
+  listTenantStorageBillingPeriods,
+  listTenantIdsWithStorageBillingState,
+  syncTenantStorageUsage,
+  accrueTenantStorageBillingState,
   getTenantStorageStats,
   getTenantItemStats,
   getMemoryStateSnapshot,
@@ -1722,6 +2918,8 @@ module.exports = {
   completeIdempotencyKey,
   createServiceToken,
   listServiceTokens,
+  countTenantUsers,
+  countTenantServiceTokens,
   getServiceTokenByHash,
   recordServiceTokenUse,
   revokeServiceToken,

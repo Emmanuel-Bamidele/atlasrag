@@ -50,7 +50,26 @@ const MAMMOTH_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/ma
 const externalScriptCache = new Map();
 const DOC_CONNECT_BASE_URL_PLACEHOLDER = "https://YOUR_SUPAVECTOR_BASE_URL";
 const DOC_CONNECT_SERVER_NAME = "supavector-docs";
+const TENANT_SSO_PROVIDER_META = Object.freeze({
+  google: { label: "Google", prefix: "tenantSsoGoogle", loginButtonId: "ssoLoginGoogleBtn" },
+  azure: { label: "Azure", prefix: "tenantSsoAzure", loginButtonId: "ssoLoginAzureBtn" },
+  okta: { label: "Okta", prefix: "tenantSsoOkta", loginButtonId: "ssoLoginOktaBtn" }
+});
+const DEFAULT_RUNTIME_UI_CONFIG = Object.freeze({
+  deploymentMode: "self_hosted",
+  capabilities: {
+    dashboardControlPlane: false,
+    localGatewayAdmin: true,
+    hostedBilling: false,
+    portalEnabled: false
+  },
+  links: {
+    dashboardUrl: null
+  }
+});
 let modelCatalogLoaded = false;
+let runtimeUiConfig = DEFAULT_RUNTIME_UI_CONFIG;
+let docsSubmenuVisible = false;
 
 function setModelDatalistOptions(listId, models){
   const list = $(listId);
@@ -324,7 +343,9 @@ function escapeHtml(s){
   return String(s)
     .replaceAll("&","&amp;")
     .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;");
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
 }
 
 function formatNumber(value){
@@ -368,6 +389,199 @@ function formatBytes(value){
   }
   const precision = size >= 10 || idx === 0 ? 0 : 1;
   return `${size.toFixed(precision)} ${units[idx]}`;
+}
+
+function formatDateTime(value){
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+
+function splitCommaList(value){
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseJsonObjectField(value, label){
+  const raw = String(value || "").trim();
+  if (!raw) return {};
+  let parsed;
+  try{
+    parsed = JSON.parse(raw);
+  }catch(_err){
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)){
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+function setSsoLoginButtonsEnabled(states = {}){
+  Object.entries(TENANT_SSO_PROVIDER_META).forEach(([provider, meta]) => {
+    const btn = $(meta.loginButtonId);
+    if (!btn) return;
+    btn.disabled = !states[provider];
+  });
+}
+
+function updateTenantSsoSecretState(provider, config = {}){
+  const meta = TENANT_SSO_PROVIDER_META[provider];
+  if (!meta) return;
+  const prefix = meta.prefix;
+  const secretInput = $(`${prefix}ClientSecret`);
+  const secretState = $(`${prefix}SecretState`);
+  const hasClientSecret = Boolean(config?.hasClientSecret);
+  if (secretInput) {
+    secretInput.value = "";
+    secretInput.placeholder = hasClientSecret
+      ? "leave blank to keep saved secret"
+      : "optional unless required by provider";
+  }
+  if (secretState) {
+    secretState.textContent = hasClientSecret
+      ? "Tenant-scoped client secret is already saved."
+      : "No tenant-scoped client secret saved.";
+  }
+  const clearSecret = $(`${prefix}ClearClientSecret`);
+  if (clearSecret) clearSecret.checked = false;
+}
+
+function getTenantSsoProviderForm(provider){
+  const meta = TENANT_SSO_PROVIDER_META[provider];
+  if (!meta) return {};
+  const prefix = meta.prefix;
+  const payload = {
+    enabled: Boolean($(`${prefix}Enabled`)?.checked),
+    clientId: String($(`${prefix}ClientId`)?.value || "").trim(),
+    issuer: String($(`${prefix}Issuer`)?.value || "").trim(),
+    scopes: String($(`${prefix}Scopes`)?.value || "").trim(),
+    tenantClaim: String($(`${prefix}TenantClaim`)?.value || "").trim(),
+    roleClaim: String($(`${prefix}RoleClaim`)?.value || "").trim(),
+    allowedDomains: splitCommaList($(`${prefix}AllowedDomains`)?.value || ""),
+    defaultRoles: splitCommaList($(`${prefix}DefaultRoles`)?.value || ""),
+    roleMappings: parseJsonObjectField($(`${prefix}RoleMappings`)?.value || "", `${meta.label} role mappings`)
+  };
+  const clientSecret = String($(`${prefix}ClientSecret`)?.value || "").trim();
+  if (clientSecret) {
+    payload.clientSecret = clientSecret;
+  }
+  if ($(`${prefix}ClearClientSecret`)?.checked) {
+    payload.clearClientSecret = true;
+  }
+  return payload;
+}
+
+function setTenantSsoProviderForm(provider, config = {}){
+  const meta = TENANT_SSO_PROVIDER_META[provider];
+  if (!meta) return;
+  const prefix = meta.prefix;
+  if ($(`${prefix}Enabled`)) $(`${prefix}Enabled`).checked = Boolean(config.enabled);
+  if ($(`${prefix}ClientId`)) $(`${prefix}ClientId`).value = config.clientId || "";
+  if ($(`${prefix}Issuer`)) $(`${prefix}Issuer`).value = config.issuer || "";
+  if ($(`${prefix}Scopes`)) $(`${prefix}Scopes`).value = config.scopes || "";
+  if ($(`${prefix}TenantClaim`)) $(`${prefix}TenantClaim`).value = config.tenantClaim || "";
+  if ($(`${prefix}RoleClaim`)) $(`${prefix}RoleClaim`).value = config.roleClaim || "";
+  if ($(`${prefix}AllowedDomains`)) $(`${prefix}AllowedDomains`).value = Array.isArray(config.allowedDomains) ? config.allowedDomains.join(", ") : "";
+  if ($(`${prefix}DefaultRoles`)) $(`${prefix}DefaultRoles`).value = Array.isArray(config.defaultRoles) ? config.defaultRoles.join(", ") : "";
+  if ($(`${prefix}RoleMappings`)) {
+    const mappings = config.roleMappings && typeof config.roleMappings === "object" && !Array.isArray(config.roleMappings)
+      ? config.roleMappings
+      : {};
+    $(`${prefix}RoleMappings`).value = Object.keys(mappings).length ? JSON.stringify(mappings, null, 2) : "";
+  }
+  updateTenantSsoSecretState(provider, config);
+}
+
+function applyTenantSsoConfig(config = {}){
+  Object.keys(TENANT_SSO_PROVIDER_META).forEach((provider) => {
+    setTenantSsoProviderForm(provider, config?.[provider] || {});
+  });
+}
+
+function collectTenantSsoConfig(){
+  const out = {};
+  Object.keys(TENANT_SSO_PROVIDER_META).forEach((provider) => {
+    out[provider] = getTenantSsoProviderForm(provider);
+  });
+  return out;
+}
+
+function renderTenantUsers(users){
+  const wrap = $("tenantUsersTableWrap");
+  if (!wrap) return;
+  const list = Array.isArray(users) ? users : [];
+  if (!list.length){
+    wrap.innerHTML = '<div class="hint">No tenant users found yet. SSO users appear here after their first successful login.</div>';
+    return;
+  }
+
+  const rows = list.map((user) => {
+    const id = Number(user?.id || 0);
+    const roles = Array.isArray(user?.roles) ? user.roles.join(",") : "";
+    const authLabel = user?.authProvider
+      ? `SSO (${escapeHtml(user.authProvider)})`
+      : "Local password";
+    return `<tr>
+      <td>
+        <div class="doc-label">${escapeHtml(user?.username || "-")}</div>
+        <div class="hint">${authLabel}</div>
+        <div class="hint">Created ${escapeHtml(formatDateTime(user?.createdAt))}</div>
+        <div class="hint">Last login ${escapeHtml(formatDateTime(user?.lastLogin))}</div>
+      </td>
+      <td>
+        <input id="tenantUserRoles_${id}" value="${escapeHtml(roles)}" placeholder="admin,indexer,reader">
+      </td>
+      <td>
+        <input id="tenantUserFullName_${id}" value="${escapeHtml(user?.fullName || "")}" placeholder="Full name" style="margin-bottom:8px;">
+        <input id="tenantUserEmail_${id}" value="${escapeHtml(user?.email || "")}" placeholder="Email">
+      </td>
+      <td>
+        <label class="check"><input type="checkbox" id="tenantUserDisabled_${id}" ${user?.disabled ? "checked" : ""}> Disabled</label>
+        <label class="check"><input type="checkbox" id="tenantUserSsoOnly_${id}" ${user?.ssoOnly ? "checked" : ""}> SSO only</label>
+      </td>
+      <td>
+        <input id="tenantUserPassword_${id}" type="password" placeholder="new password (optional)">
+      </td>
+      <td>
+        <button class="btn secondary" data-tenant-user-save="${id}">Save</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  wrap.innerHTML = `<table class="table">
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Roles</th>
+        <th>Profile</th>
+        <th>Flags</th>
+        <th>Password reset</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  wrap.querySelectorAll("button[data-tenant-user-save]").forEach((btn) => {
+    btn.addEventListener("click", () => saveTenantUser(btn.dataset.tenantUserSave));
+  });
+}
+
+function describeSsoProviderStatus(provider, info){
+  const meta = TENANT_SSO_PROVIDER_META[provider];
+  const label = meta?.label || provider;
+  if (info?.enabled) {
+    const source = info?.source === "tenant" ? "tenant override" : "instance fallback";
+    return `${label}: ready (${source})`;
+  }
+  if (info?.reason === "provider_not_allowed") return `${label}: disabled for this tenant`;
+  if (info?.reason === "auth_mode_disabled") return `${label}: blocked by password-only auth mode`;
+  if (info?.reason === "not_configured") return `${label}: not configured`;
+  return `${label}: unavailable`;
 }
 
 function getUsageWindow(cardId){
@@ -784,6 +998,149 @@ function setLinkById(id, value){
   }
 }
 
+function normalizeRuntimeUiConfig(config){
+  const raw = config && typeof config === "object" ? config : {};
+  const capabilities = raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : {};
+  const links = raw.links && typeof raw.links === "object" ? raw.links : {};
+  return {
+    deploymentMode: String(raw.deploymentMode || "self_hosted").trim().toLowerCase() === "hosted" ? "hosted" : "self_hosted",
+    capabilities: {
+      dashboardControlPlane: Boolean(capabilities.dashboardControlPlane),
+      localGatewayAdmin: capabilities.localGatewayAdmin !== false,
+      hostedBilling: Boolean(capabilities.hostedBilling),
+      portalEnabled: Boolean(capabilities.portalEnabled)
+    },
+    links: {
+      dashboardUrl: String(links.dashboardUrl || "").trim() || null
+    }
+  };
+}
+
+function setSettingsScopedVisibility(scope, hidden){
+  document.querySelectorAll(`[data-settings-scope="${scope}"]`).forEach((el) => {
+    el.hidden = hidden;
+  });
+}
+
+function ensureFirstVisibleDocTab(groupId){
+  const group = document.querySelector(`.doc-tabs[data-doc-tabs="${groupId}"]`);
+  if (!group) return;
+  const visibleButtons = getDocTabButtons(group).filter((node) => !node.hidden);
+  if (!visibleButtons.length) return;
+  const activeVisible = visibleButtons.find((btn) => btn.classList.contains("active"));
+  if (!activeVisible) {
+    activateDocPanel(groupId, visibleButtons[0].dataset.docTab);
+  }
+}
+
+function refreshSettingsNavIndices(){
+  const nav = document.querySelector('.settings-nav[data-doc-tabs="settings"]');
+  if (!nav) return;
+  const visibleButtons = Array.from(nav.children).filter((node) => node.classList?.contains("doc-tab") && !node.hidden);
+  visibleButtons.forEach((btn, idx) => {
+    const indexEl = btn.querySelector(".settings-nav-index");
+    if (indexEl) {
+      indexEl.textContent = String(idx + 1).padStart(2, "0");
+    }
+  });
+}
+
+function applyRuntimeUiConfig(config){
+  runtimeUiConfig = normalizeRuntimeUiConfig(config);
+  const hosted = runtimeUiConfig.deploymentMode === "hosted";
+  document.body.dataset.deploymentMode = runtimeUiConfig.deploymentMode;
+
+  const settingsTab = $("tabSettings");
+  if (settingsTab) {
+    settingsTab.textContent = "Settings";
+    settingsTab.hidden = false;
+    settingsTab.setAttribute("aria-hidden", "false");
+  }
+  const settingsPage = $("pageSettings");
+  if (settingsPage) {
+    settingsPage.hidden = false;
+  }
+
+  setTextById("settingsSidebarKicker", hosted ? "Hosted" : "Settings");
+  setTextById("settingsSidebarTitle", hosted ? "Use this page" : "Manage this workspace");
+  setTextById(
+    "settingsSidebarBody",
+    hosted
+      ? "Use Overview for this browser. Use Provider Keys only if you want this browser to use your own AI keys. Use Dashboard for everything else."
+      : "Pick a section on the right. The left pane stays focused on one setup flow at a time."
+  );
+  setTextById("settingsAuthKicker", hosted ? "Hosted" : "Access");
+  setTextById("settingsAuthTitle", hosted ? "Settings for this browser" : "Authenticate this browser");
+  setTextById(
+    "settingsAuthBody",
+    hosted
+      ? "This page is only for browser-local settings and optional AI provider keys. Use Dashboard for projects, users, billing, SSO, and service tokens."
+      : "Choose how this browser signs in to SupaVector. Use a service token for local runtime work, admin login for a human session, or SSO if your tenant requires it."
+  );
+  setTextById("settingsNavAuthTitle", hosted ? "Overview" : "Authenticate");
+  setTextById("settingsNavAuthBody", hosted ? "Browser-only settings" : "Tokens, admin login, SSO");
+  setTextById("settingsNavProvidersTitle", hosted ? "Provider Keys" : "Providers");
+  setTextById("settingsNavProvidersBody", hosted ? "Save AI keys for this browser" : "Save browser-only AI keys");
+  setTextById("settingsProvidersKicker", "Provider keys");
+  setTextById("settingsProvidersTitle", "Optional AI keys for this browser");
+  setTextById(
+    "settingsProvidersBody",
+    hosted
+      ? "Only use this if you want requests from this browser to use your own OpenAI, Gemini, or Anthropic key."
+      : "Save an OpenAI, Gemini, or Anthropic key here only if you want requests from this browser to use your own provider account."
+  );
+  setTextById("settingsProviderOverridesLabel", "Saved in this browser");
+  setTextById(
+    "settingsProviderOverridesHint",
+    hosted
+      ? "These stay in this browser. They are sent only when a request supports provider keys."
+      : "These stay in this browser and are only sent when a request supports provider keys."
+  );
+  setTextById("settingsProviderWhenLabel", "Use this if");
+  setTextById(
+    "settingsProviderUseCase1",
+    hosted
+      ? "You want this browser to use your own AI account."
+      : "You want this browser to send your own provider key."
+  );
+  setTextById("settingsProviderUseCase2", "It does not change how SupaVector authenticates you.");
+  setTextById("settingsProviderUseCase3", "It affects only requests made from this browser.");
+
+  const hostedNotice = $("settingsHostedNotice");
+  if (hostedNotice) {
+    hostedNotice.hidden = !hosted;
+  }
+  const dashboardLink = $("settingsDashboardLink");
+  if (dashboardLink) {
+    const dashboardUrl = runtimeUiConfig.links.dashboardUrl || (hosted && runtimeUiConfig.capabilities.portalEnabled ? "/portal" : "");
+    dashboardLink.hidden = !hosted || !dashboardUrl;
+    if (dashboardUrl) {
+      dashboardLink.setAttribute("href", dashboardUrl);
+    }
+  }
+
+  setSettingsScopedVisibility("self_hosted", hosted);
+  setSettingsScopedVisibility("hosted", !hosted);
+  ensureFirstVisibleDocTab("settings");
+  ensureFirstVisibleDocTab("settingsAuthSections");
+  refreshSettingsNavIndices();
+}
+
+async function loadRuntimeUiConfig(){
+  try{
+    const res = await fetch("/v1/runtime");
+    const payload = await parseResponsePayload(res);
+    if (res.ok && payload?.ok && payload.data){
+      applyRuntimeUiConfig(payload.data);
+      return runtimeUiConfig;
+    }
+  }catch(_err){
+    // Fall back to self-hosted defaults when runtime config is unavailable.
+  }
+  applyRuntimeUiConfig(DEFAULT_RUNTIME_UI_CONFIG);
+  return runtimeUiConfig;
+}
+
 function copyButtonMarkup(state = "copy"){
   const safeState = String(state || "copy").trim().toLowerCase();
   if (safeState === "copied") {
@@ -1004,7 +1361,15 @@ const HASH_PAGE_ROUTES = new Map([
   ["pagedocstop", "pageDocs"],
   ["pagesettings", "pageSettings"],
   ["docs", "pageDocs"],
+  ["start", "pageDocs"],
+  ["install", "pageDocs"],
   ["setup", "pageDocs"],
+  ["database", "pageDocs"],
+  ["rbac", "pageDocs"],
+  ["manage", "pageDocs"],
+  ["memory", "pageDocs"],
+  ["memory-policies", "pageDocs"],
+  ["reference", "pageDocs"],
   ["documentation", "pageDocs"]
 ]);
 
@@ -1041,26 +1406,185 @@ function openPageFromHash(options = {}){
   return true;
 }
 
+function getDocTabButtons(group){
+  if (!group) return [];
+  return Array.from(group.querySelectorAll(".doc-tab[data-doc-tab]"));
+}
+
+function getDocPanels(panelWrap){
+  if (!panelWrap) return [];
+  return Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
+}
+
+function getDocsDefaultHash(panelName){
+  const routes = {
+    core: "#start",
+    cli: "#install",
+    setup: "#setup",
+    database: "#database",
+    rbac: "#rbac",
+    platform: "#manage",
+    amv: "#memory-policies",
+    reference: "#reference"
+  };
+  return routes[String(panelName || "").trim()] || "";
+}
+
+function getActiveDocsMenuName(){
+  return String(document.querySelector('.doc-tabs[data-doc-tabs="docs"] .doc-tab.active')?.dataset.docTab || "").trim();
+}
+
+function getDocsSubmenuSource(menuName = getActiveDocsMenuName()){
+  return menuName
+    ? document.querySelector(`.docs-menu-submenu[data-doc-submenu="${menuName}"]`)
+    : null;
+}
+
+function getDocsSubmenuLinks(menuName = getActiveDocsMenuName()){
+  const source = getDocsSubmenuSource(menuName);
+  return source ? Array.from(source.querySelectorAll('a[href^="#"]')) : [];
+}
+
+function isDocsSelectionHash(value){
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return false;
+  if (["docs", "pagedocs", "pagedocstop", "documentation"].includes(clean)) return false;
+  if (clean.startsWith("doc-") || clean.startsWith("amv-") || clean.startsWith("mode-")) return true;
+  return [
+    "start",
+    "install",
+    "setup",
+    "database",
+    "rbac",
+    "manage",
+    "platform",
+    "platform-management",
+    "telemetry",
+    "troubleshooting",
+    "memory",
+    "memory-policies",
+    "reference",
+    "enterprise",
+    "deployment"
+  ].includes(clean);
+}
+
+function scrollToHashTarget(rawHash, options = {}){
+  const targetId = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim());
+  if (!targetId) return false;
+  const target = document.getElementById(targetId) || document.getElementById(targetId.toLowerCase());
+  if (!target) return false;
+  const behavior = options.smooth ? "smooth" : "auto";
+  requestAnimationFrame(() => {
+    target.scrollIntoView({ behavior, block: "start" });
+  });
+  return true;
+}
+
+function navigateToHash(rawHash, options = {}){
+  const nextHash = String(rawHash || "").trim();
+  if (!nextHash) return false;
+  const normalized = nextHash.startsWith("#") ? nextHash : `#${nextHash}`;
+  if (window.location.hash === normalized) {
+    const opened = openPageFromHash({
+      smooth: options.smooth === true,
+      scroll: options.scroll !== false
+    });
+    if (!opened && options.scroll !== false) {
+      scrollToHashTarget(normalized, { smooth: options.smooth === true });
+    }
+    return opened;
+  }
+  window.location.hash = normalized;
+  return true;
+}
+
 function activateDocPanel(groupId, panelName){
   const group = document.querySelector(`.doc-tabs[data-doc-tabs="${groupId}"]`);
   const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
   if (!group || !panelWrap) return false;
 
-  const buttons = Array.from(group.children).filter((node) => node.classList?.contains("doc-tab"));
-  const panels = Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
-  const hasTarget = buttons.some((btn) => btn.dataset.docTab === panelName);
-  if (!hasTarget) return false;
+  const buttons = getDocTabButtons(group);
+  const panels = getDocPanels(panelWrap);
+  const hasPanel = panels.some((panel) => panel.dataset.docPanel === panelName);
+  if (!hasPanel) return false;
+  const activeButtonName = buttons.some((btn) => btn.dataset.docTab === panelName)
+    ? panelName
+    : null;
 
   buttons.forEach((btn) => {
-    const isActive = btn.dataset.docTab === panelName;
+    const isActive = btn.dataset.docTab === activeButtonName;
     btn.classList.toggle("active", isActive);
     btn.setAttribute("aria-selected", isActive ? "true" : "false");
   });
+  if (groupId === "docs") {
+    const submenus = Array.from(group.querySelectorAll(".docs-menu-submenu[data-doc-submenu]"));
+    submenus.forEach((submenu) => {
+      submenu.hidden = submenu.dataset.docSubmenu !== activeButtonName;
+    });
+  }
   panels.forEach((panel) => {
     const isActive = panel.dataset.docPanel === panelName;
     panel.classList.toggle("active", isActive);
   });
+  if (groupId === "docs") {
+    syncDocsTopSubmenu(activeButtonName);
+    syncDocsSectionOutline();
+    syncDocsMenuLinksFromHash(window.location.hash);
+  }
+  if (groupId !== "docs" && panelWrap.closest("#pageDocs")) {
+    syncDocsSectionOutline();
+    syncDocsMenuLinksFromHash(window.location.hash);
+  }
   return true;
+}
+
+function expandDocsSections(){
+  document.querySelectorAll("#pageDocs .details.section").forEach((section) => {
+    section.open = true;
+  });
+}
+
+function syncDocsTopSubmenu(activeButtonName){
+  void activeButtonName;
+}
+
+function syncDocsSectionOutline(){
+  const outline = document.getElementById("docsSectionNav");
+  const shell = document.querySelector("#pageDocs .docs-outline-shell");
+  const main = document.querySelector("#pageDocs .docs-main");
+  if (!outline) return;
+
+  const links = docsSubmenuVisible ? getDocsSubmenuLinks() : [];
+  outline.innerHTML = links.map((link) => {
+    const href = String(link.getAttribute("href") || "").trim();
+    const label = String(link.textContent || href).trim();
+    return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+  }).join("");
+
+  const hidden = links.length === 0;
+  outline.hidden = hidden;
+  if (shell) shell.hidden = hidden;
+  if (main) main.classList.toggle("docs-main-outline-hidden", hidden);
+}
+
+function syncDocsMenuLinksFromHash(rawHash){
+  const targetId = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim()).toLowerCase();
+  const containers = [
+    document.querySelector('.doc-tabs[data-doc-tabs="docs"]'),
+    document.getElementById("docsSectionNav")
+  ].filter(Boolean);
+
+  containers.forEach((container) => {
+    const links = Array.from(container.querySelectorAll('a[href^="#"]'));
+    links.forEach((link) => {
+      const href = decodeURIComponent(String(link.getAttribute("href") || "").replace(/^#/, "").trim()).toLowerCase();
+      const isActive = !!targetId && href === targetId;
+      link.classList.toggle("active", isActive);
+      if (isActive) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+  });
 }
 
 function syncDocPanelsToTarget(target){
@@ -1094,6 +1618,10 @@ function syncDocsPanelFromHash(rawHash){
   const clean = targetId.toLowerCase();
   if (!clean) return;
 
+  docsSubmenuVisible = isDocsSelectionHash(clean);
+  expandDocsSections();
+  syncDocsMenuLinksFromHash(rawHash);
+
   const target = document.getElementById(targetId) || document.getElementById(clean);
   if (target && syncDocPanelsToTarget(target)) {
     return;
@@ -1101,6 +1629,38 @@ function syncDocsPanelFromHash(rawHash){
 
   if (clean.startsWith("amv-")) {
     activateDocPanel("docs", "amv");
+    return;
+  }
+  if (clean === "start") {
+    activateDocPanel("docs", "core");
+    return;
+  }
+  if (clean.startsWith("doc-reference") || clean === "reference") {
+    activateDocPanel("docs", "reference");
+    return;
+  }
+  if (clean.startsWith("doc-rbac") || clean === "rbac") {
+    activateDocPanel("docs", "rbac");
+    return;
+  }
+  if (clean.startsWith("doc-enterprise") || clean === "enterprise") {
+    activateDocPanel("docs", clean === "doc-enterprise-apis" ? "reference" : "setup");
+    return;
+  }
+  if (clean.startsWith("doc-database") || clean === "database") {
+    activateDocPanel("docs", "database");
+    return;
+  }
+  if (clean.startsWith("doc-platform") || clean.startsWith("doc-manage") || clean === "manage" || clean === "platform" || clean === "platform-management" || clean === "telemetry" || clean === "troubleshooting") {
+    activateDocPanel("docs", "platform");
+    return;
+  }
+  if (clean.startsWith("doc-deployment") || clean === "deployment") {
+    activateDocPanel("docs", "setup");
+    return;
+  }
+  if (clean.startsWith("doc-cli") || clean === "install") {
+    activateDocPanel("docs", "cli");
     return;
   }
   if (clean === "doc-setup-modes" || clean === "doc-setup-guides" || clean === "setup") {
@@ -1118,6 +1678,10 @@ function syncDocsPanelFromHash(rawHash){
   if (usageModes[clean]) {
     activateDocPanel("docs", "setup");
     activateDocPanel("usageModes", usageModes[clean]);
+    return;
+  }
+  if (clean === "memory" || clean === "memory-policies") {
+    activateDocPanel("docs", "amv");
     return;
   }
   if (clean.startsWith("doc-") || clean === "pagedocstop" || clean === "pagedocs" || clean === "docs") {
@@ -1152,27 +1716,49 @@ function initDocTabs(){
     const groupId = group.dataset.docTabs;
     const panelWrap = document.querySelector(`.doc-panels[data-doc-panels="${groupId}"]`);
     if (!panelWrap) return;
-    const buttons = Array.from(group.children).filter((node) => node.classList?.contains("doc-tab"));
-    const panels = Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
+    const buttons = getDocTabButtons(group);
+    const panels = getDocPanels(panelWrap);
+    if (!buttons.length || !panels.length) return;
 
     const activate = (name) => {
-      buttons.forEach((btn) => {
-        const isActive = btn.dataset.docTab === name;
-        btn.classList.toggle("active", isActive);
-        btn.setAttribute("aria-selected", isActive ? "true" : "false");
-      });
-      panels.forEach((panel) => {
-        const isActive = panel.dataset.docPanel === name;
-        panel.classList.toggle("active", isActive);
-      });
+      activateDocPanel(groupId, name);
     };
 
     buttons.forEach((btn) => {
-      btn.addEventListener("click", () => activate(btn.dataset.docTab));
+      btn.addEventListener("click", () => {
+        if (groupId === "docs") {
+          docsSubmenuVisible = true;
+          const defaultHash = getDocsDefaultHash(btn.dataset.docTab);
+          if (defaultHash) {
+            navigateToHash(defaultHash, { smooth: true });
+            return;
+          }
+        }
+        activate(btn.dataset.docTab);
+      });
     });
 
     const current = buttons.find((btn) => btn.classList.contains("active")) || buttons[0];
     if (current) activate(current.dataset.docTab);
+  });
+}
+
+function initDocsHashNavigation(){
+  const docsPage = document.getElementById("pageDocs");
+  if (!docsPage) return;
+  docsPage.addEventListener("click", (event) => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || !docsPage.contains(link)) return;
+    const href = String(link.getAttribute("href") || "").trim();
+    if (!href) return;
+    const targetHash = href.startsWith("#") ? href : `#${href}`;
+    const targetId = decodeURIComponent(targetHash.replace(/^#/, "").trim());
+    if (!targetId) return;
+    const target = document.getElementById(targetId) || document.getElementById(targetId.toLowerCase());
+    const routePage = resolvePageIdFromHash(targetHash);
+    if (!target && !routePage) return;
+    event.preventDefault();
+    navigateToHash(targetHash, { smooth: true });
   });
 }
 
@@ -1394,6 +1980,19 @@ function renderUsage(stats){
   const storage = usage.storage || {};
   const billing = usage.billing || {};
   const billingCosts = billing.costs || {};
+  const billingWindows = billing.windows || {};
+  const billingAll = billingWindows.all || billingCosts;
+  const billing24 = billingWindows["24h"] || billingCosts;
+  const billing7 = billingWindows["7d"] || billingCosts;
+  const storageMonthly = billing.storageMonthly || {};
+  const storageMonthlyCurrent = storageMonthly.current || null;
+  const projectedStorageCharge = Number(storageMonthlyCurrent?.projectedCharge ?? billingAll.storageCharge ?? 0);
+  const projectedStorageChargeText = `$${projectedStorageCharge.toFixed(4)}`;
+  const storageChargeLabel = storageMonthlyCurrent ? "Projected storage charge" : "Storage charge";
+  const storageChargeMeta = storageMonthlyCurrent
+    ? `$${billing.rates?.storagePerGB}/GB-month avg retained`
+    : `$${billing.rates?.storagePerGB}/GB`;
+  const storageChargeWindowMeta = storageMonthlyCurrent ? "current month projection" : "current";
 
   const embedTotals = {
     all: Number(winAll.tokens?.embedding?.total || 0),
@@ -1504,19 +2103,19 @@ function renderUsage(stats){
     },
     ...(billing.rates?.storagePerGB ? [{
       id: "storage_charge",
-      label: "Storage charge",
-      value: `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`,
-      values: { all: `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`, "24h": `$${Number(billingCosts.storageCharge || 0).toFixed(4)}`, "7d": `$${Number(billingCosts.storageCharge || 0).toFixed(4)}` },
+      label: storageChargeLabel,
+      value: projectedStorageChargeText,
+      values: { all: projectedStorageChargeText, "24h": projectedStorageChargeText, "7d": projectedStorageChargeText },
       format: (v) => v,
-      meta: { all: `$${billing.rates?.storagePerGB}/GB`, "24h": "current", "7d": "current" }
+      meta: { all: storageChargeMeta, "24h": storageChargeWindowMeta, "7d": storageChargeWindowMeta }
     }] : []),
     ...(billing.rates?.aiTokensPer1K ? [{
       id: "ai_tokens_charge",
-      label: "AI tokens charge",
-      value: `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`,
-      values: { all: `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`, "24h": `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}`, "7d": `$${Number(billingCosts.aiTokensCharge || 0).toFixed(4)}` },
+      label: "AI generation charge",
+      value: `$${Number(billingAll.aiTokensCharge || 0).toFixed(4)}`,
+      values: { all: `$${Number(billingAll.aiTokensCharge || 0).toFixed(4)}`, "24h": `$${Number(billing24.aiTokensCharge || 0).toFixed(4)}`, "7d": `$${Number(billing7.aiTokensCharge || 0).toFixed(4)}` },
       format: (v) => v,
-      meta: { all: `$${billing.rates?.aiTokensPer1K}/1K tokens`, "24h": "all time", "7d": "all time" }
+      meta: { all: `$${billing.rates?.aiTokensPer1K}/1K billable tokens`, "24h": "billable", "7d": "billable" }
     }] : [])
   ];
 
@@ -1930,8 +2529,13 @@ async function loadTenantSettings(){
 
   try{
     const res = await fetch("/v1/admin/tenant", { headers: apiHeaders() });
-    const data = await res.json();
-    if (res.ok && data.ok && data.data?.tenant){
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner(banner, "err", authRejectedMessage);
+      return;
+    }
+    if (res.ok && data?.ok && data.data?.tenant){
       const tenant = data.data.tenant;
       const models = tenant.models || {};
       const configuredModels = models.configured || {};
@@ -1961,9 +2565,13 @@ async function loadTenantSettings(){
       if ($("tenantSsoGoogle")) $("tenantSsoGoogle").checked = allowed.has("google");
       if ($("tenantSsoAzure")) $("tenantSsoAzure").checked = allowed.has("azure");
       if ($("tenantSsoOkta")) $("tenantSsoOkta").checked = allowed.has("okta");
+      applyTenantSsoConfig(tenant.ssoConfig || {});
+      if ($("ssoLoginTenant")) $("ssoLoginTenant").value = tenant.id || "";
+      await loadTenantUsers({ quietSuccess: true });
+      await loadSsoProviders();
       setBanner(banner, "ok", "Tenant settings loaded.");
     }else{
-      const msg = data?.error?.message || data?.error || "Failed to load tenant settings.";
+      const msg = resolveErrorMessage(data, "Failed to load tenant settings.");
       setBanner(banner, "err", msg);
     }
   }catch(e){
@@ -1998,6 +2606,13 @@ async function saveTenantSettings(){
   const reflectModel = String($("tenantReflectModel")?.value || "").trim();
   const compactProvider = String($("tenantCompactProvider")?.value || "").trim();
   const compactModel = String($("tenantCompactModel")?.value || "").trim();
+  let ssoConfig;
+  try{
+    ssoConfig = collectTenantSsoConfig();
+  }catch(err){
+    setBanner(banner, "err", String(err.message || err));
+    return;
+  }
 
   saveBtn.disabled = true;
   const originalLabel = saveBtn.textContent;
@@ -2010,6 +2625,7 @@ async function saveTenantSettings(){
       body: JSON.stringify({
         authMode,
         ssoProviders,
+        ssoConfig,
         models: {
           answerProvider: answerProvider || null,
           answerModel: answerModel || null,
@@ -2022,8 +2638,13 @@ async function saveTenantSettings(){
         }
       })
     });
-    const data = await res.json();
-    if (res.ok && data.ok && data.data?.tenant){
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner(banner, "err", authRejectedMessage);
+      return;
+    }
+    if (res.ok && data?.ok && data.data?.tenant){
       const tenant = data.data.tenant;
       const models = tenant.models || {};
       const configuredModels = models.configured || {};
@@ -2047,9 +2668,12 @@ async function saveTenantSettings(){
       if ($("tenantBooleanAskModel")) $("tenantBooleanAskModel").placeholder = effectiveModels.answerModel || "blank = follow ask model";
       if ($("tenantReflectModel")) $("tenantReflectModel").placeholder = instanceDefaults.reflectModel || "blank = instance default";
       if ($("tenantCompactModel")) $("tenantCompactModel").placeholder = effectiveModels.reflectModel || "blank = follow reflect model";
+      applyTenantSsoConfig(tenant.ssoConfig || {});
+      if ($("ssoLoginTenant")) $("ssoLoginTenant").value = tenant.id || "";
+      await loadSsoProviders();
       setBanner(banner, "ok", "Tenant settings updated.");
     }else{
-      const msg = data?.error?.message || data?.error || "Failed to update tenant settings.";
+      const msg = resolveErrorMessage(data, "Failed to update tenant settings.");
       setBanner(banner, "err", msg);
     }
   }catch(e){
@@ -2060,7 +2684,219 @@ async function saveTenantSettings(){
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+async function loadTenantUsers(options = {}){
+  const banner = $("tenantAuthBanner");
+  const loadBtn = $("tenantUsersLoadBtn");
+  if (!banner) return [];
+  if (!requireKeyOrWarn(banner)) return [];
+
+  const quietSuccess = options.quietSuccess === true;
+  if (loadBtn) {
+    loadBtn.disabled = true;
+    loadBtn.dataset.originalLabel = loadBtn.textContent;
+    loadBtn.textContent = "Loading...";
+  }
+
+  try{
+    const res = await fetch("/v1/admin/users", { headers: apiHeaders() });
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      renderTenantUsers([]);
+      setBanner(banner, "err", authRejectedMessage);
+      return [];
+    }
+    if (res.ok && data?.ok && Array.isArray(data.data?.users)){
+      renderTenantUsers(data.data.users);
+      if (!quietSuccess) setBanner(banner, "ok", "Tenant users loaded.");
+      return data.data.users;
+    }
+    renderTenantUsers([]);
+    if (!quietSuccess) setBanner(banner, "err", resolveErrorMessage(data, "Failed to load tenant users."));
+    return [];
+  }catch(_err){
+    renderTenantUsers([]);
+    if (!quietSuccess) setBanner(banner, "err", "Error loading tenant users.");
+    return [];
+  }finally{
+    if (loadBtn) {
+      loadBtn.disabled = false;
+      loadBtn.textContent = loadBtn.dataset.originalLabel || "Load tenant users";
+      delete loadBtn.dataset.originalLabel;
+    }
+  }
+}
+
+async function createTenantUserFromForm(){
+  const banner = $("tenantAuthBanner");
+  const createBtn = $("tenantUserCreateBtn");
+  if (!banner || !createBtn) return;
+  clearBanner(banner);
+  if (!requireKeyOrWarn(banner)) return;
+
+  const username = String($("tenantUserCreateUsername")?.value || "").trim();
+  const password = String($("tenantUserCreatePassword")?.value || "");
+  const email = String($("tenantUserCreateEmail")?.value || "").trim();
+  const fullName = String($("tenantUserCreateFullName")?.value || "").trim();
+  const roles = splitCommaList($("tenantUserCreateRoles")?.value || "");
+  const ssoOnly = Boolean($("tenantUserCreateSsoOnly")?.checked);
+
+  if (!username){
+    setBanner(banner, "err", "Username is required.");
+    return;
+  }
+  if (!password || password.length < 8){
+    setBanner(banner, "err", "Password must be at least 8 characters.");
+    return;
+  }
+
+  createBtn.disabled = true;
+  const originalLabel = createBtn.textContent;
+  createBtn.textContent = "Creating...";
+
+  try{
+    const res = await fetch("/v1/admin/users", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({ username, password, email, fullName, roles, ssoOnly })
+    });
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner(banner, "err", authRejectedMessage);
+      return;
+    }
+    if (res.ok && data?.ok && data.data?.user){
+      if ($("tenantUserCreateUsername")) $("tenantUserCreateUsername").value = "";
+      if ($("tenantUserCreatePassword")) $("tenantUserCreatePassword").value = "";
+      if ($("tenantUserCreateEmail")) $("tenantUserCreateEmail").value = "";
+      if ($("tenantUserCreateFullName")) $("tenantUserCreateFullName").value = "";
+      if ($("tenantUserCreateRoles")) $("tenantUserCreateRoles").value = "";
+      if ($("tenantUserCreateSsoOnly")) $("tenantUserCreateSsoOnly").checked = false;
+      await loadTenantUsers({ quietSuccess: true });
+      setBanner(banner, "ok", "Tenant user created.");
+      return;
+    }
+    setBanner(banner, "err", resolveErrorMessage(data, "Failed to create tenant user."));
+  }catch(_err){
+    setBanner(banner, "err", "Error creating tenant user.");
+  }finally{
+    createBtn.disabled = false;
+    createBtn.textContent = originalLabel;
+  }
+}
+
+async function saveTenantUser(userId){
+  const banner = $("tenantAuthBanner");
+  if (!banner) return;
+  clearBanner(banner);
+  if (!requireKeyOrWarn(banner)) return;
+
+  const cleanId = parseInt(String(userId || ""), 10);
+  if (!Number.isInteger(cleanId) || cleanId <= 0){
+    setBanner(banner, "err", "Invalid tenant user id.");
+    return;
+  }
+
+  const saveBtn = document.querySelector(`button[data-tenant-user-save="${cleanId}"]`);
+  const body = {
+    roles: splitCommaList($(`tenantUserRoles_${cleanId}`)?.value || ""),
+    fullName: String($(`tenantUserFullName_${cleanId}`)?.value || "").trim(),
+    email: String($(`tenantUserEmail_${cleanId}`)?.value || "").trim(),
+    disabled: Boolean($(`tenantUserDisabled_${cleanId}`)?.checked),
+    ssoOnly: Boolean($(`tenantUserSsoOnly_${cleanId}`)?.checked)
+  };
+  const password = String($(`tenantUserPassword_${cleanId}`)?.value || "");
+  if (password) body.password = password;
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.dataset.originalLabel = saveBtn.textContent;
+    saveBtn.textContent = "Saving...";
+  }
+
+  try{
+    const res = await fetch(`/v1/admin/users/${encodeURIComponent(cleanId)}`, {
+      method: "PATCH",
+      headers: apiHeaders(),
+      body: JSON.stringify(body)
+    });
+    const data = await parseResponsePayload(res);
+    if (res.status === 401){
+      noteUnauthorized(data);
+      setBanner(banner, "err", authRejectedMessage);
+      return;
+    }
+    if (res.ok && data?.ok && data.data?.user){
+      if ($(`tenantUserPassword_${cleanId}`)) $(`tenantUserPassword_${cleanId}`).value = "";
+      await loadTenantUsers({ quietSuccess: true });
+      setBanner(banner, "ok", "Tenant user updated.");
+      return;
+    }
+    setBanner(banner, "err", resolveErrorMessage(data, "Failed to update tenant user."));
+  }catch(_err){
+    setBanner(banner, "err", "Error updating tenant user.");
+  }finally{
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = saveBtn.dataset.originalLabel || "Save";
+      delete saveBtn.dataset.originalLabel;
+    }
+  }
+}
+
+async function loadSsoProviders(){
+  const statusEl = $("ssoProvidersStatus");
+  const tenantId = String($("ssoLoginTenant")?.value || "").trim();
+  setSsoLoginButtonsEnabled({});
+  if (statusEl) statusEl.textContent = "Checking SSO provider availability...";
+
+  try{
+    const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+    const res = await fetch(`/v1/auth/providers${query}`);
+    const data = await parseResponsePayload(res);
+    if (!res.ok || !data?.ok){
+      if (statusEl) statusEl.textContent = resolveErrorMessage(data, "Failed to load SSO provider status.");
+      return null;
+    }
+
+    const authMode = String(data.authMode || "sso_plus_password");
+    const providers = data.providers && typeof data.providers === "object" ? data.providers : {};
+    const enabledStates = {};
+    Object.entries(TENANT_SSO_PROVIDER_META).forEach(([provider, meta]) => {
+      const info = providers[provider] || {};
+      enabledStates[provider] = Boolean(info.enabled);
+      const btn = $(meta.loginButtonId);
+      if (!btn) return;
+      btn.disabled = !info.enabled;
+      btn.title = describeSsoProviderStatus(provider, info);
+    });
+    setSsoLoginButtonsEnabled(enabledStates);
+
+    if (statusEl) {
+      if (authMode === "password_only") {
+        statusEl.textContent = "This tenant is password-only. Enable SSO in tenant settings before starting enterprise sign-in.";
+      } else {
+        const parts = Object.keys(TENANT_SSO_PROVIDER_META).map((provider) => describeSsoProviderStatus(provider, providers[provider] || {}));
+        statusEl.textContent = parts.join(" | ");
+      }
+    }
+    return data;
+  }catch(_err){
+    if (statusEl) statusEl.textContent = "Error loading SSO provider status.";
+    return null;
+  }
+}
+
+function startSsoLogin(provider){
+  const cleanProvider = String(provider || "").trim().toLowerCase();
+  if (!TENANT_SSO_PROVIDER_META[cleanProvider]) return;
+  const tenantId = String($("ssoLoginTenant")?.value || "").trim();
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+  window.location.href = `/auth/${encodeURIComponent(cleanProvider)}/login${query}`;
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
   const footerYearEl = $("footerYear");
   if (footerYearEl) {
     footerYearEl.textContent = String(new Date().getFullYear());
@@ -2090,7 +2926,10 @@ window.addEventListener("DOMContentLoaded", () => {
   scheduleFooterDateRefresh();
 
   initTheme();
+  await loadRuntimeUiConfig();
   initDocTabs();
+  expandDocsSections();
+  initDocsHashNavigation();
   initDocsAgentConnect();
   initDocsCopyButtons();
   loadModelCatalog();
@@ -2103,7 +2942,18 @@ window.addEventListener("DOMContentLoaded", () => {
   $("tabPlayground").onclick = () => showPage("pagePlayground");
   $("tabMetrics").onclick = () => showPage("pageMetrics");
   $("tabUsage").onclick = () => showPage("pageUsage");
-  $("tabDocs").onclick = () => showPage("pageDocs");
+  $("tabDocs").onclick = () => {
+    showPage("pageDocs");
+    const cleanHash = decodeURIComponent(String(window.location.hash || "").replace(/^#/, "").trim()).toLowerCase();
+    if (!isDocsSelectionHash(cleanHash)) {
+      docsSubmenuVisible = false;
+      syncDocsTopSubmenu(getActiveDocsMenuName());
+      syncDocsSectionOutline();
+      syncDocsMenuLinksFromHash(window.location.hash);
+    } else {
+      syncDocsPanelFromHash(window.location.hash);
+    }
+  };
   $("tabSettings").onclick = () => showPage("pageSettings");
   $("tabProduct").onclick = () => showPage("pageProduct");
   $("playTabIngest").onclick = () => showPlayPane("playPaneIngest");
@@ -2222,27 +3072,29 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if ($("saveProviderOverridesBtn")) {
     $("saveProviderOverridesBtn").onclick = () => {
+      const bannerEl = $("providerOverridesBanner") || $("settingsBanner");
       const openAiValue = $("openAiApiKeyOverride")?.value?.trim() || "";
       const geminiValue = $("geminiApiKeyOverride")?.value?.trim() || "";
       const anthropicValue = $("anthropicApiKeyOverride")?.value?.trim() || "";
       if (!openAiValue && !geminiValue && !anthropicValue) {
-        setBanner($("settingsBanner"), "err", "Paste at least one provider key first.");
+        setBanner(bannerEl, "err", "Paste at least one provider key first.");
         return;
       }
       saveStoredProviderOverride("openai", openAiValue);
       saveStoredProviderOverride("gemini", geminiValue);
       saveStoredProviderOverride("anthropic", anthropicValue);
-      setBanner($("settingsBanner"), "ok", "Saved provider key overrides. Supavector requests from this browser will send the matching provider header when needed.");
+      setBanner(bannerEl, "ok", "Saved provider key overrides. Supavector requests from this browser will send the matching provider header when needed.");
     };
   }
 
   if ($("clearProviderOverridesBtn")) {
     $("clearProviderOverridesBtn").onclick = () => {
+      const bannerEl = $("providerOverridesBanner") || $("settingsBanner");
       clearStoredProviderOverrides();
       if ($("openAiApiKeyOverride")) $("openAiApiKeyOverride").value = "";
       if ($("geminiApiKeyOverride")) $("geminiApiKeyOverride").value = "";
       if ($("anthropicApiKeyOverride")) $("anthropicApiKeyOverride").value = "";
-      setBanner($("settingsBanner"), "ok", "Removed saved provider key overrides.");
+      setBanner(bannerEl, "ok", "Removed saved provider key overrides.");
     };
   }
 
@@ -2258,7 +3110,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const name = $("apiKeyName").value.trim();
     if (!name){
-      setBanner($("apiKeyBanner"), "err", "API key name is required.");
+      setBanner($("apiKeyBanner"), "err", "Service token name is required.");
       return;
     }
 
@@ -2300,29 +3152,29 @@ window.addEventListener("DOMContentLoaded", () => {
         $("copyCreatedApiKeyBtn").disabled = false;
         $("useCreatedApiKeyBtn").dataset.token = token;
         $("copyCreatedApiKeyBtn").dataset.token = token;
-        setBanner($("apiKeyBanner"), "ok", "API key created. Save it now.");
+        setBanner($("apiKeyBanner"), "ok", "Service token created. Save it now.");
       }else{
-        const msg = data?.error?.message || data?.error || "Failed to create API key.";
+        const msg = data?.error?.message || data?.error || "Failed to create service token.";
         setBanner($("apiKeyBanner"), "err", msg);
       }
     }catch(e){
-      setBanner($("apiKeyBanner"), "err", "Error creating API key.");
+      setBanner($("apiKeyBanner"), "err", "Error creating service token.");
     }finally{
       $("createApiKeyBtn").disabled = false;
-      $("createApiKeyBtn").textContent = "Create API key";
+      $("createApiKeyBtn").textContent = "Create service token";
     }
   };
 
   $("useCreatedApiKeyBtn").onclick = () => {
     const token = $("useCreatedApiKeyBtn").dataset.token;
     if (!token){
-      setBanner($("apiKeyBanner"), "err", "No API key to use yet.");
+      setBanner($("apiKeyBanner"), "err", "No service token to use yet.");
       return;
     }
     if ($("authType")) $("authType").value = "api_key";
     $("apiKey").value = token;
     saveStoredAuth("api_key", token);
-    setBanner($("apiKeyBanner"), "ok", "API key saved. You can now Index, Search, and Ask.");
+    setBanner($("apiKeyBanner"), "ok", "Service token saved. You can now Index, Search, and Ask.");
     loadDocsList();
     loadCollectionScopeOptions();
   };
@@ -2330,14 +3182,14 @@ window.addEventListener("DOMContentLoaded", () => {
   $("copyCreatedApiKeyBtn").onclick = async () => {
     const token = $("copyCreatedApiKeyBtn").dataset.token;
     if (!token){
-      setBanner($("apiKeyBanner"), "err", "No API key to copy yet.");
+      setBanner($("apiKeyBanner"), "err", "No service token to copy yet.");
       return;
     }
     try{
       await copyTextToClipboard(token);
-      setBanner($("apiKeyBanner"), "ok", "API key copied to clipboard.");
+      setBanner($("apiKeyBanner"), "ok", "Service token copied to clipboard.");
     }catch(e){
-      setBanner($("apiKeyBanner"), "err", "Failed to copy API key.");
+      setBanner($("apiKeyBanner"), "err", "Failed to copy service token.");
     }
   };
 
@@ -2346,6 +3198,24 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if ($("tenantAuthSaveBtn")) {
     $("tenantAuthSaveBtn").onclick = () => saveTenantSettings();
+  }
+  if ($("tenantUsersLoadBtn")) {
+    $("tenantUsersLoadBtn").onclick = () => loadTenantUsers();
+  }
+  if ($("tenantUserCreateBtn")) {
+    $("tenantUserCreateBtn").onclick = () => createTenantUserFromForm();
+  }
+  if ($("ssoProvidersLoadBtn")) {
+    $("ssoProvidersLoadBtn").onclick = () => loadSsoProviders();
+  }
+  if ($("ssoLoginGoogleBtn")) {
+    $("ssoLoginGoogleBtn").onclick = () => startSsoLogin("google");
+  }
+  if ($("ssoLoginAzureBtn")) {
+    $("ssoLoginAzureBtn").onclick = () => startSsoLogin("azure");
+  }
+  if ($("ssoLoginOktaBtn")) {
+    $("ssoLoginOktaBtn").onclick = () => startSsoLogin("okta");
   }
   const tenantTabBtn = document.querySelector('.doc-tabs[data-doc-tabs="settings"] .doc-tab[data-doc-tab="tenant"]');
   if (tenantTabBtn){

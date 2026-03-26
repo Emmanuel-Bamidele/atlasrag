@@ -3,69 +3,318 @@
           <article class="docs-article">
             <div id="pageDocsTop"></div>
 
-            <div class="docs-orient">
-              <div class="docs-orient-head">
-                <p class="product-card-eyebrow">Documentation</p>
-                <h2 class="docs-orient-h">Pick the right tab for where you are.</h2>
-                <p class="docs-orient-sub">Each tab is self-contained. You do not need to read them in order.</p>
+            <div class="docs-layout">
+              <div class="docs-nav-shell" aria-label="Documentation menu">
+                <div class="doc-tabs docs-menu" data-doc-tabs="docs">
+                  <div class="docs-menu-group">
+                    <button class="doc-tab active" data-doc-tab="core" type="button">Start</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="core">
+                      <a href="#doc-start-overview">Getting Started</a>
+                      <a href="#doc-start-requirements">Requirements</a>
+                      <a href="#doc-start-capabilities">Capabilities</a>
+                      <a href="#doc-start-quick-paths">Quick Start</a>
+                      <a href="#doc-start-ui">UI Tour</a>
+                      <a href="#doc-start-guides">Guide Map</a>
+                      <a href="#doc-quickstart">Practical Quickstart</a>
+                      <a href="#doc-architecture">Architecture</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="cli" type="button">Install</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="cli" hidden>
+                      <a href="#doc-cli-install">Install</a>
+                      <a href="#doc-cli-container">Container</a>
+                      <a href="#doc-cli-hosting">Hosting</a>
+                      <a href="#doc-cli-maintenance">Maintenance</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="setup" type="button">Setup</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="setup" hidden>
+                      <a href="#doc-setup-modes">Local Deployment and CLI</a>
+                      <a href="#mode-bundled">Self Hosting</a>
+                      <a href="#doc-deployment-start">Deployment</a>
+                      <a href="#doc-enterprise-start">Enterprise</a>
+                      <a href="#doc-setup-mistakes">Common Mistakes</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="database" type="button">Database</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="database" hidden>
+                      <a href="#doc-database-start">Overview</a>
+                      <a href="#doc-database-boundary">What Lives Where</a>
+                      <a href="#doc-database-postgres">Postgres</a>
+                      <a href="#doc-database-vectors">Vector Store</a>
+                      <a href="#doc-database-developer">Developer Model</a>
+                      <a href="#doc-database-ops">Operations</a>
+                      <a href="#doc-database-backup">Backup</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="rbac" type="button">RBAC, ACL and Tenant</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="rbac" hidden>
+                      <a href="#doc-auth">Authentication</a>
+                      <a href="#doc-tenant-auth">Tenant Settings</a>
+                      <a href="#doc-security">RBAC and Security</a>
+                      <a href="#doc-visibility">ACL and Visibility</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="platform" type="button">Manage</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="platform" hidden>
+                      <a href="#doc-platform-start">Platform Management</a>
+                      <a href="#doc-platform-observability">Telemetry</a>
+                      <a href="#doc-manage-troubleshooting">Troubleshooting</a>
+                      <a href="#doc-platform-checklists">Checklists</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="amv" type="button">Memory Policies</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="amv" hidden>
+                      <a href="#amv-ttl">TTL</a>
+                      <a href="#amv-lru">LRU</a>
+                      <a href="#amv-amvl">AMVL</a>
+                    </div>
+                  </div>
+                  <div class="docs-menu-group">
+                    <button class="doc-tab" data-doc-tab="reference" type="button">Reference</button>
+                    <div class="docs-menu-submenu" data-doc-submenu="reference" hidden>
+                      <a href="#doc-api-ref">API Reference</a>
+                      <a href="#doc-agent-integrations">AI Assistant Connections</a>
+                      <a href="#doc-sdks">SDKs</a>
+                      <a href="#doc-examples">Examples</a>
+                      <a href="#doc-client-examples">Client Examples</a>
+                      <a href="#doc-cli-commands">CLI Commands</a>
+                      <a href="#doc-cli-examples">CLI Command Examples</a>
+                      <a href="#doc-enterprise-apis">Enterprise API</a>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="docs-orient-grid">
-                <div class="docs-orient-card">
-                  <div class="docs-orient-name">Overview</div>
-                  <p>Auth model, API reference, error codes, security controls, SDK setup, and request examples with curl, Python, and Node.js.</p>
-                  <span class="docs-orient-hint">Read this when you need API or security details.</span>
-                </div>
-                <div class="docs-orient-card">
-                  <div class="docs-orient-name">CLI Setup</div>
-                  <p>Install the CLI, onboard the local Docker stack, connect your app, and use the full command reference.</p>
-                  <span class="docs-orient-hint">Start here if you are setting up for the first time.</span>
-                </div>
-                <div class="docs-orient-card">
-                  <div class="docs-orient-name">Setup Modes</div>
-                  <p>Self-hosted, external Postgres, shared deployment, backend-as-caller, and human admin paths with credential rules.</p>
-                  <span class="docs-orient-hint">Read this when choosing how to deploy.</span>
-                </div>
-                <div class="docs-orient-card">
-                  <div class="docs-orient-name">Memory Policies</div>
-                  <p>TTL, LRU, and AMVL retention policies explained with trade-offs, use cases, and API request examples.</p>
-                  <span class="docs-orient-hint">Read this when choosing a memory retention policy.</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="doc-tabs" data-doc-tabs="docs">
-              <button class="doc-tab active" data-doc-tab="core" type="button">Overview</button>
-              <button class="doc-tab" data-doc-tab="cli" type="button">CLI Setup</button>
-              <button class="doc-tab" data-doc-tab="setup" type="button">Setup Modes</button>
-              <button class="doc-tab" data-doc-tab="amv" type="button">Memory policies</button>
-            </div>
+              <div class="docs-main">
+                <aside class="docs-outline-shell" aria-label="Current document outline">
+                  <div class="docs-outline-head">On this page</div>
+                  <nav class="docs-section-nav" id="docsSectionNav"></nav>
+                </aside>
+                <div class="docs-documents">
             <div class="doc-panels" data-doc-panels="docs">
               <div class="doc-panel active" data-doc-panel="core">
+                <div id="start"></div>
                 <div class="docs-shell">
                   <aside class="docs-sidebar" aria-label="Documentation outline">
                     <div class="doc-outline docs-sidebar-card">
-                      <div class="doc-outline-title">On this page</div>
+                      <div class="doc-outline-title">Start Here</div>
                       <div class="doc-outline-links">
-                        <a href="#doc-setup-modes">Setup by usage mode</a>
+                        <a href="#doc-start-overview">What SupaVector is</a>
+                        <a href="#doc-start-requirements">Requirements by mode</a>
+                        <a href="#doc-start-capabilities">Capabilities</a>
+                        <a href="#doc-start-quick-paths">Quick-start paths</a>
+                        <a href="#doc-start-ui">UI tour</a>
+                        <a href="#doc-start-guides">Guide map</a>
                         <a href="#doc-quickstart">Quickstart</a>
                         <a href="#doc-auth">Authentication</a>
-                        <a href="#doc-tenant-auth">Tenant settings</a>
                         <a href="#doc-security">Security</a>
-                        <a href="#doc-api-ref">API Reference</a>
-                        <a href="#doc-agent-integrations">AI assistant connections</a>
-                        <a href="#doc-sdks">SDKs</a>
-                        <a href="#doc-examples">Examples</a>
-                        <a href="#doc-client-examples">Client examples</a>
-                        <a href="#doc-visibility">Visibility without end-user login</a>
                         <a href="#doc-architecture">Architecture</a>
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">What is in this tab</div>
-                      <p>Quickstart, auth model, API reference, error codes, security controls, AI assistant connections, SDKs, curl/Python/Node.js examples, visibility rules, and architecture. Go to CLI Setup for installer commands. Go to Setup Modes for deployment paths.</p>
+                      <p>This is the orientation layer. It explains what SupaVector is, which setup mode you are in, what you need before you start, and where to go next for install, setup, database, RBAC, management, memory policy, or reference material.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
+
+            <details class="details section" id="doc-start-overview" open>
+              <summary>What SupaVector is</summary>
+              <div class="section-body">
+                <p>SupaVector is a retrieval and memory platform for AI applications, agents, assistants, backends, and internal tools. It combines chunked document indexing, search, grounded answer generation, boolean decision support, long-lived memory storage, tenant-aware security, and operational tooling in one runtime.</p>
+                <div class="doc-block">
+                  <div class="doc-label">What makes SupaVector different</div>
+                  <div class="doc-grid">
+                    <div class="doc-card">
+                      <h3>Built for runtime use</h3>
+                      <p>SupaVector is not only a document search API. It supports write, search, ask, boolean_ask, memory write, memory recall, reflection, compaction, tenant controls, and admin automation as one platform.</p>
+                    </div>
+                    <div class="doc-card">
+                      <h3>Clear separation by mode</h3>
+                      <p>Hosted, shared-deployment, and self-hosted paths are different on purpose. The docs try to keep readers from mixing “call an existing server” steps with “run the server yourself” steps.</p>
+                    </div>
+                    <div class="doc-card">
+                      <h3>Operationally opinionated</h3>
+                      <p>It includes auth, tenant isolation, service tokens, SSO support, audit history, usage metering, storage tracking, and CLI workflows instead of leaving those as separate glue work.</p>
+                    </div>
+                    <div class="doc-card">
+                      <h3>Memory-aware</h3>
+                      <p>TTL, LRU, and AMVL policies let you treat memory like more than a static index. SupaVector can optimize for fixed expiry, recency, or longer-term usefulness depending on the workload.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-start-requirements">
+              <summary>Requirements by setup mode</summary>
+              <div class="section-body">
+                <p>The required inputs depend on whether you are using SupaVector Hosted, consuming an existing deployment, or running SupaVector yourself.</p>
+                <div class="doc-block">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Mode</th>
+                        <th>What you need</th>
+                        <th>What you do not need</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>SupaVector Hosted</td>
+                        <td>Hosted account, project token, base URL, and hosted billing setup if you will store data or use hosted AI.</td>
+                        <td>Docker, Postgres, repo clone, local bootstrap.</td>
+                      </tr>
+                      <tr>
+                        <td>Existing shared deployment</td>
+                        <td>A base URL and a service token or JWT from the operator of that deployment.</td>
+                        <td>Your own SupaVector infrastructure on the client machine.</td>
+                      </tr>
+                      <tr>
+                        <td>Self-hosted local or server deployment</td>
+                        <td>Node.js 18+, Docker with Compose, secrets, provider keys, and either bundled Postgres or your own Postgres.</td>
+                        <td>A hosted Dashboard account.</td>
+                      </tr>
+                      <tr>
+                        <td>Backend-as-caller</td>
+                        <td>Your own app auth plus a SupaVector service token stored only on the server side.</td>
+                        <td>End-user SupaVector login in the browser.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Fast setup-mode rule</div>
+                  <ul>
+                    <li>If you already have <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span>, you are consuming an existing deployment.</li>
+                    <li>If you are cloning the repo and running Docker yourself, you are self-hosting, even when you use external Postgres.</li>
+                    <li>If you are using the hosted Dashboard and project tokens, you are on SupaVector Hosted.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-start-capabilities">
+              <summary>Capabilities</summary>
+              <div class="section-body">
+                <div class="doc-grid">
+                  <div class="doc-card">
+                    <h3>Index and search</h3>
+                    <p>Ingest raw text, local files through the CLI/UI, or URL content, then retrieve top-k grounded chunks with collection and doc filters.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Grounded answers</h3>
+                    <p>Use <span class="mono">ask</span> for cited answers and <span class="mono">boolean_ask</span> when you need a constrained true, false, or invalid decision with supporting evidence.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Memory workflows</h3>
+                    <p>Store durable memory items, recall them with filters, reflect asynchronously into derived memories, and compact over time.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Tenant-aware security</h3>
+                    <p>Use tenant isolation, RBAC, ACL visibility, service tokens, and SSO policies to keep runtime and admin access separated correctly.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Hosted and self-hosted</h3>
+                    <p>Run SupaVector yourself or call an existing hosted/shared deployment. The API shape stays familiar even though the operational control plane changes.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Admin and enterprise control</h3>
+                    <p>Manage users, roles, tenants, service tokens, SSO, enterprise control-plane APIs, and hosted billing boundaries when needed.</p>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-start-quick-paths">
+              <summary>Quick-start paths</summary>
+              <div class="section-body">
+                <p>Pick the path that matches who runs SupaVector and where your first credentials come from.</p>
+                <div class="doc-grid">
+                  <div class="doc-card">
+                    <h3>Hosted quick path</h3>
+                    <p>Create a project in the Dashboard, copy the project token, store <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span> on your server, and start sending HTTPS requests.</p>
+                    <p><a href="#setup">Continue in Setup</a> or <a href="#reference">jump to Reference</a>.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Self-host quick path</h3>
+                    <p>Install the CLI, run <span class="mono">supavector onboard</span>, let it create the first admin and service token, then connect your app or worker to the local server.</p>
+                    <p><a href="#install">Continue in Install</a> or <a href="#setup">see full mode guidance</a>.</p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Existing deployment quick path</h3>
+                    <p>If SupaVector already exists, ask the operator for a base URL and a token. Do not clone the repo just to consume the API from a client machine.</p>
+                    <p><a href="#setup">Continue in Setup</a> or <a href="#reference">jump to API Reference</a>.</p>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-start-ui">
+              <summary>UI tour</summary>
+              <div class="section-body">
+                <p>The browser UI is useful for different jobs depending on whether the deployment is self-hosted or hosted.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Main surfaces</div>
+                  <ul>
+                    <li><strong>Product:</strong> product overview and positioning.</li>
+                    <li><strong>Playground:</strong> ingest, search, ask, and runtime experimentation.</li>
+                    <li><strong>Settings / Developer:</strong> full admin controls on self-hosted deployments, or a reduced developer surface on hosted deployments.</li>
+                    <li><strong>Docs:</strong> the structured guide you are reading now.</li>
+                    <li><strong>Collections, Jobs, Metrics, Usage:</strong> operational views into what the instance is doing.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted versus self-hosted rule</div>
+                  <p>Hosted users should treat the Dashboard as the control plane for project, billing, token, and hosted account tasks. Self-hosted users should treat the gateway Settings UI and admin APIs as the control plane.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-start-guides">
+              <summary>Guide map</summary>
+              <div class="section-body">
+                <p>Use these sections as the main routes through the documentation.</p>
+                <div class="doc-grid">
+                  <div class="doc-card">
+                    <h3>Install</h3>
+                    <p>CLI install, onboarding, containers, hosting, maintenance, commands, and examples.</p>
+                    <p><a href="#install">Open Install</a></p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Setup</h3>
+                    <p>Setup-mode boundaries for hosted, shared, self-hosted, deployment planning, and enterprise rollout.</p>
+                    <p><a href="#setup">Open Setup</a></p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Database</h3>
+                    <p>Where data lives, what gets backed up, and what developers should depend on.</p>
+                    <p><a href="#database">Open Database</a></p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>RBAC, ACL and Tenant</h3>
+                    <p>Access control, tenant auth, ACL visibility, service tokens, and enterprise role boundaries.</p>
+                    <p><a href="#rbac">Open RBAC</a></p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Manage</h3>
+                    <p>Platform operations, telemetry, troubleshooting, and operator checklists.</p>
+                    <p><a href="#manage">Open Manage</a></p>
+                  </div>
+                  <div class="doc-card">
+                    <h3>Reference</h3>
+                    <p>API routes, assistant connections, examples, client examples, CLI references, and enterprise APIs.</p>
+                    <p><a href="#reference">Open Reference</a></p>
+                  </div>
+                </div>
+              </div>
+            </details>
 
             <details class="details section" id="doc-quickstart" open>
               <summary>Quickstart</summary>
@@ -83,7 +332,7 @@ supavector onboard
 supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
 supavector ask --question "What does Supavector store?" --collection local-demo
 supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
-                  <p class="hint">Use the <strong>CLI Setup</strong> tab if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
+                  <p class="hint">Use <strong>Install</strong> if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What <span class="mono">supavector onboard</span> does</div>
@@ -165,6 +414,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
                   <div class="doc-label">Repository guides for fork users</div>
                   <ul>
                     <li><span class="mono">docs/self-hosting.md</span> for the full self-hosting path</li>
+                    <li>The <strong>Setup → Enterprise</strong> guide and <span class="mono">docs/enterprise.md</span> for enterprise SSO, tenant admin rollout, control-plane APIs, and hosted versus self-hosted enterprise choices</li>
                     <li><span class="mono">docs/bring-your-own-postgres.md</span> for external Postgres</li>
                     <li><span class="mono">docs/agents.md</span> for app and agent runtime integration</li>
                     <li><span class="mono">docker-compose.external-postgres.yml</span> and <span class="mono">.env.external-postgres.example</span> for the built-in BYO Postgres path</li>
@@ -184,11 +434,18 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </p>
                 <div class="doc-block">
                   <div class="doc-label">Looking for manual Docker setup?</div>
-                  <p>Open the <strong>Setup</strong> tab. That tab has the bundled-stack, BYO Postgres, shared-deployment, backend-as-caller, and human-admin paths, including the raw <span class="mono">bootstrap_instance.js</span> commands.</p>
+                  <p>Open <strong>Setup</strong>. That guide has the bundled-stack, BYO Postgres, shared-deployment, backend-as-caller, and human-admin paths, including the raw <span class="mono">bootstrap_instance.js</span> commands.</p>
                 </div>
               </div>
             </details>
 
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="rbac">
+                <div id="rbac"></div>
+                <div class="docs-shell">
+                  <div class="docs-content">
             <details class="details section" id="doc-auth">
               <summary>Authentication</summary>
               <div class="section-body">
@@ -341,6 +598,14 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </div>
               </div>
             </details>
+
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="reference">
+                <div id="reference"></div>
+                <div class="docs-shell">
+                  <div class="docs-content">
             <details class="details section" id="doc-api-ref">
               <summary>API Reference</summary>
               <div class="section-body">
@@ -1034,6 +1299,12 @@ while (true) {
               </div>
             </details>
 
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="rbac">
+                <div class="docs-shell">
+                  <div class="docs-content">
             <details class="details section" id="doc-visibility">
               <summary>Visibility without end-user login</summary>
               <div class="section-body">
@@ -1088,6 +1359,12 @@ while (true) {
               </div>
             </details>
 
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="core">
+                <div class="docs-shell">
+                  <div class="docs-content">
             <details class="details section" id="doc-architecture">
               <summary>Architecture</summary>
               <div class="section-body">
@@ -1110,10 +1387,11 @@ while (true) {
                 </div>
               </div>
               <div class="doc-panel" data-doc-panel="cli">
+                <div id="install"></div>
                 <div class="docs-shell">
                   <aside class="docs-sidebar" aria-label="CLI setup outline">
                     <div class="doc-outline docs-sidebar-card">
-                      <div class="doc-outline-title">CLI Setup</div>
+                      <div class="doc-outline-title">Install</div>
                       <div class="doc-outline-links">
                         <a href="#doc-cli-install">Install</a>
                         <a href="#doc-cli-container">Container</a>
@@ -1124,11 +1402,23 @@ while (true) {
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
-                      <div class="doc-label">Best use</div>
-                      <p>Use this tab when you want Supavector to feel like one command surface: install it, run the local container stack, point apps at it, maintain it over time, and keep a working command reference close by.</p>
+                      <div class="doc-label">Use this tab when</div>
+                      <p>You are installing SupaVector, onboarding the local stack, turning the CLI into your main self-hosted operator surface, or looking for the exact CLI command reference and examples.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
+            <div class="doc-route-tabs" aria-label="Install sections">
+              <a class="doc-route-tab" href="#doc-cli-install">Install</a>
+              <a class="doc-route-tab" href="#doc-cli-container">Container</a>
+              <a class="doc-route-tab" href="#doc-cli-hosting">Hosting</a>
+              <a class="doc-route-tab" href="#doc-cli-maintenance">Maintenance</a>
+              <a class="doc-route-tab" href="#doc-cli-commands">CLI Commands</a>
+              <a class="doc-route-tab" href="#doc-cli-examples">Examples</a>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Mode boundary</div>
+              <p>This section is mainly for self-hosted and local-operator workflows. If you already have a hosted or shared-deployment base URL and token, you usually do not need to install or onboard SupaVector on your own machine unless you specifically want the CLI as a remote client.</p>
+            </div>
             <details class="details section" id="doc-cli-install" open>
               <summary>Install</summary>
               <div class="section-body">
@@ -1489,6 +1779,12 @@ supavector boolean_ask \
               </div>
             </details>
 
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="reference">
+                <div class="docs-shell">
+                  <div class="docs-content">
             <details class="details section" id="doc-cli-commands">
               <summary>Commands</summary>
               <div class="section-body">
@@ -1539,6 +1835,36 @@ supavector boolean_ask \
                         <td><span class="mono">supavector bootstrap --username your-username --tenant default</span></td>
                       </tr>
                       <tr>
+                        <td><span class="mono">supavector tenant get</span></td>
+                        <td>Shows tenant auth, SSO, and model overrides from the CLI</td>
+                        <td><span class="mono">supavector tenant get</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">supavector tenant update</span></td>
+                        <td>Updates tenant auth mode, SSO providers, SSO config, or model overrides</td>
+                        <td><span class="mono">supavector tenant update --auth-mode sso_only --sso-providers google,okta --sso-config-file ./tenant-sso.json</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">supavector users create</span></td>
+                        <td>Creates a tenant-local user without opening the browser UI</td>
+                        <td><span class="mono">supavector users create --username ops-admin --password 'change_me' --roles admin,indexer,reader</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">supavector tokens create</span></td>
+                        <td>Mints a tenant runtime service token for an app, worker, or agent</td>
+                        <td><span class="mono">supavector tokens create --name worker-prod --principal-id svc:worker-prod --roles reader,indexer</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">supavector tenants create</span></td>
+                        <td>Creates an enterprise tenant from the CLI when you have <span class="mono">instance_admin</span></td>
+                        <td><span class="mono">supavector tenants create --tenant acme-prod --bootstrap-admin acme-breakglass --bootstrap-token-name acme-runtime</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">supavector audit list</span></td>
+                        <td>Pulls enterprise audit logs from the control plane</td>
+                        <td><span class="mono">supavector audit list --tenant acme-prod --limit 50</span></td>
+                      </tr>
+                      <tr>
                         <td><span class="mono">supavector uninstall</span></td>
                         <td>Removes the managed CLI install, PATH hook, and managed local Docker state</td>
                         <td><span class="mono">supavector uninstall --yes</span></td>
@@ -1550,6 +1876,27 @@ supavector boolean_ask \
                       </tr>
                     </tbody>
                   </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">CLI setup automation shortcuts</div>
+                  <p>The saved local config from <span class="mono">supavector onboard</span> or <span class="mono">supavector bootstrap</span> is enough to run setup commands without the browser UI. These commands use the saved service token by default, or you can pass <span class="mono">--token</span> with a human admin JWT.</p>
+                  <pre class="doc-code">supavector tokens create \
+  --name worker-prod \
+  --principal-id svc:worker-prod \
+  --roles reader,indexer
+
+supavector users create \
+  --username ops-admin \
+  --password 'change_me_now' \
+  --roles admin,indexer,reader
+
+supavector tenant update \
+  --auth-mode sso_only \
+  --sso-providers google,okta \
+  --sso-config-file ./tenant-sso.json
+
+supavector tenant update --body-file ./tenant-settings.json</pre>
+                  <p class="hint">Use <span class="mono">--body-json</span> or <span class="mono">--body-file</span> when you want to send the exact admin API payload from a script or secret-managed JSON file.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Content management commands</div>
@@ -1832,41 +2179,188 @@ supavector boolean_ask --question "Does the CLI test document mention Supavector
               </div>
             </details>
 
+            <details class="details section" id="doc-enterprise-apis">
+              <summary>Enterprise API</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Create a tenant with bootstrap admin and service token</div>
+                  <pre class="doc-code">curl -sS "${SUPAVECTOR_BASE_URL}/v1/admin/tenants" \
+  -H "Authorization: Bearer ${SUPAVECTOR_JWT}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "acme-prod",
+    "name": "Acme Production",
+    "externalId": "crm-123",
+    "metadata": { "region": "us", "tier": "enterprise" },
+    "authMode": "sso_plus_password",
+    "ssoProviders": ["okta"],
+    "bootstrapAdmin": {
+      "username": "acme-breakglass",
+      "roles": ["admin", "indexer", "reader"]
+    },
+    "bootstrapServiceToken": {
+      "name": "acme-prod-automation",
+      "principalId": "acme-prod-automation",
+      "roles": ["admin", "indexer", "reader"]
+    }
+  }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Successful response shape</div>
+                  <pre class="doc-code">{
+  "ok": true,
+  "data": {
+    "tenant": {
+      "id": "acme-prod",
+      "name": "Acme Production",
+      "externalId": "crm-123",
+      "metadata": { "region": "us", "tier": "enterprise" }
+    },
+    "bootstrapAdmin": {
+      "user": {
+        "username": "acme-breakglass",
+        "roles": ["admin", "indexer", "reader"]
+      },
+      "generatedPassword": "shown-only-if-generated"
+    },
+    "bootstrapServiceToken": {
+      "token": "supav_xxx",
+      "tokenInfo": {
+        "name": "acme-prod-automation",
+        "principalId": "acme-prod-automation",
+        "roles": ["admin", "indexer", "reader"]
+      }
+    }
+  },
+  "meta": {
+    "tenantId": "acme-prod",
+    "collection": null,
+    "timestamp": "2026-03-26T00:00:00.000Z"
+  }
+}</pre>
+                  <p class="hint">If you omit the bootstrap admin password, the generated password is returned once. If you create a bootstrap service token, that token is also returned once.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Update tenant auth and SSO config</div>
+                  <pre class="doc-code">curl -sS -X PATCH "${SUPAVECTOR_BASE_URL}/v1/admin/tenants/acme-prod" \
+  -H "Authorization: Bearer ${SUPAVECTOR_JWT}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "authMode": "sso_only",
+    "ssoProviders": ["okta"],
+    "ssoConfig": {
+      "okta": {
+        "enabled": true,
+        "issuer": "https://acme.okta.com/oauth2/default",
+        "clientId": "client-id",
+        "clientSecret": "client-secret",
+        "allowedDomains": ["acme.com"],
+        "defaultRoles": ["reader"],
+        "roleMappings": {
+          "SupaVector-Admins": ["admin", "indexer", "reader"]
+        }
+      }
+    }
+  }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Create a runtime service token for a tenant</div>
+                  <pre class="doc-code">curl -sS "${SUPAVECTOR_BASE_URL}/v1/admin/tenants/acme-prod/service-tokens" \
+  -H "Authorization: Bearer ${SUPAVECTOR_JWT}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "acme-prod-worker",
+    "principalId": "svc:acme-prod-worker",
+    "roles": ["indexer", "reader"]
+  }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Audit retrieval</div>
+                  <pre class="doc-code">curl -sS "${SUPAVECTOR_BASE_URL}/v1/admin/tenants/acme-prod/audit?limit=50" \
+  -H "Authorization: Bearer ${SUPAVECTOR_JWT}"</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Equivalent CLI control-plane flow</div>
+                  <pre class="doc-code">supavector tenants list --limit 100 --search acme
+
+supavector tenants create \
+  --tenant acme-prod \
+  --name "Acme Production" \
+  --external-id crm-123 \
+  --metadata-json '{"region":"us","tier":"enterprise"}' \
+  --bootstrap-admin acme-breakglass \
+  --bootstrap-admin-roles admin,indexer,reader \
+  --bootstrap-token-name acme-prod-automation \
+  --bootstrap-token-principal-id svc:acme-control-plane \
+  --bootstrap-token-roles admin,indexer,reader
+
+supavector tenants update \
+  --tenant acme-prod \
+  --auth-mode sso_only \
+  --sso-providers okta \
+  --sso-config-file ./acme-okta.json
+
+supavector tenants tokens create \
+  --tenant acme-prod \
+  --name acme-prod-worker \
+  --principal-id svc:acme-prod-worker \
+  --roles indexer,reader
+
+supavector audit list --tenant acme-prod --limit 50</pre>
+                  <p class="hint">These CLI commands use the saved service token by default. Pass <span class="mono">--token "${SUPAVECTOR_JWT}"</span> when you want to act as a human <span class="mono">instance_admin</span> session instead.</p>
+                </div>
+              </div>
+            </details>
+
                   </div>
                 </div>
               </div>
               <div class="doc-panel" data-doc-panel="setup">
+                <div id="setup"></div>
                 <div class="docs-shell">
                   <aside class="docs-sidebar" aria-label="Setup outline">
                     <div class="doc-outline docs-sidebar-card">
-                      <div class="doc-outline-title">Setup Modes</div>
+                      <div class="doc-outline-title">Setup</div>
                       <div class="doc-outline-links">
                         <a href="#doc-setup-modes">Start here</a>
+                        <a href="#doc-cli-install">Local deployment and CLI</a>
+                        <a href="#mode-bundled">Self hosting</a>
+                        <a href="#doc-deployment-start">Deployment</a>
+                        <a href="#doc-enterprise-start">Enterprise</a>
                         <a href="#doc-setup-boundaries">What changes by mode</a>
                         <a href="#doc-setup-guides">Mode-by-mode setup</a>
-                        <a href="#mode-hosted">Supavector Hosted</a>
                         <a href="#doc-setup-rules">Credential rules</a>
                         <a href="#doc-setup-mistakes">Common mistakes</a>
                       </div>
                     </div>
                     <div class="doc-block docs-sidebar-card docs-sidebar-note">
                       <div class="doc-label">Setup philosophy</div>
-                      <p>Pick one mode, follow it top to bottom, and stop mixing setup paths. This tab is the manual setup-mode guide. If you want installer-driven CLI setup, use the CLI Setup tab instead.</p>
+                      <p>Pick one setup mode and stay inside it. Hosted readers should not follow self-host bootstrap steps, and self-hosted readers should not wait for hosted Dashboard credentials that do not exist in their deployment.</p>
                     </div>
                   </aside>
                   <div class="docs-content">
+            <div class="doc-route-tabs" aria-label="Setup guides">
+              <a class="doc-route-tab" href="#doc-cli-install">Local Deployment and CLI</a>
+              <a class="doc-route-tab" href="#mode-bundled">Self Hosting</a>
+              <a class="doc-route-tab" href="#doc-deployment-start">Deployment</a>
+              <a class="doc-route-tab" href="#doc-enterprise-start">Enterprise</a>
+            </div>
+            <div class="doc-block">
+              <div class="doc-label">Do not mix setup paths</div>
+              <p>If you are using SupaVector Hosted or another existing deployment, stop before any local bootstrap or Docker step. If you are self-hosting, do not wait for Dashboard-issued hosted project tokens. This guide is where that separation becomes explicit.</p>
+            </div>
 
             <details class="details section" id="doc-setup-modes" open>
               <summary>Choose a setup mode</summary>
               <div class="section-body">
                 <p>
-                  This tab is the operational setup guide. “Usage mode” means two things together:
+                  This is the operational setup guide. “Usage mode” means two things together:
                   who runs Supavector, and where your first credentials come from. Pick the mode that matches both.
                 </p>
                 <div class="doc-block">
-                  <div class="doc-label">Before you use this tab</div>
-                  <p>Use <strong>CLI Setup</strong> if you want Supavector installed, onboarded, and operated from one command-line workflow. Stay on this tab when you want the manual steps by setup mode, including what to clone, what env file to edit, when to run Docker, when not to clone at all, and where the first service token actually comes from.</p>
-                  <p class="hint">The same explanation also lives in <span class="mono">docs/setup-modes.md</span> in the repository for people reading the markdown docs directly.</p>
+                  <div class="doc-label">Before you use this guide</div>
+                  <p>Use <strong>Install</strong> if you want Supavector installed, onboarded, and operated from one command-line workflow. Stay here when you want the manual steps by setup mode, including what to clone, what env file to edit, when to run Docker, when not to clone at all, and where the first service token actually comes from.</p>
+                  <p class="hint">The same explanation also lives in <span class="mono">docs/setup-modes.md</span> in the repository. If you need enterprise rollout help after you choose a setup path, continue with <strong>Setup → Enterprise</strong> or <span class="mono">docs/enterprise.md</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What the mode names mean</div>
@@ -2242,7 +2736,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <ul>
                         <li>A Dashboard account (Google, GitHub, or email sign-in)</li>
                         <li>One or more projects — each is an isolated Supavector tenant</li>
-                        <li>A credit balance for AI generation</li>
+                        <li>A credit balance for AI generation plus a saved payment method for hosted storage invoices</li>
                       </ul>
                     </div>
                     <div class="doc-block">
@@ -2264,14 +2758,15 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       <p class="hint">Tokens from the hosted service start with <span class="mono">supav_</span>. If you close the dialog without copying the token, create a new one from the project's token list and revoke the old one.</p>
                     </div>
                     <div class="doc-block">
-                      <div class="doc-label">2. Add credits</div>
-                      <p>AI generation (<span class="mono">/ask</span>, <span class="mono">/boolean_ask</span>) requires a positive credit balance. Indexing, search, and memory operations are not credit-gated. Write operations (<span class="mono">/v1/docs</span>, <span class="mono">/v1/memory/write</span>) do update the storage meter, which is tracked separately and shown in the Dashboard.</p>
+                      <div class="doc-label">2. Set up billing</div>
+                      <p>AI generation (<span class="mono">/ask</span>, <span class="mono">/boolean_ask</span>) uses credit by default. Indexing, search, and memory operations are not credit-gated, but hosted writes still update the storage meter and hosted storage is billed separately each month from retained <span class="mono">GB-month</span> usage.</p>
                       <ol>
                         <li>In the Dashboard, click <strong>+ Add Credit</strong> in the Credits &amp; Billing card.</li>
                         <li>Choose a preset amount or enter a custom USD amount.</li>
                         <li>Complete payment in Stripe Checkout. You are redirected back to the Dashboard with your balance updated.</li>
+                        <li>Open the Billing Portal from the Dashboard and keep a default payment method on file for hosted storage invoices.</li>
                       </ol>
-                      <p class="hint">In test mode, use Stripe card <span class="mono">4242 4242 4242 4242</span> with any future expiry, any CVC, and any ZIP.</p>
+                      <p class="hint">In test mode, use Stripe card <span class="mono">4242 4242 4242 4242</span> with any future expiry, any CVC, and any ZIP. If a request supplies the matching request-scoped provider key for generation, hosted AI credit is not deducted for that request, but hosted storage billing still applies.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">3. Store your runtime env</div>
@@ -2287,12 +2782,12 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
   -H "Content-Type: application/json" \
   -d '{"docId":"welcome","collection":"default","text":"Supavector stores memory for agents."}'
 
-# Ask a question (deducts credit)
+# Ask a question (deducts hosted credit unless you send the matching provider key)
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"question":"What does Supavector store?","k":5,"policy":"amvl"}'</pre>
-                      <p class="hint">The hosted instance supplies the AI provider. You do not need to send <span class="mono">X-OpenAI-API-Key</span> unless you want to override the server default.</p>
+                      <p class="hint">The hosted instance supplies the AI provider by default. You do not need to send <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, or <span class="mono">X-Anthropic-API-Key</span> unless you want that request to use your provider key instead of the hosted default.</p>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Error codes specific to hosted tokens</div>
@@ -2318,6 +2813,18 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
                             <td>—</td>
                             <td>Token is missing, malformed, revoked, or from a different deployment.</td>
                             <td>Verify the token starts with <span class="mono">supav_</span> and is active in the Dashboard.</td>
+                          </tr>
+                          <tr>
+                            <td>402</td>
+                            <td><span class="mono">STORAGE_PAYMENT_METHOD_REQUIRED</span></td>
+                            <td>Hosted storage writes are blocked because there is no saved payment method after the grace window.</td>
+                            <td>Add a payment method in the Billing Portal, then retry the write.</td>
+                          </tr>
+                          <tr>
+                            <td>402</td>
+                            <td><span class="mono">STORAGE_BILLING_PAST_DUE</span></td>
+                            <td>Hosted storage billing is past due and the grace window expired.</td>
+                            <td>Update payment details in the Billing Portal and pay the invoice, then retry.</td>
                           </tr>
                         </tbody>
                       </table>
@@ -2352,8 +2859,8 @@ if (!res.ok) throw new Error(data.error || "Supavector error");</pre>
                           <tr><td>Manage Postgres</td><td>No</td><td>Yes</td></tr>
                           <tr><td>Token comes from</td><td>Dashboard sign-up</td><td><span class="mono">bootstrap_instance.js</span></td></tr>
                           <tr><td>Token prefix</td><td><span class="mono">supav_</span></td><td>No fixed prefix</td></tr>
-                          <tr><td>AI generation billing</td><td>Credit balance in Dashboard</td><td>Your own provider key billed directly</td></tr>
-                          <tr><td>Storage billing</td><td>Measured per write, shown in Dashboard</td><td>Not tracked</td></tr>
+                          <tr><td>AI generation billing</td><td>Credit balance by default, or your provider billed directly when the request uses the matching provider-key header</td><td>Your own provider key billed directly</td></tr>
+                          <tr><td>Storage billing</td><td>Monthly hosted <span class="mono">GB-month</span> based on retained storage, billed separately from credit</td><td>Your own infrastructure costs</td></tr>
                           <tr><td>402 / 503 credit errors</td><td>Yes — for <span class="mono">supav_</span> tokens with a project</td><td>Never</td></tr>
                         </tbody>
                       </table>
@@ -2449,6 +2956,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                         <li>You still use the same <span class="mono">SUPAVECTOR_BASE_URL</span> and Supavector service token as shared mode.</li>
                         <li>You add a request-scoped provider-key header on supported sync requests.</li>
                         <li>You may also set <span class="mono">provider</span> in <span class="mono">ask</span> or <span class="mono">boolean_ask</span> request bodies.</li>
+                        <li>On hosted or other portal-enabled shared deployments, a matching generation-key header makes that request use your provider billing instead of hosted AI credit.</li>
                       </ul>
                     </div>
                     <div class="doc-block">
@@ -2457,6 +2965,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                         <li>Supavector still owns the shared deployment, Postgres, and auth state.</li>
                         <li>Your provider key is not persisted into Supavector server-side config just by sending the header.</li>
                         <li>The service token still comes from the shared deployment admin path.</li>
+                        <li>Shared-deployment storage billing still belongs to the shared deployment because the data remains there.</li>
                       </ul>
                     </div>
                     <div class="doc-block">
@@ -2670,11 +3179,1095 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                   </div>
                 </div>
               </div>
+              <div class="doc-panel" data-doc-panel="setup">
+                <div class="docs-shell">
+                  <aside class="docs-sidebar" aria-label="Deployment outline">
+                    <div class="doc-outline docs-sidebar-card">
+                      <div class="doc-outline-title">Deployment</div>
+                      <div class="doc-outline-links">
+                        <a href="#doc-deployment-start">Start here</a>
+                        <a href="#doc-deployment-topologies">Topologies</a>
+                        <a href="#doc-deployment-bundled">Self-host bundled</a>
+                        <a href="#doc-deployment-external-postgres">Self-host external Postgres</a>
+                        <a href="#doc-deployment-production">Production hardening</a>
+                        <a href="#doc-deployment-upgrades">Upgrades</a>
+                        <a href="#doc-deployment-hosted">Hosted quick path</a>
+                      </div>
+                    </div>
+                    <div class="doc-block docs-sidebar-card docs-sidebar-note">
+                      <div class="doc-label">Use this tab when</div>
+                      <p>You are standing up SupaVector infrastructure, promoting it beyond local testing, or explaining the operational difference between running SupaVector yourself and calling an existing hosted deployment.</p>
+                    </div>
+                  </aside>
+                  <div class="docs-content">
+
+            <details class="details section" id="doc-deployment-start" open>
+              <summary>Start here</summary>
+              <div class="section-body">
+                <p>This is the deployment runbook. It is self-hosting first, because that is where you need infrastructure guidance. If you are using SupaVector Hosted, skip to the hosted quick path near the end of this section.</p>
+                <div class="doc-block">
+                  <div class="doc-label">What this guide answers</div>
+                  <ul>
+                    <li>Which self-host topology should I choose?</li>
+                    <li>What are the concrete steps for bundled Postgres versus external Postgres?</li>
+                    <li>What do I need for production readiness?</li>
+                    <li>How do hosted customers wire a backend to SupaVector without self-hosting anything?</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Fast decision rule</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Path</th>
+                        <th>Choose it when</th>
+                        <th>First step</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Bundled self-host</td>
+                        <td>You want the quickest path from clone to working server and you are fine with the repo-managed Postgres container.</td>
+                        <td>Clone repo → copy <span class="mono">.env.example</span> → run Docker Compose.</td>
+                      </tr>
+                      <tr>
+                        <td>External Postgres self-host</td>
+                        <td>You already operate Postgres and want SupaVector inside your existing database and backup conventions.</td>
+                        <td>Clone repo → create dedicated Postgres DB → use <span class="mono">docker-compose.external-postgres.yml</span>.</td>
+                      </tr>
+                      <tr>
+                        <td>Hosted</td>
+                        <td>You do not want to run SupaVector infrastructure and only need your app or backend to call an existing SupaVector server.</td>
+                        <td>Get base URL + token from Dashboard and store them in your server environment.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-topologies">
+              <summary>Deployment topologies</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Bundled self-host topology</div>
+                  <ul>
+                    <li><span class="mono">gateway</span> runs the HTTP API, auth, docs UI, jobs, and orchestration.</li>
+                    <li><span class="mono">postgres</span> stores relational state such as users, tenants, chunks, memory metadata, jobs, and audit logs.</li>
+                    <li><span class="mono">redis</span> in this repo is actually the SupaVector vector-store process and keeps vector WAL data.</li>
+                    <li>All three are started by <span class="mono">docker compose up</span>.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">External Postgres self-host topology</div>
+                  <ul>
+                    <li>You still run the SupaVector <span class="mono">gateway</span> and vector-store yourself.</li>
+                    <li>The difference is that relational state moves to your own Postgres instance.</li>
+                    <li>This is still self-hosted. It does not turn the deployment into SupaVector Hosted.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted topology</div>
+                  <ul>
+                    <li>SupaVector runs the control plane, API plane, Postgres, and vector-store.</li>
+                    <li>Your backend or worker just sends HTTPS requests to that existing SupaVector server.</li>
+                    <li>Your deployment concern is credential handling and request routing, not SupaVector infrastructure.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-bundled">
+              <summary>Self-host with bundled Postgres</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Best for</div>
+                  <p>Local development, single-node internal deployments, small teams, and anyone who wants the fastest operational path before they optimize infrastructure boundaries.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Step-by-step</div>
+                  <ol>
+                    <li>Clone the repository.</li>
+                    <li>Copy <span class="mono">.env.example</span> to <span class="mono">.env</span>.</li>
+                    <li>Set required secrets and provider keys.</li>
+                    <li>Start Docker Compose.</li>
+                    <li>Bootstrap the first admin and first service token.</li>
+                    <li>Store <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span> in your app or secret manager.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Commands</div>
+                  <pre class="doc-code">cp .env.example .env
+# edit .env and set:
+# POSTGRES_PASSWORD
+# JWT_SECRET
+# COOKIE_SECRET
+# OPENAI_API_KEY and/or GEMINI_API_KEY and/or ANTHROPIC_API_KEY
+
+docker compose up -d --build
+curl -fsS http://localhost:3000/health
+
+docker compose exec gateway node scripts/bootstrap_instance.js \
+  --username admin \
+  --password change_me \
+  --tenant default \
+  --service-token-name app-bootstrap</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What to persist</div>
+                  <ul>
+                    <li>The Postgres volume.</li>
+                    <li>The vector-store WAL volume.</li>
+                    <li>Your <span class="mono">.env</span> secrets outside git.</li>
+                    <li>The issued service token in a secret manager, not in code.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">When to move off this path</div>
+                  <p>Move to external Postgres when your organization already has database standards, HA requirements, backup policies, or DB observability that should remain centralized.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-external-postgres">
+              <summary>Self-host with external Postgres</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Best for</div>
+                  <p>Teams with their own Postgres operations, security review, backup tooling, and database lifecycle management who still want to run SupaVector in their own environment.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Step-by-step</div>
+                  <ol>
+                    <li>Create a dedicated Postgres database and credentials for SupaVector.</li>
+                    <li>Copy <span class="mono">.env.external-postgres.example</span> or set equivalent env vars.</li>
+                    <li>Run <span class="mono">docker compose -f docker-compose.external-postgres.yml up -d --build</span>.</li>
+                    <li>Bootstrap the first admin and service token against that deployment.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Commands</div>
+                  <pre class="doc-code">cp .env.external-postgres.example .env
+# edit .env and set:
+# PGHOST
+# PGPORT
+# PGDATABASE
+# PGUSER
+# PGPASSWORD
+# JWT_SECRET
+# COOKIE_SECRET
+# provider API keys
+
+docker compose -f docker-compose.external-postgres.yml up -d --build
+curl -fsS http://localhost:3000/health
+
+docker compose -f docker-compose.external-postgres.yml exec gateway \
+  node scripts/bootstrap_instance.js \
+  --username admin \
+  --password change_me \
+  --tenant default \
+  --service-token-name app-bootstrap</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operational difference from bundled</div>
+                  <p>The gateway still runs the same code and migrations. The only difference is where the relational data lives. The deployment remains self-hosted either way.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Recommended guardrails</div>
+                  <ul>
+                    <li>Give SupaVector its own database or schema boundary.</li>
+                    <li>Back up Postgres and the vector-store WAL on the same cadence.</li>
+                    <li>Keep DB migrations enabled on controlled rollout environments unless you have a separate migration process.</li>
+                    <li>Treat embedding model changes as a reindex event, not a normal hot change.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-production">
+              <summary>Production hardening</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Minimum production checklist</div>
+                  <ul>
+                    <li>Set strong <span class="mono">JWT_SECRET</span> and <span class="mono">COOKIE_SECRET</span>.</li>
+                    <li>Set <span class="mono">PUBLIC_BASE_URL</span> to the externally reachable HTTPS URL.</li>
+                    <li>Set <span class="mono">COOKIE_SECURE=1</span> when served behind HTTPS.</li>
+                    <li>Terminate TLS at a reverse proxy or load balancer.</li>
+                    <li>Persist Postgres and vector-store data on durable storage.</li>
+                    <li>Keep provider keys and service tokens in a proper secret manager.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operator expectations</div>
+                  <ul>
+                    <li>Back up Postgres.</li>
+                    <li>Back up the vector WAL data.</li>
+                    <li>Monitor <span class="mono">/health</span>, job backlog, storage growth, and login failures.</li>
+                    <li>Keep one break-glass local admin if the deployment uses SSO.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Reverse proxy note</div>
+                  <p>If you place SupaVector behind Nginx, Traefik, Cloudflare, or another ingress layer, make sure forwarded host and proto headers are preserved so generated docs links, SSO redirect URIs, and OpenAPI server URLs resolve correctly.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-upgrades">
+              <summary>Upgrades and rollback thinking</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Upgrade approach</div>
+                  <ol>
+                    <li>Back up Postgres and vector WAL data.</li>
+                    <li>Pull the new code or image.</li>
+                    <li>Review env changes and model changes.</li>
+                    <li>Restart the gateway and let migrations run.</li>
+                    <li>Smoke test health, docs, search, ask, and admin paths.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Rollback rule</div>
+                  <p>Rollbacks are easiest before schema or embedding-space changes. If you change the embedding provider or model, plan for a reindex and do not assume you can roll back without data-shape consequences.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-deployment-hosted">
+              <summary>Hosted quick path: server to SupaVector server</summary>
+              <div class="section-body">
+                <p>If you are using SupaVector Hosted, you do not deploy SupaVector yourself. Your deployment task is to wire your server, worker, or app backend to the existing SupaVector server.</p>
+                <div class="doc-block">
+                  <div class="doc-label">What to do</div>
+                  <ol>
+                    <li>Create a project in the Dashboard.</li>
+                    <li>Copy the project service token.</li>
+                    <li>Store <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span> on your server only.</li>
+                    <li>Send requests from your backend to SupaVector over HTTPS.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Runtime env</div>
+                  <pre class="doc-code">SUPAVECTOR_BASE_URL=https://YOUR_HOSTED_DOMAIN
+SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Server-to-server request</div>
+                  <pre class="doc-code">curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What does SupaVector store?","k":3}'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Optional BYO provider key</div>
+                  <p>If you want hosted runtime/storage but your own provider billing for generation, send the matching request-scoped provider header on supported sync requests. Your backend still holds the SupaVector token.</p>
+                </div>
+              </div>
+            </details>
+
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="database">
+                <div id="database"></div>
+                <div class="docs-shell">
+                  <aside class="docs-sidebar" aria-label="Database outline">
+                    <div class="doc-outline docs-sidebar-card">
+                      <div class="doc-outline-title">Database Guide</div>
+                      <div class="doc-outline-links">
+                        <a href="#doc-database-start">Start here</a>
+                        <a href="#doc-database-boundary">What lives where</a>
+                        <a href="#doc-database-postgres">Postgres responsibilities</a>
+                        <a href="#doc-database-vectors">Vector-store responsibilities</a>
+                        <a href="#doc-database-developer">Developer mental model</a>
+                        <a href="#doc-database-ops">Migrations and operations</a>
+                        <a href="#doc-database-backup">Backup and recovery</a>
+                      </div>
+                    </div>
+                    <div class="doc-block docs-sidebar-card docs-sidebar-note">
+                      <div class="doc-label">Use this tab when</div>
+                      <p>You need to understand the SupaVector data plane: what is stored in Postgres, what is stored in the vector-store, what developers should depend on, and what operators must back up.</p>
+                    </div>
+                  </aside>
+                  <div class="docs-content">
+
+            <details class="details section" id="doc-database-start" open>
+              <summary>Start here</summary>
+              <div class="section-body">
+                <p>SupaVector does not use one database for everything. It deliberately splits responsibilities between relational state in Postgres and embedding/index state in the vector-store.</p>
+                <div class="doc-block">
+                  <div class="doc-label">High-level rule</div>
+                  <ul>
+                    <li>Postgres is the source of truth for tenants, auth, documents, memory metadata, jobs, audits, and most operational state.</li>
+                    <li>The vector-store is the source of truth for embeddings and vector retrieval state.</li>
+                    <li>Application code should integrate through the API, not by assuming internal table layout is the public contract.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-boundary">
+              <summary>What lives where</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Concern</th>
+                        <th>Primary store</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Users, tenants, roles, service tokens</td>
+                        <td>Postgres</td>
+                        <td>Auth, RBAC, tenant policy, and SSO config live here.</td>
+                      </tr>
+                      <tr>
+                        <td>Chunk text and document metadata</td>
+                        <td>Postgres</td>
+                        <td>Chunks remain queryable and attributable even outside vector state.</td>
+                      </tr>
+                      <tr>
+                        <td>Memory items, artifacts, lifecycle metadata</td>
+                        <td>Postgres</td>
+                        <td>Value/lifecycle signals and operational metadata are relational.</td>
+                      </tr>
+                      <tr>
+                        <td>Embeddings and nearest-neighbor search state</td>
+                        <td>Vector-store</td>
+                        <td>This is the retrieval engine for semantic search.</td>
+                      </tr>
+                      <tr>
+                        <td>Usage metering and audit logs</td>
+                        <td>Postgres</td>
+                        <td>Operational history and hosted billing-ready facts are tracked there.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-postgres">
+              <summary>Postgres responsibilities</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">What Postgres owns</div>
+                  <ul>
+                    <li>Tenant definitions and tenant-level settings.</li>
+                    <li>Human users, service tokens, failed-login counters, and audit logs.</li>
+                    <li>Document chunk records and memory metadata.</li>
+                    <li>Jobs, usage history, storage state, and control-plane records.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Why this matters</div>
+                  <p>Operational correctness lives here. Even when retrieval uses the vector-store, tenancy, auth, audit, and most lifecycle logic still depend on Postgres being healthy and durable.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What developers should not assume</div>
+                  <ul>
+                    <li>Internal table names are not the public application contract.</li>
+                    <li>Private hosted/portal tables are not part of the open-source integration surface.</li>
+                    <li>Direct SQL writes from product code can bypass tenant isolation, audit, and idempotency guarantees.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-vectors">
+              <summary>Vector-store responsibilities</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">What the vector-store owns</div>
+                  <ul>
+                    <li>Embedding vectors.</li>
+                    <li>Vector WAL persistence.</li>
+                    <li>Similarity search state used during retrieval.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Important limitation to understand</div>
+                  <p>Embedding space is instance-wide. If you change the embedding provider or embedding model, existing vectors are no longer guaranteed to be compatible. That is why SupaVector treats embedding changes as a reindex boundary, not a casual setting flip.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operational implication</div>
+                  <p>If you back up Postgres but not the vector WAL, you do not have a full restore story. The reverse is also true.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-developer">
+              <summary>Developer mental model</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Write path</div>
+                  <ol>
+                    <li>Your app writes through the API.</li>
+                    <li>The gateway validates auth, tenant, roles, and idempotency.</li>
+                    <li>Text is chunked and metadata is stored in Postgres.</li>
+                    <li>Embeddings are generated and written to the vector-store.</li>
+                    <li>Usage and storage state are updated.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Read path</div>
+                  <ol>
+                    <li>Your app calls search, ask, boolean_ask, or memory recall.</li>
+                    <li>The gateway resolves tenant and collection scope.</li>
+                    <li>The vector-store returns nearest candidates.</li>
+                    <li>Postgres metadata and chunk text provide the final result context.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What app developers should depend on</div>
+                  <ul>
+                    <li>Stable HTTP APIs.</li>
+                    <li>Tenant id, collection, doc id, and service-token semantics.</li>
+                    <li>Documented request headers and response envelopes.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-ops">
+              <summary>Migrations and operations</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Migration model</div>
+                  <p>Gateway startup runs database migrations unless disabled. Existing self-hosted databases are updated forward with additive migrations where possible.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operator rules</div>
+                  <ul>
+                    <li>Do not change schema manually unless you are also updating the application code.</li>
+                    <li>Review migration-sensitive releases before rolling them into production.</li>
+                    <li>Treat embedding model changes and mass reindex events as planned operations.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-database-backup">
+              <summary>Backup and recovery</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Minimum backup story</div>
+                  <ul>
+                    <li>Back up Postgres.</li>
+                    <li>Back up vector WAL data.</li>
+                    <li>Back up your deployment secrets separately.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Recovery rule</div>
+                  <p>A useful recovery plan restores relational state and vector state together, then validates health, search, and a known-good ask request before opening traffic fully.</p>
+                </div>
+              </div>
+            </details>
+
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="platform">
+                <div id="manage"></div>
+                <div class="docs-shell">
+                  <aside class="docs-sidebar" aria-label="Platform management outline">
+                    <div class="doc-outline docs-sidebar-card">
+                      <div class="doc-outline-title">Manage</div>
+                      <div class="doc-outline-links">
+                        <a href="#doc-platform-start">Platform management</a>
+                        <a href="#doc-platform-surfaces">Control surfaces</a>
+                        <a href="#doc-platform-runtime">Runtime changes</a>
+                        <a href="#doc-platform-observability">Telemetry and audit</a>
+                        <a href="#doc-manage-troubleshooting">Troubleshooting</a>
+                        <a href="#doc-platform-checklists">Operator checklists</a>
+                      </div>
+                    </div>
+                    <div class="doc-block docs-sidebar-card docs-sidebar-note">
+                      <div class="doc-label">Use this tab when</div>
+                      <p>You are operating SupaVector as a platform, not only consuming the API. This section is for control surfaces, tenant and token management, telemetry, audits, runtime safety, and practical troubleshooting.</p>
+                    </div>
+                  </aside>
+                  <div class="docs-content">
+            <div class="doc-route-tabs" aria-label="Manage sections">
+              <a class="doc-route-tab" href="#doc-platform-start">Platform Management</a>
+              <a class="doc-route-tab" href="#doc-platform-observability">Telemetry</a>
+              <a class="doc-route-tab" href="#doc-manage-troubleshooting">Troubleshooting</a>
+            </div>
+
+            <details class="details section" id="doc-platform-start" open>
+              <summary>Start here</summary>
+              <div class="section-body">
+                <p>Platform management is different from app integration. App developers need a stable token and API. Platform operators need the systems and rules that produce those credentials safely and keep the deployment healthy over time.</p>
+                <div class="doc-block">
+                  <div class="doc-label">What this section covers</div>
+                  <ul>
+                    <li>Which admin surface to use for which job.</li>
+                    <li>How to manage tenants, users, tokens, and SSO.</li>
+                    <li>How to make runtime changes safely.</li>
+                    <li>How to monitor and audit the platform.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-surfaces">
+              <summary>Control surfaces</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Surface</th>
+                        <th>Use it for</th>
+                        <th>Best fit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>CLI</td>
+                        <td>Local install, onboarding, token bootstrap, local operator workflows</td>
+                        <td>Self-hosted admins and local operators</td>
+                      </tr>
+                      <tr>
+                        <td>Gateway Settings</td>
+                        <td>Interactive self-hosted admin work: tokens, tenant settings, SSO checks, tenant users</td>
+                        <td>Self-hosted browser admins</td>
+                      </tr>
+                      <tr>
+                        <td>Tenant admin APIs</td>
+                        <td>Tenant settings, service tokens, users, and user updates</td>
+                        <td>Automation inside one tenant</td>
+                      </tr>
+                      <tr>
+                        <td>Enterprise control-plane APIs</td>
+                        <td>Cross-tenant lifecycle, tenants, tenant users, audit, cross-tenant tokens</td>
+                        <td>Platform teams and enterprise automation</td>
+                      </tr>
+                      <tr>
+                        <td>Hosted Dashboard</td>
+                        <td>Hosted projects, billing, hosted tokens, hosted admin controls</td>
+                        <td>SupaVector Hosted customers</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Source-of-truth rule</div>
+                  <p>Do not let two admin surfaces compete for the same job. Self-hosted can use the gateway admin surfaces directly. Hosted should treat the Dashboard as the control plane and use gateway Settings only for browser-local developer controls.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-tenants">
+              <summary>Tenant and user management</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Tenant lifecycle</div>
+                  <ol>
+                    <li>Create the tenant.</li>
+                    <li>Choose the auth mode.</li>
+                    <li>Configure allowed SSO providers and tenant-scoped SSO details if needed.</li>
+                    <li>Create or verify at least one break-glass admin path.</li>
+                    <li>Issue service tokens for apps, workers, or agents.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">User lifecycle</div>
+                  <ul>
+                    <li>SSO users are typically created on first successful login.</li>
+                    <li>Local users are useful for break-glass or password-based admin paths.</li>
+                    <li>Role review is an operator responsibility, not just an identity-provider event.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Service-token lifecycle</div>
+                  <ul>
+                    <li>Issue separate tokens for separate apps, environments, or workers.</li>
+                    <li>Prefer least privilege by role.</li>
+                    <li>Rotate and revoke by runtime boundary instead of sharing one token everywhere.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-access">
+              <summary>Access and identity management</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Human versus machine rule</div>
+                  <ul>
+                    <li>Humans use username/password or SSO.</li>
+                    <li>Apps, agents, workers, and CI use service tokens.</li>
+                    <li>Do not run production runtimes on human JWTs.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Auth mode choices</div>
+                  <ul>
+                    <li><span class="mono">sso_only</span> for strict enterprise login control.</li>
+                    <li><span class="mono">sso_plus_password</span> during rollout or when a local fallback is still required.</li>
+                    <li><span class="mono">password_only</span> when SSO is intentionally disabled.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Break-glass rule</div>
+                  <p>Keep one controlled local admin path for self-hosted enterprise even when the normal user path is SSO-only. Hosted customers should follow the hosted control-plane rules instead of inventing a second admin surface.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-runtime">
+              <summary>Runtime changes and safe operations</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Normal runtime changes</div>
+                  <ul>
+                    <li>Tenant answer-model overrides.</li>
+                    <li>SSO policy changes.</li>
+                    <li>Service-token creation or revocation.</li>
+                    <li>Collection cleanup and job review.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">High-risk changes</div>
+                  <ul>
+                    <li>Embedding provider or embedding model changes.</li>
+                    <li>Bulk tenant rewrites.</li>
+                    <li>Large document purge or reindex events.</li>
+                    <li>Schema and migration-sensitive deploys.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operator rule</div>
+                  <p>Anything that changes embedding space, mass data layout, or cross-tenant access should be treated as a change-management event with rollback thinking, not an ordinary Settings click.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-observability">
+              <summary>Telemetry and audit</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">What to watch</div>
+                  <ul>
+                    <li><span class="mono">/health</span> for liveness.</li>
+                    <li>Job queues and long-running tasks.</li>
+                    <li>Usage and storage growth.</li>
+                    <li>Failed logins, lockouts, and unauthorized responses.</li>
+                    <li>Audit trails for sensitive operations.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Audit expectation</div>
+                  <p>Privilege changes, token revokes, tenant auth updates, and other sensitive operator actions should be observable and attributable. Enterprise control-plane flows should prefer the explicit admin APIs where auditability matters.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">High-signal telemetry surfaces</div>
+                  <ul>
+                    <li><span class="mono">/v1/metrics</span> and Prometheus scrape metrics for request, job, and runtime visibility.</li>
+                    <li>Job status endpoints for reflection, compaction, and long-running memory work.</li>
+                    <li>Usage and storage views to understand hosted usage growth and indexing patterns.</li>
+                    <li>Structured logs with request, tenant, and collection context for incident review.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-platform-checklists">
+              <summary>Operator checklists</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Daily / routine</div>
+                  <ul>
+                    <li>Check health and recent failures.</li>
+                    <li>Review queued or stuck jobs.</li>
+                    <li>Watch storage and usage growth.</li>
+                    <li>Review suspicious auth failures if present.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Before major changes</div>
+                  <ul>
+                    <li>Confirm backup coverage.</li>
+                    <li>Confirm break-glass access still works.</li>
+                    <li>Verify which admin surface is the source of truth.</li>
+                    <li>Plan reindex impact if embedding settings are involved.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-manage-troubleshooting">
+              <summary>Troubleshooting</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Common platform issues</div>
+                  <ul>
+                    <li><strong>401 / AUTH_REQUIRED:</strong> missing or malformed JWT or service token.</li>
+                    <li><strong>403 / AUTH_FORBIDDEN:</strong> the caller has the wrong role for the endpoint.</li>
+                    <li><strong>Hosted writes return 402:</strong> storage payment method is missing or the hosted storage invoice is past due.</li>
+                    <li><strong>SSO redirects incorrectly:</strong> <span class="mono">PUBLIC_BASE_URL</span> or the IdP redirect URI does not match the externally reachable URL.</li>
+                    <li><strong>Search quality changed after model updates:</strong> embedding provider/model changes require reindexing because the embedding space is instance-wide.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Operator triage order</div>
+                  <ol>
+                    <li>Check <span class="mono">/health</span> and recent logs.</li>
+                    <li>Check whether the failure is tenant-specific or deployment-wide.</li>
+                    <li>Check role/token validity and recent admin changes.</li>
+                    <li>Check job backlog, storage growth, and provider connectivity.</li>
+                    <li>Only then move to deeper DB, vector, or migration investigation.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Related deep guides</div>
+                  <p>For setup-path mistakes, continue to <a href="#doc-setup-mistakes">Setup troubleshooting</a>. For enterprise provisioning, SSO, and hosted billing issues, continue to <a href="#doc-enterprise-troubleshooting">Enterprise troubleshooting</a>.</p>
+                </div>
+              </div>
+            </details>
+
+                  </div>
+                </div>
+              </div>
+              <div class="doc-panel" data-doc-panel="setup">
+                <div class="docs-shell">
+                  <aside class="docs-sidebar" aria-label="Enterprise documentation outline">
+                    <div class="doc-outline docs-sidebar-card">
+                      <div class="doc-outline-title">Enterprise Guide</div>
+                      <div class="doc-outline-links">
+                        <a href="#doc-enterprise-start">Start here</a>
+                        <a href="#doc-enterprise-control">Control model</a>
+                        <a href="#doc-enterprise-hosted">Hosted rollout</a>
+                        <a href="#doc-enterprise-self-hosted">Self-hosted rollout</a>
+                        <a href="#doc-enterprise-apis">Control APIs</a>
+                        <a href="#doc-enterprise-billing">Billing</a>
+                        <a href="#doc-enterprise-patterns">Patterns</a>
+                        <a href="#doc-enterprise-troubleshooting">Troubleshooting</a>
+                      </div>
+                    </div>
+                    <div class="doc-block docs-sidebar-card docs-sidebar-note">
+                      <div class="doc-label">Use this tab when</div>
+                      <p>You are wiring SSO, delegating tenant administration, automating tenant creation, or need to explain hosted versus self-hosted enterprise billing clearly to a customer or internal team.</p>
+                    </div>
+                  </aside>
+                  <div class="docs-content">
+
+            <details class="details section" id="doc-enterprise-start" open>
+              <summary>Start here</summary>
+              <div class="section-body">
+                <p>
+                  Supavector enterprise is one control model across two deployment shapes:
+                  hosted enterprise on Supavector infrastructure, or self-hosted enterprise on your own infrastructure.
+                  The auth, tenant, and automation concepts stay the same. Billing is the main thing that changes.
+                </p>
+                <div class="doc-block">
+                  <div class="doc-label">Choose the right enterprise shape</div>
+                  <table class="table">
+                    <thead>
+                      <tr><th>Mode</th><th>Who runs infra</th><th>Who pays AI</th><th>Who pays storage</th><th>Use when</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Hosted enterprise</td>
+                        <td>SupaVector</td>
+                        <td>SupaVector prepaid credit by default</td>
+                        <td>SupaVector hosted billing</td>
+                        <td>You want enterprise access control without running SupaVector yourself.</td>
+                      </tr>
+                      <tr>
+                        <td>Hosted enterprise + your provider key</td>
+                        <td>SupaVector</td>
+                        <td>Your provider for matching generation requests</td>
+                        <td>SupaVector hosted billing</td>
+                        <td>You want shared hosted runtime and storage, but direct AI billing at your provider.</td>
+                      </tr>
+                      <tr>
+                        <td>Self-hosted enterprise</td>
+                        <td>You</td>
+                        <td>You</td>
+                        <td>You</td>
+                        <td>You need SupaVector inside your own environment and procurement perimeter.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What enterprise developers usually automate</div>
+                  <ul>
+                    <li>Tenant creation and tenant metadata registration</li>
+                    <li>Tenant-scoped SSO configuration and role mapping</li>
+                    <li>Break-glass admin creation</li>
+                    <li>Service-token issuance for apps, workers, and CI</li>
+                    <li>Audit-log retrieval for provisioning and support events</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Where to continue</div>
+                  <p>Use <strong>Setup</strong> first if you still need to decide hosted vs self-hosted. Use the Settings page when you are ready to configure tenant SSO interactively. Use <span class="mono">docs/enterprise.md</span> if you want the same material in repository form for internal docs, PRs, or runbooks.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-control">
+              <summary>Control model</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Built-in roles</div>
+                  <ul>
+                    <li><span class="mono">instance_admin</span> — cross-tenant control-plane role for tenant lifecycle, cross-tenant users, service tokens, and audit views</li>
+                    <li><span class="mono">admin</span> — tenant admin role</li>
+                    <li><span class="mono">indexer</span> — tenant runtime role for write/search workflows</li>
+                    <li><span class="mono">reader</span> — tenant runtime role for read/search workflows</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Important boundary</div>
+                  <ul>
+                    <li><span class="mono">instance_admin</span> is for platform operators or self-hosted enterprise control-plane admins. Do not hand it to every tenant admin.</li>
+                    <li>Tenant-scoped SSO role mapping can assign only tenant roles. It cannot mint <span class="mono">instance_admin</span> from IdP claims.</li>
+                    <li>Apps and backends should normally use service tokens, not human JWTs.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">API layers</div>
+                  <table class="table">
+                    <thead>
+                      <tr><th>Layer</th><th>Who uses it</th><th>Main routes</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Tenant admin</td>
+                        <td>Customer or tenant-local admins</td>
+                        <td><span class="mono">/v1/admin/tenant</span>, <span class="mono">/v1/admin/users</span>, <span class="mono">/v1/admin/service-tokens</span></td>
+                      </tr>
+                      <tr>
+                        <td>Enterprise control plane</td>
+                        <td><span class="mono">instance_admin</span></td>
+                        <td><span class="mono">/v1/admin/tenants</span>, <span class="mono">/v1/admin/tenants/:tenantId/*</span>, <span class="mono">/v1/admin/audit</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">What is not in the open-source control plane yet</div>
+                  <ul>
+                    <li>SCIM</li>
+                    <li>invitation workflows</li>
+                    <li>tenant deletion</li>
+                    <li>commercial billing-account APIs</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-hosted">
+              <summary>Hosted enterprise rollout</summary>
+              <div class="section-body">
+                <p>Hosted enterprise means SupaVector runs the infrastructure, but you still manage tenant auth, SSO, and enterprise access policy.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Step-by-step</div>
+                  <ol>
+                    <li>Create the hosted account and at least one project.</li>
+                    <li>Decide whether AI generation will use hosted credit or request-scoped BYO provider keys.</li>
+                    <li>Add credit for hosted AI if you will use SupaVector-billed generation.</li>
+                    <li>Save a payment method in the Billing Portal for hosted storage invoices.</li>
+                    <li>Sign in as admin and open <strong>Settings</strong> → tenant controls.</li>
+                    <li>Set the tenant auth mode to <span class="mono">sso_plus_password</span> first.</li>
+                    <li>Allow the SSO providers the tenant should use.</li>
+                    <li>Add tenant-scoped Google, Azure, or Okta config if this tenant should not rely only on instance defaults.</li>
+                    <li>Set default roles, role mappings, and any allowed email-domain rules.</li>
+                    <li>Run an SSO test login and confirm the first user provisions into the tenant.</li>
+                    <li>Keep one local break-glass admin user.</li>
+                    <li>Create production service tokens for apps, workers, CI, and agent backends.</li>
+                    <li>Switch to <span class="mono">sso_only</span> only after the SSO and break-glass paths are proven.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted runtime rule</div>
+                  <p>Do not run long-lived production integrations on human browser JWTs. Use service tokens. If your app already has its own user auth, keep SupaVector behind your backend and call it server-to-server.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted BYO provider key rule</div>
+                  <p>If the request supplies the matching provider-key header for the effective generation provider, SupaVector does not deduct hosted AI credit for that generation request. Hosted storage billing still applies because the data remains on SupaVector infrastructure.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-self-hosted">
+              <summary>Self-hosted enterprise rollout</summary>
+              <div class="section-body">
+                <p>Self-hosted enterprise keeps the same tenant and SSO model, but you own the server, the database, and the provider billing.</p>
+                <div class="doc-block">
+                  <div class="doc-label">Step-by-step</div>
+                  <ol>
+                    <li>Choose bundled-stack or external-Postgres setup from <strong>Setup</strong>.</li>
+                    <li>Set <span class="mono">PUBLIC_BASE_URL</span> to the externally reachable HTTPS URL.</li>
+                    <li>Set <span class="mono">COOKIE_SECRET</span>, <span class="mono">JWT_SECRET</span>, and <span class="mono">COOKIE_SECURE=1</span> behind HTTPS.</li>
+                    <li>Configure your provider keys and default models.</li>
+                    <li>Optionally set instance-wide OIDC env defaults for Google, Azure, or Okta.</li>
+                    <li>Bootstrap the first enterprise control-plane admin with <span class="mono">instance_admin</span>.</li>
+                    <li>Sign in and create or update tenant-specific auth and SSO settings.</li>
+                    <li>Run a real SSO login for a test user.</li>
+                    <li>Create a local break-glass admin user inside each important tenant.</li>
+                    <li>Issue service tokens for apps, workers, and internal automation.</li>
+                    <li>Move to <span class="mono">sso_only</span> only after SSO is stable.</li>
+                  </ol>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Bootstrap command</div>
+                  <pre class="doc-code">cd gateway
+node scripts/bootstrap_instance.js \
+  --tenant platform-admin \
+  --username admin \
+  --roles instance_admin,admin,indexer,reader \
+  --service-token-roles instance_admin,admin,indexer,reader</pre>
+                  <p class="hint">That creates a break-glass human admin and a global admin service token. Store both securely. The plain token value is shown only once.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Instance-wide OIDC fallback</div>
+                  <p>Tenant-scoped SSO config wins when fully configured, but self-hosted enterprise teams usually still want sane instance-wide OIDC defaults so the first rollout is simpler.</p>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-api-guide">
+              <summary>Enterprise API guide</summary>
+              <div class="section-body">
+                <p>The step-by-step rollout stays here in Setup. The exact enterprise API requests, response shapes, and CLI control-plane examples now live in <a href="#doc-enterprise-apis">Reference → Enterprise API</a> so they sit beside the rest of the technical reference surface.</p>
+                <div class="doc-block">
+                  <div class="doc-label">What lives in Reference</div>
+                  <ul>
+                    <li>Tenant creation requests and bootstrap credential shapes</li>
+                    <li>Tenant auth and SSO update payloads</li>
+                    <li>Cross-tenant service-token examples</li>
+                    <li>Audit retrieval calls</li>
+                    <li>Equivalent enterprise CLI flows</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-billing">
+              <summary>Billing and account model</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Hosted account model</div>
+                  <p>Hosted enterprise billing is account-level, even when you operate multiple projects or tenants. Each project stays isolated and separately metered, but the payment method and invoice destination belong to the hosted account.</p>
+                  <ul>
+                    <li>Use one hosted account when one enterprise customer wants consolidated billing.</li>
+                    <li>Use separate hosted accounts when separate legal entities or separate invoices are required.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted billing rules</div>
+                  <ul>
+                    <li><span class="mono">/ask</span> and <span class="mono">/boolean_ask</span> use hosted prepaid credit by default.</li>
+                    <li>Matching BYO provider-key headers stop SupaVector AI charging for that generation request.</li>
+                    <li>Hosted storage is billed separately as retained <span class="mono">GB-month</span>.</li>
+                    <li>Hosted storage billing applies to all hosted tenants, including BYO-key tenants.</li>
+                    <li>A saved payment method is required for ongoing hosted writes after the grace window.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Self-hosted rule</div>
+                  <p>If you run SupaVector yourself, SupaVector does not charge you for AI or storage. You pay your own provider and infrastructure costs directly.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Storage enforcement errors</div>
+                  <table class="table">
+                    <thead>
+                      <tr><th>Status</th><th>Code</th><th>Meaning</th><th>Fix</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>402</td>
+                        <td><span class="mono">STORAGE_PAYMENT_METHOD_REQUIRED</span></td>
+                        <td>Hosted writes are blocked because there is no saved payment method after grace.</td>
+                        <td>Add a payment method in the Billing Portal, then retry the write.</td>
+                      </tr>
+                      <tr>
+                        <td>402</td>
+                        <td><span class="mono">STORAGE_BILLING_PAST_DUE</span></td>
+                        <td>Hosted storage billing is past due and the grace window expired.</td>
+                        <td>Update payment details, pay the invoice, and retry the write.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-patterns">
+              <summary>Recommended production patterns</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Good defaults</div>
+                  <ul>
+                    <li>Reserve <span class="mono">instance_admin</span> for platform operators or a central enterprise automation service.</li>
+                    <li>Give customer-facing tenant admins the tenant-scoped <span class="mono">admin</span> role, not <span class="mono">instance_admin</span>.</li>
+                    <li>Keep SupaVector behind your backend if your product already has its own user auth.</li>
+                    <li>Use service tokens for apps, agents, workers, and CI. Do not use browser JWTs as long-lived runtime credentials.</li>
+                    <li>Start SSO rollouts in <span class="mono">sso_plus_password</span> mode, then move to <span class="mono">sso_only</span>.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Common automation workflow</div>
+                  <ol>
+                    <li>Your enterprise provisioning service authenticates as <span class="mono">instance_admin</span>.</li>
+                    <li>It creates a tenant with external metadata and optional bootstrap credentials.</li>
+                    <li>It configures tenant auth and SSO mappings.</li>
+                    <li>It stores the tenant runtime service token in your secret manager.</li>
+                    <li>Your product backend uses that token for server-to-server SupaVector calls.</li>
+                    <li>Support or compliance systems read tenant audit logs when needed.</li>
+                  </ol>
+                </div>
+              </div>
+            </details>
+
+            <details class="details section" id="doc-enterprise-troubleshooting">
+              <summary>Troubleshooting</summary>
+              <div class="section-body">
+                <div class="doc-block">
+                  <div class="doc-label">Common issues</div>
+                  <ul>
+                    <li><strong>401 on enterprise API calls:</strong> the token or JWT is missing, revoked, or belongs to another deployment.</li>
+                    <li><strong>403 on enterprise API calls:</strong> the caller is not <span class="mono">instance_admin</span>.</li>
+                    <li><strong>Tenant SSO login says provider not configured:</strong> the tenant allowlist or tenant-scoped OIDC config is incomplete.</li>
+                    <li><strong>Tenant SSO login redirects incorrectly:</strong> <span class="mono">PUBLIC_BASE_URL</span> or the IdP redirect URI does not match the externally reachable URL.</li>
+                    <li><strong>Hosted writes fail with 402:</strong> storage payment method is missing or the hosted storage invoice is past due.</li>
+                    <li><strong>Generated bootstrap secrets were lost:</strong> create a new service token or reset the user password. Plain secrets are intentionally shown only once.</li>
+                  </ul>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Go-live checklist</div>
+                  <ul>
+                    <li>At least one working SSO login per tenant</li>
+                    <li>Role mappings verified against real IdP claims</li>
+                    <li>At least one break-glass local admin per important tenant</li>
+                    <li>Runtime tokens stored outside source control</li>
+                    <li>Hosted tenants have credit and payment-method setup completed</li>
+                    <li>Self-hosted deployments have tested backups and secret recovery paths</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+                  </div>
+                </div>
+              </div>
               <div class="doc-panel" data-doc-panel="amv">
+                <div id="memory"></div>
+                <div id="memory-policies"></div>
                 <div class="docs-shell docs-shell-paper">
                   <aside class="docs-sidebar" aria-label="Memory policy outline">
                     <div class="doc-outline docs-sidebar-card amv-outline">
-                      <div class="doc-outline-title">Policies</div>
+                      <div class="doc-outline-title">Memory Policies</div>
                       <div class="doc-outline-links">
                         <a href="#amv-ttl">TTL</a>
                         <a href="#amv-lru">LRU</a>
@@ -2708,6 +4301,11 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                             <div class="amv-meta-label">Rule Of Thumb</div>
                             <div class="amv-meta-value">Use TTL for fixed freshness windows, LRU for cache-like recency, and AMVL for Supavector’s main long-term memory behavior.</div>
                           </div>
+                        </div>
+                        <div class="doc-route-tabs doc-route-tabs-paper" aria-label="Memory policy sections">
+                          <a class="doc-route-tab" href="#amv-ttl">TTL</a>
+                          <a class="doc-route-tab" href="#amv-lru">LRU</a>
+                          <a class="doc-route-tab" href="#amv-amvl">AMVL</a>
                         </div>
                       </header>
 
@@ -2793,6 +4391,9 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                       </details>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
                 </div>
               </div>
             </div>

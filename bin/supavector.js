@@ -71,6 +71,13 @@ Usage:
   supavector logs [--service gateway] [--tail 200]
   supavector doctor [--json]
   supavector bootstrap [--username USER] [--password PASS] [--tenant TENANT]
+  supavector tenant get|update [setup flags...]
+  supavector users list|create|update [user flags...]
+  supavector tokens list|create|revoke [token flags...]
+  supavector tenants list|get|create|update [enterprise flags...]
+  supavector tenants users list|create|update --tenant TENANT [user flags...]
+  supavector tenants tokens list|create|revoke --tenant TENANT [token flags...]
+  supavector audit list [--tenant TENANT] [--limit 100]
   supavector collections list [--json]
   supavector collections delete --collection NAME [--yes] [--json]
   supavector docs list [--collection NAME] [--json]
@@ -87,6 +94,7 @@ Common flags:
   --project-root PATH          Use a specific SupaVector checkout
   --base-url URL               Override saved base URL
   --api-key KEY                Override saved service token
+  --token JWT                  Override saved human/admin JWT
   --openai-key KEY             Send request-scoped X-OpenAI-API-Key
   --gemini-key KEY             Send request-scoped X-Gemini-API-Key
   --anthropic-key KEY          Send request-scoped X-Anthropic-API-Key
@@ -125,6 +133,54 @@ Onboarding / model flags:
   --anthropic-key KEY
   --non-interactive            Fail instead of prompting for missing values
   --force                      Overwrite env file after creating a backup
+
+Tenant / enterprise setup flags:
+  --name NAME
+  --external-id ID
+  --auth-mode sso_only|sso_plus_password|password_only
+  --sso-providers google,azure,okta
+  --sso-config-json JSON       Inline tenant SSO config object
+  --sso-config-file PATH       Read tenant SSO config object from file
+  --metadata-json JSON         Inline tenant metadata object
+  --metadata-file PATH         Read tenant metadata object from file
+  --body-json JSON             Inline full request body for advanced admin commands
+  --body-file PATH             Read full request body from file
+  --answer-provider VALUE
+  --answer-model VALUE
+  --boolean-ask-provider VALUE
+  --boolean-ask-model VALUE
+  --reflect-provider VALUE
+  --reflect-model VALUE
+  --compact-provider VALUE
+  --compact-model VALUE
+  --limit N
+  --search TEXT
+  --action NAME
+  --target-type TYPE
+  --target-id ID
+
+User / token setup flags:
+  --id ID                      Target user or token id for update/revoke
+  --username USER
+  --password PASS
+  --email EMAIL
+  --full-name NAME
+  --roles reader,indexer,admin[,instance_admin]
+  --sso-only true|false
+  --disabled true|false
+  --name NAME                  Token display name
+  --principal-id ID            Token principal id
+  --expires-at ISO_TIMESTAMP
+  --bootstrap-admin USER
+  --bootstrap-admin-password PASS
+  --bootstrap-admin-roles reader,indexer,admin[,instance_admin]
+  --bootstrap-admin-email EMAIL
+  --bootstrap-admin-full-name NAME
+  --bootstrap-admin-sso-only true|false
+  --bootstrap-token-name NAME
+  --bootstrap-token-principal-id ID
+  --bootstrap-token-roles reader,indexer,admin[,instance_admin]
+  --bootstrap-token-expires-at ISO_TIMESTAMP
 `);
 }
 
@@ -2265,6 +2321,344 @@ function parseListFlag(value) {
     .filter(Boolean);
 }
 
+function getNestedSubcommand(parsed, index = 2) {
+  return String(parsed?.positionals?.[index] || "").trim().toLowerCase();
+}
+
+function formatDateTime(value) {
+  const clean = String(value || "").trim();
+  return clean || "never";
+}
+
+function parseJsonText(raw, label) {
+  const text = String(raw || "").trim();
+  if (!text) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+function readJsonObjectFile(filePath, label) {
+  const resolved = path.resolve(String(filePath || "").trim());
+  if (!resolved) {
+    throw new Error(`${label} file path is required.`);
+  }
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`${label} file not found: ${resolved}`);
+  }
+  return parseJsonText(fs.readFileSync(resolved, "utf8"), label);
+}
+
+function readJsonObjectInput(parsed, options = {}) {
+  const label = options.label || "JSON input";
+  const jsonFlag = options.jsonFlag || "body-json";
+  const fileFlag = options.fileFlag || "body-file";
+  const rawJson = getFlag(parsed, jsonFlag);
+  const rawFile = getFlag(parsed, fileFlag);
+  if (rawJson !== undefined && rawFile !== undefined) {
+    throw new Error(`Use either --${jsonFlag} or --${fileFlag}, not both.`);
+  }
+  if (rawJson !== undefined) {
+    if (rawJson === true) {
+      throw new Error(`--${jsonFlag} requires a JSON object value.`);
+    }
+    return parseJsonText(rawJson, label);
+  }
+  if (rawFile !== undefined) {
+    if (rawFile === true) {
+      throw new Error(`--${fileFlag} requires a file path.`);
+    }
+    return readJsonObjectFile(rawFile, label);
+  }
+  return {};
+}
+
+function maybeStringFlag(parsed, ...names) {
+  for (const name of names) {
+    const value = getFlag(parsed, name);
+    if (value === undefined) continue;
+    if (value === true) {
+      throw new Error(`--${name} requires a value.`);
+    }
+    return String(value).trim();
+  }
+  return undefined;
+}
+
+function maybeBooleanFlag(parsed, ...names) {
+  for (const name of names) {
+    const value = getFlag(parsed, name);
+    if (value === undefined) continue;
+    return boolFromFlag(value, value === true);
+  }
+  return undefined;
+}
+
+function maybeNullableStringFlag(parsed, ...names) {
+  const value = maybeStringFlag(parsed, ...names);
+  if (value === undefined) return undefined;
+  if (!value) return null;
+  if (["inherit", "clear", "none", "default", "null"].includes(value.toLowerCase())) {
+    return null;
+  }
+  return value;
+}
+
+function maybeRolesFlag(parsed, name, options = {}) {
+  const value = getFlag(parsed, name);
+  if (value === undefined) {
+    return options.fallback === undefined ? undefined : options.fallback;
+  }
+  const roles = parseListFlag(value);
+  if (!roles.length && options.allowEmpty !== true) {
+    throw new Error(`--${name} must include at least one role.`);
+  }
+  return roles;
+}
+
+function maybePositiveIntFlag(parsed, ...names) {
+  const value = maybeStringFlag(parsed, ...names);
+  if (value === undefined) return undefined;
+  const parsedInt = parseInt(value, 10);
+  if (!Number.isFinite(parsedInt) || parsedInt <= 0) {
+    throw new Error(`--${names[0]} must be a positive integer.`);
+  }
+  return parsedInt;
+}
+
+function setIfDefined(target, key, value) {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+}
+
+function buildAuthHeaders(parsed) {
+  const cfg = resolveClientConfig(parsed);
+  if (!cfg.apiKey && !cfg.token) {
+    throw new Error(`No SupaVector credential is configured. Run \`supavector onboard\` first or set ${"`SUPAVECTOR_API_KEY`"} / ${"`SUPAVECTOR_TOKEN`"}.`);
+  }
+  const headers = {
+    accept: "application/json"
+  };
+  if (cfg.apiKey) {
+    headers["x-api-key"] = cfg.apiKey;
+  } else {
+    headers.authorization = `Bearer ${cfg.token}`;
+  }
+  return { cfg, headers };
+}
+
+async function requestApiJson(parsed, method, routePath, options = {}) {
+  const { cfg, headers } = buildAuthHeaders(parsed);
+  const url = new URL(routePath, cfg.clientBaseUrl);
+  const query = options.query && typeof options.query === "object" ? options.query : null;
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null || value === "") continue;
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const init = { method, headers };
+  if (options.body !== undefined) {
+    headers["content-type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+
+  const res = await fetch(url, init);
+  const text = await res.text();
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { raw: text };
+    }
+  }
+  if (!res.ok) {
+    const message = payload?.error?.message || payload?.error || payload?.message || payload?.raw || `HTTP ${res.status}`;
+    const err = new Error(String(message));
+    err.status = res.status;
+    err.payload = payload;
+    throw err;
+  }
+  return payload;
+}
+
+function unwrapEnvelope(payload) {
+  return payload?.data !== undefined ? payload.data : payload;
+}
+
+function printJsonOrSummary(parsed, payload, renderSummary) {
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return true;
+  }
+  renderSummary();
+  return false;
+}
+
+function buildTenantModelBodyFromFlags(parsed) {
+  const body = {};
+  setIfDefined(body, "answerProvider", maybeNullableStringFlag(parsed, "answer-provider"));
+  setIfDefined(body, "answerModel", maybeNullableStringFlag(parsed, "answer-model", "model"));
+  setIfDefined(body, "booleanAskProvider", maybeNullableStringFlag(parsed, "boolean-ask-provider"));
+  setIfDefined(body, "booleanAskModel", maybeNullableStringFlag(parsed, "boolean-ask-model"));
+  setIfDefined(body, "reflectProvider", maybeNullableStringFlag(parsed, "reflect-provider"));
+  setIfDefined(body, "reflectModel", maybeNullableStringFlag(parsed, "reflect-model"));
+  setIfDefined(body, "compactProvider", maybeNullableStringFlag(parsed, "compact-provider"));
+  setIfDefined(body, "compactModel", maybeNullableStringFlag(parsed, "compact-model"));
+  return body;
+}
+
+function buildTenantSettingsBodyFromFlags(parsed, options = {}) {
+  const body = readJsonObjectInput(parsed, {
+    jsonFlag: options.bodyJsonFlag || "body-json",
+    fileFlag: options.bodyFileFlag || "body-file",
+    label: options.bodyLabel || "tenant request body"
+  });
+  if (options.allowName) {
+    setIfDefined(body, "name", maybeNullableStringFlag(parsed, "name"));
+  }
+  if (options.allowExternalId) {
+    setIfDefined(body, "externalId", maybeNullableStringFlag(parsed, "external-id"));
+  }
+  if (options.allowMetadata) {
+    const metadata = readJsonObjectInput(parsed, {
+      jsonFlag: "metadata-json",
+      fileFlag: "metadata-file",
+      label: "tenant metadata"
+    });
+    if (Object.keys(metadata).length) {
+      body.metadata = metadata;
+    }
+  }
+  setIfDefined(body, "authMode", maybeStringFlag(parsed, "auth-mode"));
+  const ssoProviders = maybeStringFlag(parsed, "sso-providers");
+  if (ssoProviders !== undefined) {
+    const clean = String(ssoProviders || "").trim().toLowerCase();
+    body.ssoProviders = ["clear", "none", "inherit", "null"].includes(clean)
+      ? []
+      : parseListFlag(ssoProviders);
+  }
+  const ssoConfig = readJsonObjectInput(parsed, {
+    jsonFlag: "sso-config-json",
+    fileFlag: "sso-config-file",
+    label: "tenant SSO config"
+  });
+  if (Object.keys(ssoConfig).length) {
+    body.ssoConfig = ssoConfig;
+  }
+  return { ...body, ...buildTenantModelBodyFromFlags(parsed) };
+}
+
+function buildTenantUserBodyFromFlags(parsed, options = {}) {
+  const body = readJsonObjectInput(parsed, {
+    jsonFlag: options.bodyJsonFlag || "body-json",
+    fileFlag: options.bodyFileFlag || "body-file",
+    label: options.bodyLabel || "user request body"
+  });
+  setIfDefined(body, "username", maybeStringFlag(parsed, "username"));
+  setIfDefined(body, "password", maybeStringFlag(parsed, "password"));
+  setIfDefined(body, "email", maybeNullableStringFlag(parsed, "email"));
+  setIfDefined(body, "fullName", maybeNullableStringFlag(parsed, "full-name"));
+  setIfDefined(body, "ssoOnly", maybeBooleanFlag(parsed, "sso-only"));
+  setIfDefined(body, "disabled", maybeBooleanFlag(parsed, "disabled"));
+  setIfDefined(body, "roles", maybeRolesFlag(parsed, "roles", options.roles));
+  return body;
+}
+
+function buildServiceTokenBodyFromFlags(parsed, options = {}) {
+  const body = readJsonObjectInput(parsed, {
+    jsonFlag: options.bodyJsonFlag || "body-json",
+    fileFlag: options.bodyFileFlag || "body-file",
+    label: options.bodyLabel || "service token request body"
+  });
+  setIfDefined(body, "name", maybeStringFlag(parsed, "name"));
+  setIfDefined(body, "principalId", maybeStringFlag(parsed, "principal-id"));
+  setIfDefined(body, "expiresAt", maybeStringFlag(parsed, "expires-at"));
+  setIfDefined(body, "roles", maybeRolesFlag(parsed, "roles", options.roles));
+  if (body.roles === undefined && Array.isArray(options.defaultRoles)) {
+    body.roles = options.defaultRoles.slice();
+  }
+  return body;
+}
+
+function formatRoles(roles) {
+  return Array.isArray(roles) && roles.length ? roles.join(",") : "(none)";
+}
+
+function renderServiceTokensList(tokens, title = "Service tokens") {
+  if (!tokens.length) {
+    console.log(`No ${title.toLowerCase()}.`);
+    return;
+  }
+  console.log(`${title}:`);
+  console.log("");
+  for (const token of tokens) {
+    console.log(`#${token.id}  ${token.name || "(unnamed)"}  principal=${token.principalId || "(none)"}  roles=${formatRoles(token.roles)}`);
+    console.log(`   created=${formatDateTime(token.createdAt)}  lastUsed=${formatDateTime(token.lastUsedAt)}  expires=${formatDateTime(token.expiresAt)}  revoked=${formatDateTime(token.revokedAt)}`);
+  }
+}
+
+function renderUsersList(users, title = "Users") {
+  if (!users.length) {
+    console.log(`No ${title.toLowerCase()}.`);
+    return;
+  }
+  console.log(`${title}:`);
+  console.log("");
+  for (const user of users) {
+    console.log(`#${user.id}  ${user.username}  roles=${formatRoles(user.roles)}  disabled=${user.disabled ? "yes" : "no"}  ssoOnly=${user.ssoOnly ? "yes" : "no"}`);
+    console.log(`   email=${user.email || "(none)"}  fullName=${user.fullName || "(none)"}  lastLogin=${formatDateTime(user.lastLogin)}  created=${formatDateTime(user.createdAt)}`);
+  }
+}
+
+function renderTenantRecord(tenant, options = {}) {
+  if (!tenant) {
+    console.log("Tenant not found.");
+    return;
+  }
+  const models = tenant.models?.effective || tenant.models || {};
+  console.log(`${options.title || "Tenant"}: ${tenant.id}`);
+  console.log(`Name: ${tenant.name || "(none)"}`);
+  console.log(`External ID: ${tenant.externalId || "(none)"}`);
+  console.log(`Auth mode: ${tenant.authMode || "(default)"}`);
+  console.log(`SSO providers: ${Array.isArray(tenant.ssoProviders) && tenant.ssoProviders.length ? tenant.ssoProviders.join(",") : "(none)"}`);
+  console.log(`Created: ${formatDateTime(tenant.createdAt)}`);
+  if (tenant.summary && Object.keys(tenant.summary).length) {
+    console.log(`Summary: ${JSON.stringify(tenant.summary)}`);
+  }
+  if (tenant.metadata && Object.keys(tenant.metadata).length) {
+    console.log(`Metadata: ${JSON.stringify(tenant.metadata)}`);
+  }
+  if (tenant.ssoConfig && Object.keys(tenant.ssoConfig).length) {
+    console.log(`SSO config: ${JSON.stringify(tenant.ssoConfig)}`);
+  }
+  if (Object.keys(models).length) {
+    console.log(`Models: ${JSON.stringify(models)}`);
+  }
+}
+
+function renderAuditLogs(logs) {
+  if (!logs.length) {
+    console.log("No audit logs.");
+    return;
+  }
+  console.log("Audit logs:");
+  console.log("");
+  for (const entry of logs) {
+    console.log(`#${entry.id}  tenant=${entry.tenantId || "(all)"}  action=${entry.action}  actor=${entry.actorType || "system"}:${entry.actorId || "(none)"}`);
+    console.log(`   target=${entry.targetType || "(none)"}:${entry.targetId || "(none)"}  created=${formatDateTime(entry.createdAt)}  requestId=${entry.requestId || "(none)"}`);
+  }
+}
+
 function resolveEffectiveCollection(client, payload) {
   return payload?.meta?.collection || client.collection || "default";
 }
@@ -2830,6 +3224,427 @@ async function handleBooleanAsk(parsed) {
   }
 }
 
+async function handleTokens(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "create", "revoke"]);
+  if (subcommand === "list") {
+    const payload = await requestApiJson(parsed, "GET", "/v1/admin/service-tokens");
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderServiceTokensList(Array.isArray(data.tokens) ? data.tokens : []));
+    return;
+  }
+  if (subcommand === "create") {
+    const body = buildServiceTokenBodyFromFlags(parsed, {
+      defaultRoles: ["indexer", "reader"]
+    });
+    if (!body.name) {
+      throw new Error("tokens create requires --name.");
+    }
+    const payload = await requestApiJson(parsed, "POST", "/v1/admin/service-tokens", { body });
+    const data = unwrapEnvelope(payload);
+    if (!printJsonOrSummary(parsed, payload, () => {
+      printSummary("Service token created.", [
+        `id: ${data.tokenInfo?.id || "(unknown)"}`,
+        `name: ${data.tokenInfo?.name || body.name}`,
+        `principalId: ${data.tokenInfo?.principalId || body.principalId || "(default principal)"}`,
+        `roles: ${formatRoles(data.tokenInfo?.roles || body.roles)}`,
+        `expiresAt: ${formatDateTime(data.tokenInfo?.expiresAt || body.expiresAt)}`,
+        `token: ${data.token || ""}`,
+        "Store this token now. It will not be shown again."
+      ]);
+    })) {
+      return;
+    }
+    return;
+  }
+  if (subcommand === "revoke") {
+    const id = maybePositiveIntFlag(parsed, "id");
+    if (!id) {
+      throw new Error("tokens revoke requires --id.");
+    }
+    await ensureConfirmedAction(parsed, `Revoke service token #${id}?`, false);
+    const payload = await requestApiJson(parsed, "DELETE", `/v1/admin/service-tokens/${id}`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("Service token revoked.", [
+        `id: ${data.token?.id || id}`,
+        `name: ${data.token?.name || "(unknown)"}`,
+        `revokedAt: ${formatDateTime(data.token?.revokedAt)}`
+      ]);
+    });
+    return;
+  }
+  throw new Error("tokens requires a subcommand: list, create, or revoke.");
+}
+
+async function handleUsers(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "create", "update"]);
+  if (subcommand === "list") {
+    const payload = await requestApiJson(parsed, "GET", "/v1/admin/users");
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderUsersList(Array.isArray(data.users) ? data.users : []));
+    return;
+  }
+  if (subcommand === "create") {
+    const body = buildTenantUserBodyFromFlags(parsed, {
+      roles: { fallback: ["reader"] }
+    });
+    if (!body.username) {
+      throw new Error("users create requires --username.");
+    }
+    if (!body.password) {
+      throw new Error("users create requires --password.");
+    }
+    const payload = await requestApiJson(parsed, "POST", "/v1/admin/users", { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("User created.", [
+        `id: ${data.user?.id || "(unknown)"}`,
+        `username: ${data.user?.username || body.username}`,
+        `roles: ${formatRoles(data.user?.roles || body.roles)}`,
+        `disabled: ${data.user?.disabled ? "yes" : "no"}`,
+        `ssoOnly: ${data.user?.ssoOnly ? "yes" : "no"}`
+      ]);
+    });
+    return;
+  }
+  if (subcommand === "update") {
+    const id = maybePositiveIntFlag(parsed, "id", "user-id");
+    if (!id) {
+      throw new Error("users update requires --id.");
+    }
+    const body = buildTenantUserBodyFromFlags(parsed);
+    delete body.username;
+    if (!Object.keys(body).length) {
+      throw new Error("users update requires at least one mutable field such as --roles, --disabled, --password, --email, --full-name, or --sso-only.");
+    }
+    const payload = await requestApiJson(parsed, "PATCH", `/v1/admin/users/${id}`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("User updated.", [
+        `id: ${data.user?.id || id}`,
+        `username: ${data.user?.username || "(unknown)"}`,
+        `roles: ${formatRoles(data.user?.roles)}`,
+        `disabled: ${data.user?.disabled ? "yes" : "no"}`,
+        `ssoOnly: ${data.user?.ssoOnly ? "yes" : "no"}`
+      ]);
+    });
+    return;
+  }
+  throw new Error("users requires a subcommand: list, create, or update.");
+}
+
+async function handleTenant(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["get", "show", "update"]);
+  if (subcommand === "get" || subcommand === "show") {
+    const payload = await requestApiJson(parsed, "GET", "/v1/admin/tenant");
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderTenantRecord(data.tenant, { title: "Tenant settings" }));
+    return;
+  }
+  if (subcommand === "update") {
+    const body = buildTenantSettingsBodyFromFlags(parsed);
+    if (!Object.keys(body).length) {
+      throw new Error("tenant update requires flags such as --auth-mode, --sso-providers, --sso-config-json/--sso-config-file, model overrides, or --body-json/--body-file.");
+    }
+    const payload = await requestApiJson(parsed, "PATCH", "/v1/admin/tenant", { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderTenantRecord(data.tenant, { title: "Tenant updated" }));
+    return;
+  }
+  throw new Error("tenant requires a subcommand: get or update.");
+}
+
+function buildEnterpriseBootstrapFieldsFromFlags(parsed, body = {}) {
+  const next = { ...body };
+  const bootstrapAdminUsername = maybeStringFlag(parsed, "bootstrap-admin", "bootstrap-admin-username");
+  const bootstrapAdminPassword = maybeStringFlag(parsed, "bootstrap-admin-password");
+  const bootstrapAdminEmail = maybeNullableStringFlag(parsed, "bootstrap-admin-email");
+  const bootstrapAdminFullName = maybeNullableStringFlag(parsed, "bootstrap-admin-full-name");
+  const bootstrapAdminRoles = maybeRolesFlag(parsed, "bootstrap-admin-roles");
+  const bootstrapAdminSsoOnly = maybeBooleanFlag(parsed, "bootstrap-admin-sso-only");
+  if (
+    bootstrapAdminUsername !== undefined
+    || bootstrapAdminPassword !== undefined
+    || bootstrapAdminEmail !== undefined
+    || bootstrapAdminFullName !== undefined
+    || bootstrapAdminRoles !== undefined
+    || bootstrapAdminSsoOnly !== undefined
+  ) {
+    next.bootstrapAdmin = {
+      ...(typeof next.bootstrapAdmin === "object" && next.bootstrapAdmin && !Array.isArray(next.bootstrapAdmin) ? next.bootstrapAdmin : {}),
+      username: bootstrapAdminUsername ?? next.bootstrapAdmin?.username,
+      ...(bootstrapAdminPassword !== undefined ? { password: bootstrapAdminPassword } : {}),
+      ...(bootstrapAdminEmail !== undefined ? { email: bootstrapAdminEmail } : {}),
+      ...(bootstrapAdminFullName !== undefined ? { fullName: bootstrapAdminFullName } : {}),
+      ...(bootstrapAdminRoles !== undefined ? { roles: bootstrapAdminRoles } : {}),
+      ...(bootstrapAdminSsoOnly !== undefined ? { ssoOnly: bootstrapAdminSsoOnly } : {})
+    };
+  }
+
+  const bootstrapTokenName = maybeStringFlag(parsed, "bootstrap-token-name");
+  const bootstrapTokenPrincipalId = maybeStringFlag(parsed, "bootstrap-token-principal-id", "bootstrap-token-principal");
+  const bootstrapTokenRoles = maybeRolesFlag(parsed, "bootstrap-token-roles");
+  const bootstrapTokenExpiresAt = maybeStringFlag(parsed, "bootstrap-token-expires-at");
+  if (
+    bootstrapTokenName !== undefined
+    || bootstrapTokenPrincipalId !== undefined
+    || bootstrapTokenRoles !== undefined
+    || bootstrapTokenExpiresAt !== undefined
+  ) {
+    next.bootstrapServiceToken = {
+      ...(typeof next.bootstrapServiceToken === "object" && next.bootstrapServiceToken && !Array.isArray(next.bootstrapServiceToken) ? next.bootstrapServiceToken : {}),
+      ...(bootstrapTokenName !== undefined ? { name: bootstrapTokenName } : {}),
+      ...(bootstrapTokenPrincipalId !== undefined ? { principalId: bootstrapTokenPrincipalId } : {}),
+      ...(bootstrapTokenRoles !== undefined ? { roles: bootstrapTokenRoles } : {}),
+      ...(bootstrapTokenExpiresAt !== undefined ? { expiresAt: bootstrapTokenExpiresAt } : {})
+    };
+  }
+  return next;
+}
+
+function resolveEnterpriseTenantFlag(parsed) {
+  const tenantId = maybeStringFlag(parsed, "tenant", "tenant-id");
+  if (!tenantId) {
+    throw new Error("This command requires --tenant TENANT_ID.");
+  }
+  return tenantId;
+}
+
+async function handleEnterpriseTenantUsers(parsed, tenantId) {
+  const action = getNestedSubcommand(parsed, 2);
+  if (action === "list") {
+    const payload = await requestApiJson(parsed, "GET", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/users`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderUsersList(Array.isArray(data.users) ? data.users : [], `Users for ${tenantId}`));
+    return;
+  }
+  if (action === "create") {
+    const body = buildTenantUserBodyFromFlags(parsed, {
+      roles: { fallback: ["reader"] }
+    });
+    if (!body.username) {
+      throw new Error("tenants users create requires --username.");
+    }
+    const payload = await requestApiJson(parsed, "POST", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/users`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      const rows = [
+        `tenant: ${tenantId}`,
+        `id: ${data.user?.id || "(unknown)"}`,
+        `username: ${data.user?.username || body.username}`,
+        `roles: ${formatRoles(data.user?.roles || body.roles)}`
+      ];
+      if (data.generatedPassword) {
+        rows.push(`generatedPassword: ${data.generatedPassword}`);
+      }
+      printSummary("Tenant user created.", rows);
+    });
+    return;
+  }
+  if (action === "update") {
+    const id = maybePositiveIntFlag(parsed, "id", "user-id");
+    if (!id) {
+      throw new Error("tenants users update requires --id.");
+    }
+    const body = buildTenantUserBodyFromFlags(parsed);
+    delete body.username;
+    if (!Object.keys(body).length) {
+      throw new Error("tenants users update requires at least one mutable field.");
+    }
+    const payload = await requestApiJson(parsed, "PATCH", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/users/${id}`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("Tenant user updated.", [
+        `tenant: ${tenantId}`,
+        `id: ${data.user?.id || id}`,
+        `username: ${data.user?.username || "(unknown)"}`,
+        `roles: ${formatRoles(data.user?.roles)}`
+      ]);
+    });
+    return;
+  }
+  throw new Error("tenants users requires a nested subcommand: list, create, or update.");
+}
+
+async function handleEnterpriseTenantTokens(parsed, tenantId) {
+  const action = getNestedSubcommand(parsed, 2);
+  if (action === "list") {
+    const payload = await requestApiJson(parsed, "GET", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/service-tokens`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderServiceTokensList(Array.isArray(data.tokens) ? data.tokens : [], `Service tokens for ${tenantId}`));
+    return;
+  }
+  if (action === "create") {
+    const body = buildServiceTokenBodyFromFlags(parsed, {
+      defaultRoles: ["indexer", "reader"]
+    });
+    if (!body.name) {
+      throw new Error("tenants tokens create requires --name.");
+    }
+    const payload = await requestApiJson(parsed, "POST", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/service-tokens`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("Tenant service token created.", [
+        `tenant: ${tenantId}`,
+        `id: ${data.tokenInfo?.id || "(unknown)"}`,
+        `name: ${data.tokenInfo?.name || body.name}`,
+        `principalId: ${data.tokenInfo?.principalId || body.principalId || tenantId}`,
+        `roles: ${formatRoles(data.tokenInfo?.roles || body.roles)}`,
+        `token: ${data.token || ""}`,
+        "Store this token now. It will not be shown again."
+      ]);
+    });
+    return;
+  }
+  if (action === "revoke") {
+    const id = maybePositiveIntFlag(parsed, "id");
+    if (!id) {
+      throw new Error("tenants tokens revoke requires --id.");
+    }
+    await ensureConfirmedAction(parsed, `Revoke tenant service token #${id} for ${tenantId}?`, false);
+    const payload = await requestApiJson(parsed, "DELETE", `/v1/admin/tenants/${encodeURIComponent(tenantId)}/service-tokens/${id}`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      printSummary("Tenant service token revoked.", [
+        `tenant: ${tenantId}`,
+        `id: ${data.token?.id || id}`,
+        `name: ${data.token?.name || "(unknown)"}`,
+        `revokedAt: ${formatDateTime(data.token?.revokedAt)}`
+      ]);
+    });
+    return;
+  }
+  throw new Error("tenants tokens requires a nested subcommand: list, create, or revoke.");
+}
+
+async function handleTenants(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "get", "show", "create", "update", "users", "tokens", "service-tokens"]);
+  if (subcommand === "list") {
+    const limit = maybePositiveIntFlag(parsed, "limit");
+    const search = maybeStringFlag(parsed, "search");
+    const payload = await requestApiJson(parsed, "GET", "/v1/admin/tenants", {
+      query: {
+        ...(limit ? { limit } : {}),
+        ...(search ? { search } : {})
+      }
+    });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      const tenants = Array.isArray(data.tenants) ? data.tenants : [];
+      if (!tenants.length) {
+        console.log("No tenants.");
+        return;
+      }
+      console.log("Tenants:");
+      console.log("");
+      for (const tenant of tenants) {
+        console.log(`${tenant.id}  auth=${tenant.authMode || "(default)"}  users=${tenant.summary?.userCount ?? 0}  tokens=${tenant.summary?.serviceTokenCount ?? 0}`);
+      }
+    });
+    return;
+  }
+
+  if (subcommand === "users") {
+    const tenantId = resolveEnterpriseTenantFlag(parsed);
+    await handleEnterpriseTenantUsers(parsed, tenantId);
+    return;
+  }
+
+  if (subcommand === "tokens" || subcommand === "service-tokens") {
+    const tenantId = resolveEnterpriseTenantFlag(parsed);
+    await handleEnterpriseTenantTokens(parsed, tenantId);
+    return;
+  }
+
+  if (subcommand === "get" || subcommand === "show") {
+    const tenantId = resolveEnterpriseTenantFlag(parsed);
+    const payload = await requestApiJson(parsed, "GET", `/v1/admin/tenants/${encodeURIComponent(tenantId)}`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderTenantRecord(data.tenant, { title: "Enterprise tenant" }));
+    return;
+  }
+
+  if (subcommand === "create") {
+    const tenantId = resolveEnterpriseTenantFlag(parsed);
+    let body = buildTenantSettingsBodyFromFlags(parsed, {
+      allowName: true,
+      allowExternalId: true,
+      allowMetadata: true,
+      bodyLabel: "tenant create request body"
+    });
+    body = buildEnterpriseBootstrapFieldsFromFlags(parsed, body);
+    body.tenantId = tenantId;
+    if (!Object.keys(body).length || !body.tenantId) {
+      throw new Error("tenants create requires --tenant plus any optional create flags or --body-json/--body-file.");
+    }
+    const payload = await requestApiJson(parsed, "POST", "/v1/admin/tenants", { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      const rows = [
+        `tenant: ${data.tenant?.id || tenantId}`,
+        `authMode: ${data.tenant?.authMode || "(default)"}`,
+        `serviceTokens: ${data.tenant?.summary?.serviceTokenCount ?? 0}`,
+        `users: ${data.tenant?.summary?.userCount ?? 0}`
+      ];
+      if (data.bootstrapAdmin?.user?.username) {
+        rows.push(`bootstrapAdmin: ${data.bootstrapAdmin.user.username}`);
+      }
+      if (data.bootstrapAdmin?.generatedPassword) {
+        rows.push(`bootstrapAdminPassword: ${data.bootstrapAdmin.generatedPassword}`);
+      }
+      if (data.bootstrapServiceToken?.token) {
+        rows.push(`bootstrapServiceToken: ${data.bootstrapServiceToken.token}`);
+      }
+      printSummary("Enterprise tenant created.", rows);
+    });
+    return;
+  }
+
+  if (subcommand === "update") {
+    const tenantId = resolveEnterpriseTenantFlag(parsed);
+    const body = buildTenantSettingsBodyFromFlags(parsed, {
+      allowName: true,
+      allowExternalId: true,
+      allowMetadata: true,
+      bodyLabel: "tenant update request body"
+    });
+    if (!Object.keys(body).length) {
+      throw new Error("tenants update requires one or more update flags or --body-json/--body-file.");
+    }
+    const payload = await requestApiJson(parsed, "PATCH", `/v1/admin/tenants/${encodeURIComponent(tenantId)}`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderTenantRecord(data.tenant, { title: "Enterprise tenant updated" }));
+    return;
+  }
+
+  throw new Error("tenants requires a subcommand: list, get, create, update, users, or tokens.");
+}
+
+async function handleAudit(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list"]);
+  if (subcommand !== "list") {
+    throw new Error("audit requires a subcommand: list.");
+  }
+  const tenantId = maybeStringFlag(parsed, "tenant", "tenant-id");
+  const limit = maybePositiveIntFlag(parsed, "limit");
+  const action = maybeStringFlag(parsed, "action");
+  const targetType = maybeStringFlag(parsed, "target-type");
+  const targetId = maybeStringFlag(parsed, "target-id");
+  const routePath = tenantId
+    ? `/v1/admin/tenants/${encodeURIComponent(tenantId)}/audit`
+    : "/v1/admin/audit";
+  const payload = await requestApiJson(parsed, "GET", routePath, {
+    query: {
+      ...(limit ? { limit } : {}),
+      ...(action ? { action } : {}),
+      ...(targetType ? { targetType } : {}),
+      ...(targetId ? { targetId } : {})
+    }
+  });
+  const data = unwrapEnvelope(payload);
+  printJsonOrSummary(parsed, payload, () => renderAuditLogs(Array.isArray(data.logs) ? data.logs : []));
+}
+
 function handleConfig(parsed) {
   const sub = parsed.subcommand || "show";
   if (sub !== "show") {
@@ -2887,6 +3702,22 @@ async function main() {
       return;
     case "bootstrap":
       await handleBootstrap(parsed);
+      return;
+    case "tenant":
+      await handleTenant(parsed);
+      return;
+    case "users":
+      await handleUsers(parsed);
+      return;
+    case "tokens":
+    case "service-tokens":
+      await handleTokens(parsed);
+      return;
+    case "tenants":
+      await handleTenants(parsed);
+      return;
+    case "audit":
+      await handleAudit(parsed);
       return;
     case "collections":
       await handleCollections(parsed);

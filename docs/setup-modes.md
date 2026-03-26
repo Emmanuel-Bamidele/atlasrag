@@ -36,6 +36,7 @@ What you are setting up:
 - a Dashboard account
 - one or more projects (each gets its own isolated tenant and token)
 - credit balance for AI generation
+- a saved payment method for hosted storage invoices when you want hosted writes to keep flowing without storage-billing grace limits
 
 What you are not setting up:
 
@@ -59,12 +60,14 @@ SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Important:
 
 - tokens from the hosted service start with `supav_`
-- AI generation (`/ask`, `/boolean_ask`) requires a credit balance; top up from the Dashboard
+- AI generation (`/ask`, `/boolean_ask`) requires a credit balance unless the request supplies the matching request-scoped provider key for generation
 - non-generation endpoints (index, search, memory write/recall) are not credit-gated
+- hosted storage is billed separately from prepaid AI credit, based on retained `GB-month` usage on the hosted deployment
 
 Read next:
 
 - [`hosted.md`](hosted.md)
+- [`enterprise.md`](enterprise.md) if this hosted deployment needs tenant SSO, enterprise auth rollout, or hosted-vs-BYO billing boundaries
 
 ## Self-Host: Bundled Stack
 
@@ -112,6 +115,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN
 Read next:
 
 - [`self-hosting.md`](self-hosting.md)
+- [`enterprise.md`](enterprise.md) if this self-hosted deployment needs enterprise SSO and tenant user-management rollout
 
 ## Self-Host: Bring Your Own Postgres
 
@@ -166,6 +170,7 @@ Important boundary:
 Read next:
 
 - [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
+- [`enterprise.md`](enterprise.md) if this deployment also needs enterprise SSO, role mapping, and tenant admin rollout
 
 ## Use An Existing SupaVector Deployment
 
@@ -225,12 +230,14 @@ What changes in this mode:
 - you still use the same SupaVector service token
 - you add `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests
 - `ask` and `boolean_ask` may also set `provider` and `model` in the JSON body
+- on hosted or other portal-enabled shared deployments, a matching request-scoped generation key means AI generation is billed by your provider instead of SupaVector credit for that request
 
 What does not change:
 
 - SupaVector still owns the shared deployment and its database
 - your provider key is not automatically stored as the server default
 - the service token still comes from the shared deployment admin path
+- storage stays on the shared deployment, so shared-deployment storage billing still belongs to that deployment owner
 
 Important boundary:
 

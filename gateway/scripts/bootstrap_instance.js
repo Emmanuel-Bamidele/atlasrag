@@ -15,9 +15,11 @@ Options:
   --password PASS                 Admin password (default: generated)
   --tenant TENANT                 Tenant id (default: username)
   --roles LIST                    Admin roles csv (default: admin,indexer,reader)
+                                  Include instance_admin for full enterprise control-plane access
   --service-token-name NAME       Service token display name (default: <tenant>-bootstrap)
   --service-principal-id ID       Service token principal id (default: <username>)
   --service-token-roles LIST      Service token roles csv (default: admin,indexer,reader)
+                                  Include instance_admin for a global admin service token
   --expires-at ISO_TIMESTAMP      Optional service token expiry
   --base-url URL                  Printed base URL (default: PUBLIC_BASE_URL, OPENAPI_BASE_URL, or http://localhost:3000)
   --skip-migrations               Skip schema bootstrap
@@ -59,7 +61,7 @@ function hasFlag(parsed, key) {
 
 function parseRoles(raw, fallbackRaw) {
   const source = String(raw || fallbackRaw || "").trim();
-  const allowed = new Set(["admin", "indexer", "reader"]);
+  const allowed = new Set(["instance_admin", "admin", "indexer", "reader"]);
   const out = [];
   const seen = new Set();
   for (const value of source.split(",")) {
@@ -214,13 +216,13 @@ async function main() {
     throw new Error("username and tenant are required");
   }
   if (!roles.length) {
-    throw new Error("roles must include at least one of: admin, indexer, reader");
+    throw new Error("roles must include at least one of: instance_admin, admin, indexer, reader");
   }
   if (!serviceTokenName || !servicePrincipalId) {
     throw new Error("service token name and principal id are required");
   }
   if (!serviceTokenRoles.length) {
-    throw new Error("service-token-roles must include at least one of: admin, indexer, reader");
+    throw new Error("service-token-roles must include at least one of: instance_admin, admin, indexer, reader");
   }
   if (expiresAt) {
     const dt = new Date(expiresAt);
@@ -286,7 +288,15 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(String(err?.message || err));
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(String(err?.message || err));
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  __testHooks: {
+    parseRoles
+  }
+};

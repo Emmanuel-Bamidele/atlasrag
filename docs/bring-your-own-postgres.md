@@ -10,6 +10,8 @@ This is the right path if you do not want SupaVector to own your database lifecy
 
 If you are not yet sure whether you should self-host SupaVector with your own Postgres versus use an existing shared deployment, start with [`setup-modes.md`](setup-modes.md) first.
 
+If this deployment also needs enterprise SSO, tenant access controls, or hosted-vs-self-hosted rollout guidance, read [`enterprise.md`](enterprise.md) after this guide.
+
 ## Important Current Behavior
 
 The stock `docker-compose.yml` and `docker-compose.prod.yml` are optimized for the bundled `postgres` service in this repo.

@@ -154,6 +154,7 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
 
 module.exports = {
   embedTexts,
+  resolveEmbedDimension,
   __testHooks: {
     resolveEmbedProvider,
     resolveEmbedModel,

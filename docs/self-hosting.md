@@ -19,6 +19,7 @@ This guide does not assume Kubernetes, managed control planes, or automatic mult
 If you already have your own Postgres and do not want to run the bundled database container, use:
 
 - [`bring-your-own-postgres.md`](bring-your-own-postgres.md)
+- [`enterprise.md`](enterprise.md) if this self-hosted deployment needs enterprise SSO rollout and tenant access controls
 - [`../docker-compose.external-postgres.yml`](../docker-compose.external-postgres.yml)
 - [`../.env.external-postgres.example`](../.env.external-postgres.example)
 
@@ -36,6 +37,8 @@ SupaVector has three core runtime pieces:
 In local Compose, the repo starts all of these for you.
 
 The bundled Postgres path and the external-Postgres path are both still self-hosted SupaVector deployments. That choice only changes which database this SupaVector instance uses.
+
+On self-hosted deployments, the gateway **Settings** page remains the main interactive admin surface. That is where you can manage browser auth, issue service tokens, configure tenant auth and SSO, and handle tenant users unless you choose to automate those flows through the admin APIs or CLI instead.
 
 ## Recommended Auth Model
 
@@ -257,6 +260,67 @@ curl -sS -X PATCH "${SUPAVECTOR_BASE_URL}/v1/admin/tenant" \
 ```
 
 Those settings are tenant-scoped. `embedProvider` and `embedModel` are not part of this API because they remain instance-wide self-hosted env settings.
+
+### 8b. CLI Setup And Admin Shortcuts
+
+If you used `supavector onboard` or `supavector bootstrap`, the CLI already has the saved base URL and service token for the local deployment. That means you can handle common setup work without opening the browser UI.
+
+Create a runtime service token for an app or worker:
+
+```bash
+supavector tokens create \
+  --name worker-prod \
+  --principal-id svc:worker-prod \
+  --roles reader,indexer
+```
+
+List or revoke tenant service tokens:
+
+```bash
+supavector tokens list
+supavector tokens revoke --id 12 --yes
+```
+
+Create or update tenant-local admins and operators:
+
+```bash
+supavector users create \
+  --username ops-admin \
+  --password 'change_me_now' \
+  --roles admin,indexer,reader \
+  --email ops@example.com \
+  --full-name "Ops Admin"
+
+supavector users update \
+  --id 7 \
+  --roles reader \
+  --disabled false
+```
+
+Read or update tenant auth and SSO settings from the CLI:
+
+```bash
+supavector tenant get
+
+supavector tenant update \
+  --auth-mode sso_only \
+  --sso-providers google,okta \
+  --sso-config-file ./tenant-sso.json \
+  --answer-provider openai \
+  --answer-model gpt-4.1
+```
+
+For more complex payloads, pass the exact API body through a JSON string or file:
+
+```bash
+supavector tenant update --body-file ./tenant-settings.json
+```
+
+If you prefer a human admin JWT instead of the saved service token for a specific command, pass:
+
+```bash
+supavector tenant get --token "$SUPAVECTOR_JWT"
+```
 
 ### 9. Optional: Bring Your Own Provider Key To A Shared SupaVector Deployment
 

@@ -207,6 +207,8 @@ Pattern:
 2. also send `X-OpenAI-API-Key: YOUR_OPENAI_KEY`, `X-Gemini-API-Key: YOUR_GEMINI_KEY`, or `X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY`
 3. SupaVector uses that key for supported sync embedding/answer requests
 
+On hosted or other portal-enabled shared deployments, this changes AI generation billing responsibility for that request, but it does not change who owns storage. The shared deployment still stores the data and still owns any shared-deployment storage billing.
+
 `POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
 Embedding provider selection remains instance-wide today. For docs, search, memory write, and memory recall, request-scoped provider-key headers only override credentials for the embedding provider that the instance is already configured to use.
@@ -497,7 +499,7 @@ The SDK already understands:
 
 ## Hosted Service Tokens And Credits
 
-If your token was issued from the SupaVector hosted Dashboard (it starts with `supav_`), generation endpoints require a positive credit balance.
+If your token was issued from the SupaVector hosted Dashboard (it starts with `supav_`), generation endpoints require a positive credit balance unless the request supplies the matching request-scoped provider key for the effective generation provider.
 
 Affected endpoints:
 
@@ -514,6 +516,8 @@ Not affected (no credit check):
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 - `POST /v1/memory/reflect`
+
+Hosted storage is separate from prepaid AI credit. Hosted writes and retained data can still create monthly storage charges even when a request does not deduct AI credit.
 
 ### 402 — No Credits
 

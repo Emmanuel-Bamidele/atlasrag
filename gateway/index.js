@@ -5,7 +5,7 @@ const path = require("path");
 const dns = require("dns").promises;
 const net = require("net");
 
-const { embedTexts } = require("./ai");
+const { embedTexts, resolveEmbedDimension } = require("./ai");
 const { chunkText } = require("./chunk");
 const { sendCmd, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
 
@@ -24,6 +24,7 @@ const {
   listMemoryItemsByTier,
   getMemoryItemById,
   deleteMemoryItemById,
+  deleteMemoryItemByNamespaceId,
   getArtifactByExternalId,
   listExpiredMemoryItems,
   listExpiredMemoryItemsGlobal,
@@ -35,6 +36,7 @@ const {
   listMemoryItemsForRedundancy,
   listMemoryItemsForLifecycle,
   createAuditLog,
+  listAuditLogs,
   createMemoryLink,
   createMemoryJob,
   claimMemoryJob,
@@ -50,15 +52,32 @@ const {
   recordTenantUsage,
   getTenantUsage,
   getTenantUsageWindow,
+  getTenantBillableGenerationUsageWindow,
+  listTenantUsageHistory,
+  getTenantStorageUsage,
+  getTenantStorageBillingState,
+  getCurrentTenantStorageBillingPeriod,
+  listTenantStorageBillingPeriods,
+  listTenantIdsWithStorageBillingState,
+  syncTenantStorageUsage,
+  accrueTenantStorageBillingState,
   getTenantStorageStats,
   getTenantItemStats,
   getMemoryStateSnapshot,
+  listTenants,
+  createTenantWithBootstrap,
   getTenantById,
   setTenantSettings,
+  listTenantUsers,
+  getTenantUserById,
+  createTenantUser,
+  updateTenantUser,
   recordFailedLogin,
   recordSuccessfulLogin,
   createServiceToken,
   listServiceTokens,
+  countTenantUsers,
+  countTenantServiceTokens,
   revokeServiceToken,
   runMigrations,
   upsertSsoUser
@@ -78,6 +97,17 @@ const {
   hasTenantModelSettingsInput,
   resolveRequestedGenerationConfig
 } = require("./model_config");
+const {
+  INSTANCE_ADMIN_ROLE,
+  ENTERPRISE_ROLE_VALUES,
+  ENTERPRISE_CONTROL_ROLE_VALUES,
+  ENTERPRISE_SSO_PROVIDERS,
+  normalizeRoleList,
+  normalizeControlPlaneRoleList,
+  normalizeTenantSsoConfigInput,
+  buildTenantSsoConfigPublic
+} = require("./enterprise_auth");
+const { computeStoragePeriodSummary } = require("./storage_billing");
 const { estimateTokensFromText } = require("./memory_value");
 const {
   isBelowMinAgeForLifecycle,
@@ -93,9 +123,12 @@ const bcrypt = require("bcryptjs");
 const openApiSpec = require("./openapi.json");
 const {
   generators,
+  deriveSsoRoles,
   getClient,
   getRedirectUri,
   buildStateCookie,
+  isEmailAllowedForProvider,
+  resolveSsoProviderConfig,
   resolveTenant,
   getUserProfile
 } = require("./sso");
@@ -145,11 +178,28 @@ function parseEnvFlag(value, defaultValue = false) {
   return defaultValue;
 }
 
+function normalizeDeploymentMode(value) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (["hosted", "shared", "saas", "cloud"].includes(clean)) return "hosted";
+  return "self_hosted";
+}
+
 const COOKIE_SIGNING_SECRET = String(process.env.COOKIE_SECRET || process.env.JWT_SECRET || "").trim();
 if (!COOKIE_SIGNING_SECRET) {
   throw new Error("COOKIE_SECRET or JWT_SECRET must be set");
 }
 const COOKIE_SECURE = parseEnvFlag(process.env.COOKIE_SECURE, false);
+const DEPLOYMENT_MODE = normalizeDeploymentMode(
+  process.env.SUPAVECTOR_DEPLOYMENT_MODE
+  || process.env.DEPLOYMENT_MODE
+  || ""
+);
+const DASHBOARD_URL = String(
+  process.env.SUPAVECTOR_DASHBOARD_URL
+  || process.env.DASHBOARD_URL
+  || ""
+).trim();
+let portalPluginMounted = false;
 
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser(COOKIE_SIGNING_SECRET));
@@ -247,6 +297,7 @@ app.use((req, res, next) => {
 try {
   const portalPlugin = require("./plugins");
   portalPlugin.mount(app, { renderPublicUiTemplate });
+  portalPluginMounted = true;
   console.log("[plugins] portal: mounted");
 } catch (e) {
   if (e.code !== "MODULE_NOT_FOUND") throw e;
@@ -315,6 +366,7 @@ const REINDEX_TCP_DELAY_MS = parseInt(process.env.REINDEX_TCP_DELAY_MS || "2000"
 const TTL_SWEEP_ENABLED = process.env.TTL_SWEEP_ENABLED !== "0";
 const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300000", 10);
 const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
+const STORAGE_BILLING_ACCRUAL_INTERVAL_MS = parseInt(process.env.STORAGE_BILLING_ACCRUAL_INTERVAL_MS || "3600000", 10);
 const JOB_MAX_ATTEMPTS = parseInt(process.env.JOB_MAX_ATTEMPTS || "3", 10);
 const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
 const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
@@ -366,8 +418,10 @@ const MEMORY_PROMOTION_MAX_ITEMS = parseInt(process.env.MEMORY_PROMOTION_MAX_ITE
 const MEMORY_PROMOTION_COOLDOWN_HOURS = parseInt(process.env.MEMORY_PROMOTION_COOLDOWN_HOURS || "24", 10);
 const MEMORY_COMPACT_COOLDOWN_HOURS = parseInt(process.env.MEMORY_COMPACT_COOLDOWN_HOURS || "24", 10);
 const MEMORY_SNAPSHOT_INTERVAL_MS = parseInt(process.env.TELEMETRY_SNAPSHOT_INTERVAL_MS || "300000", 10);
+const BILLING_STORAGE_INCLUDED_GB_MONTH = parseFloat(process.env.BILLING_STORAGE_INCLUDED_GB_MONTH || "0");
 let reindexStarted = false;
 let ttlSweepRunning = false;
+let storageBillingAccrualRunning = false;
 let jobSweepRunning = false;
 let valueDecayRunning = false;
 let redundancyRunning = false;
@@ -402,6 +456,9 @@ const HYBRID_RERANK_EXACT_BOOST = parseFloat(process.env.HYBRID_RERANK_EXACT_BOO
 const SSO_PROVIDERS = ["google", "azure", "okta"];
 const ROLE_DEFAULT = "reader";
 const ROLE_ALIASES = new Map([
+  [INSTANCE_ADMIN_ROLE, INSTANCE_ADMIN_ROLE],
+  ["platform_admin", INSTANCE_ADMIN_ROLE],
+  ["enterprise_admin", INSTANCE_ADMIN_ROLE],
   ["admin", "admin"],
   ["owner", "admin"],
   ["indexer", "indexer"],
@@ -548,12 +605,13 @@ function classifyTelemetryEndpoint(rawPath) {
   return "other";
 }
 
-function buildTelemetryContext({ requestId, tenantId, collection, source } = {}) {
+function buildTelemetryContext({ requestId, tenantId, collection, source, ...rest } = {}) {
   return {
     requestId: requestId || null,
     tenantId: tenantId || null,
     collection: collection || null,
-    source: source || null
+    source: source || null,
+    ...rest
   };
 }
 
@@ -754,6 +812,11 @@ function normalizeSsoProvidersInput(raw) {
   return { provided: true, value: out };
 }
 
+function parseTenantSsoConfigInput(raw, currentConfig = {}) {
+  if (raw === undefined) return undefined;
+  return normalizeTenantSsoConfigInput(raw, currentConfig || {});
+}
+
 function resolveSsoProviders(tenant) {
   if (!tenant || tenant.sso_providers == null) return Array.from(SSO_PROVIDERS);
   return Array.isArray(tenant.sso_providers) ? tenant.sso_providers : [];
@@ -861,6 +924,46 @@ function resolveTenantId(req) {
   return tenantId;
 }
 
+function normalizeTenantIdentifier(value, label = "tenantId") {
+  const clean = String(value || "").trim();
+  if (!clean) {
+    throw new Error(`${label} is required`);
+  }
+  if (!TENANT_RE.test(clean)) {
+    throw new Error(`${label} must use only letters, numbers, dot, dash, or underscore`);
+  }
+  return clean;
+}
+
+function resolveEnterpriseTenantId(req, paramName = "tenantId") {
+  const tenantId = normalizeTenantIdentifier(req.params?.[paramName], paramName);
+  const provided = req.body?.tenantId ?? req.body?.tenantID ?? req.query?.tenantId ?? req.query?.tenantID;
+  if (provided !== undefined && provided !== null && String(provided).trim() !== tenantId) {
+    throw new Error("tenantId mismatch");
+  }
+  return tenantId;
+}
+
+function parseTenantMetadataInput(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("metadata must be an object");
+  }
+  return raw;
+}
+
+function parseListLimit(raw, { fallback = 100, max = 500, label = "limit" } = {}) {
+  if (raw === undefined || raw === null || raw === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a positive number`);
+  }
+  return Math.min(Math.floor(value), max);
+}
+
 async function getEffectiveTenantModels(tenantId) {
   const tenant = tenantId ? await getTenantById(tenantId) : null;
   return resolveTenantModelSettings(tenant).effective;
@@ -871,9 +974,128 @@ function buildTenantSettingsPayload(tenantId, tenant) {
   return {
     id: tenantId,
     name: tenant?.name || null,
+    externalId: tenant?.external_id || null,
+    metadata: tenant?.metadata && typeof tenant.metadata === "object" ? tenant.metadata : {},
     authMode: normalizeAuthMode(tenant?.auth_mode),
     ssoProviders: resolveSsoProviders(tenant),
-    models: resolved
+    ssoConfig: buildTenantSsoConfigPublic(tenant?.sso_config || {}),
+    models: resolved,
+    createdAt: tenant?.created_at || null
+  };
+}
+
+function resolveRequestedTenantInput(source) {
+  const clean = String(
+    source?.query?.tenantId
+    ?? source?.query?.tenant
+    ?? source?.body?.tenantId
+    ?? source?.body?.tenant
+    ?? ""
+  ).trim();
+  if (!clean) return "";
+  if (!TENANT_RE.test(clean)) {
+    throw new Error("tenant must use only letters, numbers, dot, dash, underscore, or colon");
+  }
+  return clean;
+}
+
+function formatTenantUser(user) {
+  return {
+    id: user?.id || null,
+    username: user?.username || null,
+    tenantId: user?.tenant_id || null,
+    roles: Array.isArray(user?.roles) ? user.roles : [],
+    disabled: Boolean(user?.disabled),
+    ssoOnly: Boolean(user?.sso_only),
+    authProvider: user?.auth_provider || null,
+    authSubject: user?.auth_subject || null,
+    email: user?.email || null,
+    fullName: user?.full_name || null,
+    lastLogin: user?.last_login || null,
+    createdAt: user?.created_at || null
+  };
+}
+
+function formatTenantRecord(tenant, options = {}) {
+  if (!tenant) return null;
+  const payload = buildTenantSettingsPayload(tenant.tenant_id || tenant.id || null, tenant);
+  const summary = {};
+  if (tenant.user_count !== undefined) summary.userCount = Number(tenant.user_count || 0);
+  if (tenant.service_token_count !== undefined) summary.serviceTokenCount = Number(tenant.service_token_count || 0);
+  if (options.summary && typeof options.summary === "object") {
+    Object.assign(summary, options.summary);
+  }
+  if (Object.keys(summary).length) payload.summary = summary;
+  return payload;
+}
+
+function formatAuditLogEntry(entry) {
+  if (!entry) return null;
+  return {
+    id: entry.id || null,
+    tenantId: entry.tenant_id || null,
+    actorId: entry.actor_id || null,
+    actorType: entry.actor_type || null,
+    action: entry.action || null,
+    targetType: entry.target_type || null,
+    targetId: entry.target_id || null,
+    metadata: entry.metadata && typeof entry.metadata === "object" ? entry.metadata : null,
+    requestId: entry.request_id || null,
+    ip: entry.ip || null,
+    createdAt: entry.created_at || null
+  };
+}
+
+async function buildEnterpriseTenantSummary(tenantId) {
+  const [userCount, serviceTokenCount, storageStats, itemStats] = await Promise.all([
+    countTenantUsers(tenantId),
+    countTenantServiceTokens(tenantId),
+    getTenantStorageStats(tenantId),
+    getTenantItemStats(tenantId)
+  ]);
+  return {
+    userCount,
+    serviceTokenCount,
+    storageBytes: Number(storageStats?.bytes || 0),
+    chunkCount: Number(storageStats?.chunks || 0),
+    documentCount: Number(itemStats?.documents || 0),
+    memoryItemCount: Number(itemStats?.memory_items || 0),
+    collectionCount: Number(itemStats?.collections || 0)
+  };
+}
+
+async function mintServiceTokenForTenant({ tenantId, name, principalId, roles, expiresAt }) {
+  const rawToken = `supav_${crypto.randomBytes(24).toString("base64url")}`;
+  const keyHash = hashToken(rawToken);
+  const record = await createServiceToken({
+    tenantId,
+    name,
+    principalId,
+    roles,
+    keyHash,
+    expiresAt
+  });
+  return { rawToken, record };
+}
+
+function formatAuthProviderAvailability(provider, cfg, tenant) {
+  const allowed = isSsoProviderAllowed(tenant, provider);
+  if (!allowed) {
+    return { enabled: false, source: null, provider, reason: "provider_not_allowed" };
+  }
+  if (!cfg) {
+    return { enabled: false, source: null, provider, reason: "not_configured" };
+  }
+  return {
+    enabled: true,
+    source: cfg.source || null,
+    provider,
+    issuer: cfg.issuer || "",
+    clientIdConfigured: Boolean(cfg.clientId),
+    tenantClaim: cfg.tenantClaim || "",
+    roleClaim: cfg.roleClaim || "",
+    allowedDomains: Array.isArray(cfg.allowedDomains) ? cfg.allowedDomains : [],
+    allowsDomains: Array.isArray(cfg.allowedDomains) ? cfg.allowedDomains : []
   };
 }
 
@@ -901,6 +1123,38 @@ async function getRequestEmbeddingConfig(req, tenantId, models = null) {
     embedModel: effectiveModels.embedModel,
     apiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider)
   };
+}
+
+function getStorageBillingRates() {
+  const storagePricePerGBMonth = parseFloat(process.env.BILLING_PRICE_PER_GB_STORAGE || "0");
+  return {
+    storagePricePerGBMonth: Number.isFinite(storagePricePerGBMonth) ? storagePricePerGBMonth : 0,
+    includedGBMonth: Number.isFinite(BILLING_STORAGE_INCLUDED_GB_MONTH) ? Math.max(0, BILLING_STORAGE_INCLUDED_GB_MONTH) : 0
+  };
+}
+
+async function resolveStorageVectorDim(tenantId, metadata = null) {
+  const rawVectorDim = Number(metadata?.vectorDim ?? metadata?.vector_dim ?? 0);
+  if (Number.isFinite(rawVectorDim) && rawVectorDim > 0) {
+    return Math.floor(rawVectorDim);
+  }
+
+  const embedProvider = metadata?.embedProvider || metadata?.embed_provider || null;
+  const embedModel = metadata?.embedModel || metadata?.embed_model || null;
+  if (embedProvider || embedModel) {
+    return resolveEmbedDimension({
+      embedProvider: embedProvider || DEFAULT_EMBED_PROVIDER,
+      embedModel: embedModel || DEFAULT_EMBED_MODEL
+    });
+  }
+
+  const effectiveModels = tenantId
+    ? await getEffectiveTenantModels(tenantId)
+    : resolveEnvModelDefaults();
+  return resolveEmbedDimension({
+    embedProvider: effectiveModels?.embedProvider || DEFAULT_EMBED_PROVIDER,
+    embedModel: effectiveModels?.embedModel || DEFAULT_EMBED_MODEL
+  });
 }
 
 function resolvePrincipalId(req) {
@@ -960,6 +1214,42 @@ function normalizeRole(value) {
   return ROLE_ALIASES.get(clean) || null;
 }
 
+function normalizeRuntimeRoleList(input, { allowInstanceAdmin = false, allowEmpty = true } = {}) {
+  if (input === undefined || input === null) {
+    const allowed = Array.from(new Set(allowInstanceAdmin ? ENTERPRISE_CONTROL_ROLE_VALUES : ENTERPRISE_ROLE_VALUES));
+    if (!allowEmpty) {
+      throw new Error(`roles must include at least one of: ${allowed.join(", ")}`);
+    }
+    return [];
+  }
+  const list = Array.isArray(input)
+    ? input
+    : (typeof input === "string" ? input.split(",") : []);
+  const allowed = new Set(allowInstanceAdmin ? ENTERPRISE_CONTROL_ROLE_VALUES : ENTERPRISE_ROLE_VALUES);
+  const out = [];
+  const seen = new Set();
+  for (const value of list) {
+    const normalized = normalizeRole(value);
+    if (!normalized) {
+      const clean = String(value || "").trim();
+      if (clean) {
+        throw new Error(`roles must be one of: ${Array.from(allowed).join(", ")}`);
+      }
+      continue;
+    }
+    if (!allowed.has(normalized)) {
+      throw new Error(`roles must be one of: ${Array.from(allowed).join(", ")}`);
+    }
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  if (!allowEmpty && out.length === 0) {
+    throw new Error(`roles must include at least one of: ${Array.from(allowed).join(", ")}`);
+  }
+  return out;
+}
+
 function isPrincipalTenantMatch(req) {
   const principal = req.user?.principal_id || req.user?.sub;
   const tenant = req.user?.tenant || req.user?.tid || req.user?.sub;
@@ -985,11 +1275,21 @@ function getEffectiveRoles(req) {
 
 function hasRequiredRole(req, required) {
   const roles = getEffectiveRoles(req);
+  if (roles.has(INSTANCE_ADMIN_ROLE)) {
+    return true;
+  }
+  if (required === INSTANCE_ADMIN_ROLE) {
+    return false;
+  }
   if (roles.has("admin")) return true;
   if (required === "admin") return false;
   if (required === "indexer") return roles.has("indexer");
   if (required === "reader") return roles.has("reader") || roles.has("indexer");
   return false;
+}
+
+function hasInstanceAdminAccess(req) {
+  return getEffectiveRoles(req).has(INSTANCE_ADMIN_ROLE);
 }
 
 function allowAccessOverride(req) {
@@ -1017,19 +1317,8 @@ function resolveAccessContext(req) {
   return { principalId, privileges };
 }
 
-function normalizeRoles(input) {
-  const list = Array.isArray(input)
-    ? input
-    : (typeof input === "string" ? input.split(",") : []);
-  const out = [];
-  const seen = new Set();
-  for (const value of list) {
-    const normalized = normalizeRole(value);
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(normalized);
-  }
-  return out;
+function normalizeRoles(input, options = {}) {
+  return normalizeRuntimeRoleList(input, options);
 }
 
 function formatServiceToken(record) {
@@ -1068,11 +1357,14 @@ function hasTokenAdminAccess(req) {
 function requireRole(required) {
   return (req, res, next) => {
     if (!hasRequiredRole(req, required)) {
-      const message = required === "admin"
-        ? "Admin role required"
-        : (required === "indexer"
-          ? "Indexer or admin role required"
-          : "Reader, indexer, or admin role required");
+      let message = "Reader, indexer, or admin role required";
+      if (required === INSTANCE_ADMIN_ROLE) {
+        message = "Instance admin role required";
+      } else if (required === "admin") {
+        message = "Admin role required";
+      } else if (required === "indexer") {
+        message = "Indexer or admin role required";
+      }
       if (req.path.startsWith("/v1")) {
         return sendError(res, 403, message, "FORBIDDEN", null, null);
       }
@@ -1084,6 +1376,10 @@ function requireRole(required) {
 
 function requireAdmin(req, res, next) {
   return requireRole("admin")(req, res, next);
+}
+
+function requireInstanceAdmin(req, res, next) {
+  return requireRole(INSTANCE_ADMIN_ROLE)(req, res, next);
 }
 
 function readProviderKeyHeader(req, headerName) {
@@ -1577,15 +1873,29 @@ function safeUsageRecord(promise) {
   });
 }
 
+function isRequestScopedProviderUsage(apiKey) {
+  return Boolean(String(apiKey || "").trim());
+}
+
 function recordEmbeddingUsage(tenantId, usage, telemetryContext) {
   if (!tenantId) return;
   const tokens = parseEmbeddingUsage(usage);
   if (!tokens.total) return;
   const estimated = usage?.estimated === true || usage?.fallback === true;
+  const billable = telemetryContext?.billable === true;
   safeUsageRecord(recordTenantUsage({
     tenantId,
     embeddingTokens: tokens.total,
-    embeddingRequests: 1
+    embeddingRequests: 1,
+    eventKind: "embedding",
+    requestId: telemetryContext?.requestId || null,
+    collection: telemetryContext?.collection || null,
+    source: telemetryContext?.source || "embedding",
+    estimated,
+    billable,
+    metadata: {
+      tokenPrompt: tokens.prompt
+    }
   }));
   emitTelemetry("token_usage", buildTelemetryContext({
     requestId: telemetryContext?.requestId,
@@ -1605,12 +1915,19 @@ function recordGenerationUsage(tenantId, usage, telemetryContext) {
   const tokens = parseGenerationUsage(usage);
   if (!tokens.total) return;
   const estimated = usage?.estimated === true || usage?.fallback === true;
+  const billable = telemetryContext?.billable !== false;
   safeUsageRecord(recordTenantUsage({
     tenantId,
     generationInputTokens: tokens.input,
     generationOutputTokens: tokens.output,
     generationTotalTokens: tokens.total,
-    generationRequests: 1
+    generationRequests: 1,
+    eventKind: "generation",
+    requestId: telemetryContext?.requestId || null,
+    collection: telemetryContext?.collection || null,
+    source: telemetryContext?.source || "generation",
+    estimated,
+    billable
   }));
   emitTelemetry("token_usage", buildTelemetryContext({
     requestId: telemetryContext?.requestId,
@@ -1624,6 +1941,199 @@ function recordGenerationUsage(tenantId, usage, telemetryContext) {
     token_total: tokens.total,
     token_estimated: estimated
   });
+}
+
+async function syncStorageUsageMeter(tenantId, telemetryContext, metadata) {
+  if (!tenantId) return null;
+  const cleanMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? { ...metadata }
+    : null;
+  const vectorDim = await resolveStorageVectorDim(tenantId, cleanMetadata);
+  if (cleanMetadata) {
+    cleanMetadata.vectorDim = vectorDim;
+  }
+  return syncTenantStorageUsage({
+    tenantId,
+    requestId: telemetryContext?.requestId || null,
+    collection: telemetryContext?.collection || null,
+    source: telemetryContext?.source || "storage_sync",
+    metadata: cleanMetadata,
+    recordHistory: true,
+    vectorDim
+  });
+}
+
+function buildStorageBillingPeriodDetails(period, options = {}) {
+  if (!period?.period_start || !period?.period_end) return null;
+  const currentBytes = options.closed
+    ? Number(period?.closing_bytes || 0)
+    : Number(options.currentBytes ?? period?.closing_bytes ?? 0);
+  const lastAccruedAt = options.closed
+    ? (period?.closed_at || period?.period_end)
+    : (options.lastAccruedAt || period?.last_event_at || period?.period_start);
+  const summary = computeStoragePeriodSummary({
+    periodStart: period.period_start,
+    periodEnd: period.period_end,
+    byteSeconds: Number(period?.storage_byte_seconds || 0),
+    currentBytes,
+    lastAccruedAt,
+    now: options.now || new Date(),
+    storagePricePerGBMonth: Number(options.storagePricePerGBMonth || 0),
+    includedGBMonth: Number(options.includedGBMonth || 0)
+  });
+  return {
+    ...summary,
+    charge: options.closed ? summary.chargeToDate : summary.projectedCharge,
+    closed: Boolean(options.closed),
+    byteSeconds: Number(period?.storage_byte_seconds || 0),
+    formulaVersion: period?.formula_version || null,
+    lastEventAt: period?.last_event_at || null,
+    closedAt: period?.closed_at || null,
+    closingBytes: Number(period?.closing_bytes || 0),
+    components: {
+      chunkTextBytes: Number(period?.closing_chunk_text_bytes || 0),
+      metadataBytes: Number(period?.closing_metadata_bytes || 0),
+      vectorBytes: Number(period?.closing_vector_bytes || 0),
+      vectorDim: Number(period?.closing_vector_dim || 0)
+    }
+  };
+}
+
+function buildStorageBillingSummary({
+  state = null,
+  currentPeriod = null,
+  recentPeriods = [],
+  now = new Date(),
+  storagePricePerGBMonth = 0,
+  includedGBMonth = 0
+} = {}) {
+  if (!currentPeriod && !recentPeriods.length && !state) return null;
+  const current = currentPeriod
+    ? buildStorageBillingPeriodDetails(currentPeriod, {
+      closed: false,
+      currentBytes: Number(state?.current_bytes ?? currentPeriod?.closing_bytes ?? 0),
+      lastAccruedAt: state?.last_accrued_at || currentPeriod?.last_event_at || currentPeriod?.period_start,
+      now,
+      storagePricePerGBMonth,
+      includedGBMonth
+    })
+    : null;
+  const recent = (recentPeriods || [])
+    .filter((period) => {
+      if (!period?.period_start) return false;
+      if (!period?.closed_at) return false;
+      return !currentPeriod || period.period_start !== currentPeriod.period_start;
+    })
+    .slice(0, 6)
+    .map((period) => buildStorageBillingPeriodDetails(period, {
+      closed: true,
+      now: period?.closed_at || period?.period_end || now,
+      storagePricePerGBMonth,
+      includedGBMonth
+    }))
+    .filter(Boolean);
+
+  return {
+    model: "gb_month_average",
+    meterSource: "supavector",
+    storagePricePerGBMonth: Number(storagePricePerGBMonth || 0),
+    includedGBMonth: Number(includedGBMonth || 0),
+    formulaVersion: current?.formulaVersion || state?.formula_version || recent[0]?.formulaVersion || null,
+    current,
+    recentPeriods: recent
+  };
+}
+
+function computeUsageCosts({
+  storageBytes = 0,
+  storagePricePerGB = 0,
+  totalAiTokens = 0,
+  billableAiTokens = 0,
+  aiTokenPricePer1K = 0
+}) {
+  const cleanStorageBytes = Number(storageBytes || 0);
+  const cleanStoragePricePerGB = Number(storagePricePerGB || 0);
+  const cleanTotalAiTokens = Number(totalAiTokens || 0);
+  const cleanBillableAiTokens = Number(billableAiTokens || 0);
+  const cleanAiTokenPricePer1K = Number(aiTokenPricePer1K || 0);
+  const storageGB = cleanStorageBytes / (1024 * 1024 * 1024);
+  return {
+    storageBytes: cleanStorageBytes,
+    storageGB,
+    storageCharge: cleanStoragePricePerGB > 0 ? parseFloat((storageGB * cleanStoragePricePerGB).toFixed(6)) : 0,
+    aiTokens: cleanTotalAiTokens,
+    aiTokens1K: cleanTotalAiTokens / 1000,
+    billableAiTokens: cleanBillableAiTokens,
+    billableAiTokens1K: cleanBillableAiTokens / 1000,
+    aiTokensCharge: cleanAiTokenPricePer1K > 0 ? parseFloat(((cleanBillableAiTokens / 1000) * cleanAiTokenPricePer1K).toFixed(6)) : 0
+  };
+}
+
+function buildUsageHistoryEntry(row, rates = {}) {
+  const eventKind = String(row?.event_kind || "");
+  const embeddingTokens = Number(row?.embedding_tokens || 0);
+  const generationInputTokens = Number(row?.generation_input_tokens || 0);
+  const generationOutputTokens = Number(row?.generation_output_tokens || 0);
+  const generationTotalTokens = Number(row?.generation_total_tokens || 0);
+  const storageBytesDelta = Number(row?.storage_bytes_delta || 0);
+  const storageBytesTotal = Number(row?.storage_bytes_total || 0);
+  const storageChunksDelta = Number(row?.storage_chunks_delta || 0);
+  const storageChunksTotal = Number(row?.storage_chunks_total || 0);
+  const storageDocumentsDelta = Number(row?.storage_documents_delta || 0);
+  const storageDocumentsTotal = Number(row?.storage_documents_total || 0);
+  const storageMemoryItemsDelta = Number(row?.storage_memory_items_delta || 0);
+  const storageMemoryItemsTotal = Number(row?.storage_memory_items_total || 0);
+  const storageCollectionsDelta = Number(row?.storage_collections_delta || 0);
+  const storageCollectionsTotal = Number(row?.storage_collections_total || 0);
+  const storagePricePerGB = Number(rates?.storagePerGB || 0);
+  const aiTokenPricePer1K = Number(rates?.aiTokensPer1K || 0);
+
+  let charges = {
+    storageCharge: 0,
+    aiTokensCharge: 0
+  };
+  if (eventKind === "storage") {
+    charges = {
+      storageCharge: storagePricePerGB > 0 ? parseFloat((((storageBytesTotal / (1024 * 1024 * 1024)) * storagePricePerGB)).toFixed(6)) : 0,
+      aiTokensCharge: 0
+    };
+  } else if (eventKind === "generation") {
+    charges = {
+      storageCharge: 0,
+      aiTokensCharge: row?.billable === false || aiTokenPricePer1K <= 0
+        ? 0
+        : parseFloat((((generationTotalTokens / 1000) * aiTokenPricePer1K)).toFixed(6))
+    };
+  }
+
+  return {
+    id: Number(row?.id || 0),
+    eventKind,
+    requestId: row?.request_id || null,
+    collection: row?.collection || null,
+    source: row?.source || null,
+    estimated: row?.estimated === true,
+    billable: row?.billable !== false,
+    usage: {
+      embeddingTokens,
+      generationInputTokens,
+      generationOutputTokens,
+      generationTotalTokens,
+      storageBytesDelta,
+      storageBytesTotal,
+      storageChunksDelta,
+      storageChunksTotal,
+      storageDocumentsDelta,
+      storageDocumentsTotal,
+      storageMemoryItemsDelta,
+      storageMemoryItemsTotal,
+      storageCollectionsDelta,
+      storageCollectionsTotal
+    },
+    charges,
+    metadata: row?.metadata || null,
+    createdAt: row?.created_at || null
+  };
 }
 
 function sendOk(res, data, tenantId, collection) {
@@ -1947,6 +2457,48 @@ function scheduleTtlSweep() {
       runTtlSweepOnce().catch(() => {});
     }, TTL_SWEEP_INTERVAL_MS);
   }, 2000);
+}
+
+async function runStorageBillingAccrualSweepOnce() {
+  if (storageBillingAccrualRunning) return;
+  storageBillingAccrualRunning = true;
+  const startedAt = new Date();
+  let processed = 0;
+  try {
+    let afterTenantId = null;
+    while (true) {
+      const tenantIds = await listTenantIdsWithStorageBillingState({
+        afterTenantId,
+        limit: 100
+      });
+      if (!tenantIds.length) break;
+      for (const tenantId of tenantIds) {
+        try {
+          await accrueTenantStorageBillingState({ tenantId, now: startedAt });
+          processed += 1;
+        } catch (err) {
+          console.warn(`[billing] storage accrual failed tenant=${tenantId}:`, err?.message || err);
+        }
+      }
+      afterTenantId = tenantIds[tenantIds.length - 1];
+      if (tenantIds.length < 100) break;
+    }
+    if (processed > 0) {
+      console.log(`[billing] storage accrual updated=${processed}`);
+    }
+  } finally {
+    storageBillingAccrualRunning = false;
+  }
+}
+
+function scheduleStorageBillingAccrualSweep() {
+  if (!Number.isFinite(STORAGE_BILLING_ACCRUAL_INTERVAL_MS) || STORAGE_BILLING_ACCRUAL_INTERVAL_MS <= 0) return;
+  setTimeout(() => {
+    runStorageBillingAccrualSweepOnce().catch(() => {});
+    setInterval(() => {
+      runStorageBillingAccrualSweepOnce().catch(() => {});
+    }, STORAGE_BILLING_ACCRUAL_INTERVAL_MS);
+  }, 2500);
 }
 
 async function sweepDueMemoryJobs() {
@@ -2813,7 +3365,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     throw new Error("acl list is required when visibility is acl");
   }
 
-  await upsertMemoryArtifact({
+  const artifact = await upsertMemoryArtifact({
     tenantId,
     collection,
     externalId: docId,
@@ -2829,6 +3381,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     visibility: resolvedVisibility,
     acl: aclList
   });
+  const activeNamespaceId = artifact?.namespace_id || namespacedDocId;
 
   let truncated = false;
   if (cleanText.length > MAX_DOC_CHARS) {
@@ -2838,7 +3391,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   logIndex(`start tenant=${tenantId} collection=${collection} docId=${docId} chars=${cleanText.length} truncated=${truncated}`);
 
-  const chunks = chunkText(namespacedDocId, cleanText, CHUNKING_OPTIONS);
+  const chunks = chunkText(activeNamespaceId, cleanText, CHUNKING_OPTIONS);
   if (chunks.length === 0) {
     throw new Error("text produced no chunks");
   }
@@ -2862,6 +3415,11 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
   }));
   logIndex(`embedded collection=${collection} docId=${docId} vectors=${vectors.length} ms=${Date.now() - embedStart}`);
 
+  const cleanup = await deleteVectorsForDoc(activeNamespaceId, { strict: true });
+  if (cleanup.failed > 0) {
+    throw new Error(`Failed to replace existing vectors for doc ${docId}`);
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const chunkId = chunks[i].chunkId;
     const chunkTxt = chunks[i].text;
@@ -2869,7 +3427,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     // Save chunk text persistently
     await saveChunk({
       chunkId,
-      docId: namespacedDocId,
+      docId: activeNamespaceId,
       idx: i,
       text: chunkTxt
     });
@@ -2883,6 +3441,19 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     }
   }
 
+  await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    requestId: options?.telemetry?.requestId,
+    tenantId,
+    collection,
+    source: options?.telemetry?.source || "document_index"
+  }), {
+    operation: "document_index",
+    docId,
+    chunksIndexed: chunks.length,
+    truncated,
+    embedProvider: options?.embedProvider || effectiveModels.embedProvider,
+    embedModel: options?.embedModel || effectiveModels.embedModel
+  });
   logIndex(`done tenant=${tenantId} collection=${collection} docId=${docId} chunks=${chunks.length} totalMs=${Date.now() - startAt}`);
   return { chunksIndexed: chunks.length, truncated };
 }
@@ -3466,7 +4037,7 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, generationApiKey, embedApiKey, model, provider, models }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -3549,7 +4120,8 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     requestId: telemetryContext.requestId,
     tenantId,
     collection,
-    source: "answer_generation"
+    source: "answer_generation",
+    billable: generationBillable
   }));
 
   return {
@@ -3562,7 +4134,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   };
 }
 
-async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, generationApiKey, embedApiKey, model, provider, models }) {
+async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -3644,7 +4216,8 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     requestId: telemetryContext.requestId,
     tenantId,
     collection,
-    source: "answer_boolean_ask_generation"
+    source: "answer_boolean_ask_generation",
+    billable: generationBillable
   }));
 
   return {
@@ -3694,6 +4267,11 @@ async function indexMemoryText(namespaceId, text, options = {}) {
     source: options?.telemetry?.source || "memory_index"
   }));
 
+  const cleanup = await deleteVectorsForDoc(namespaceId, { strict: true });
+  if (cleanup.failed > 0) {
+    throw new Error(`Failed to replace existing vectors for memory namespace ${namespaceId}`);
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const chunkId = chunks[i].chunkId;
     const chunkTxt = chunks[i].text;
@@ -3709,6 +4287,19 @@ async function indexMemoryText(namespaceId, text, options = {}) {
     await sendCmd(cmd);
   }
 
+  await syncStorageUsageMeter(parsed?.tenantId, buildTelemetryContext({
+    requestId: options?.telemetry?.requestId,
+    tenantId: parsed?.tenantId,
+    collection: parsed?.collection || null,
+    source: options?.telemetry?.source || "memory_index"
+  }), {
+    operation: "memory_index",
+    namespaceId,
+    chunksIndexed: chunks.length,
+    truncated,
+    embedProvider: options?.embedProvider || effectiveModels.embedProvider,
+    embedModel: options?.embedModel || effectiveModels.embedModel
+  });
   logIndex(`done memory namespace=${namespaceId} chunks=${chunks.length} totalMs=${Date.now() - startAt}`);
   return { chunksIndexed: chunks.length, truncated };
 }
@@ -4476,6 +5067,18 @@ async function runDeleteReconcileJob(jobId, tenantId) {
       await deleteMemoryItemById(memoryId);
       dbDeleted = 1;
     }
+    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+      requestId: `job:${jobId}`,
+      tenantId,
+      collection: input.collection || memory?.collection || null,
+      source: "delete_reconcile_job"
+    }), {
+      operation: "delete_reconcile",
+      memoryId,
+      namespaceId,
+      vectorsDeleted: result.deleted,
+      dbDeleted
+    });
 
     await updateMemoryJob({
       id: jobId,
@@ -4532,6 +5135,18 @@ async function deleteMemoryItemFully(item, options = {}) {
     };
   }
   await deleteMemoryItemById(item.id);
+  await syncStorageUsageMeter(item.tenant_id, buildTelemetryContext({
+    requestId: options.requestId || null,
+    tenantId: item.tenant_id,
+    collection: item.collection || null,
+    source: options.source || "delete"
+  }), {
+    operation: "memory_delete",
+    memoryId: item.id,
+    namespaceId: item.namespace_id,
+    reason: options.reason || null,
+    vectorsDeleted: result.deleted || 0
+  });
   emitLifecycleActionTelemetry("delete", item, {
     status: "deleted",
     reason: options.reason || null,
@@ -5355,6 +5970,26 @@ app.get(["/models", "/v1/models"], async (req, res) => {
   }, null, null);
 });
 
+app.get("/v1/runtime", async (req, res) => {
+  const hosted = DEPLOYMENT_MODE === "hosted";
+  const baseUrl = resolvePublicBaseUrl(req);
+  const dashboardUrl = hosted
+    ? (DASHBOARD_URL || (portalPluginMounted ? `${baseUrl}/portal` : null))
+    : null;
+  sendOk(res, {
+    deploymentMode: DEPLOYMENT_MODE,
+    capabilities: {
+      dashboardControlPlane: hosted,
+      localGatewayAdmin: !hosted,
+      hostedBilling: hosted,
+      portalEnabled: portalPluginMounted
+    },
+    links: {
+      dashboardUrl
+    }
+  }, null, null);
+});
+
 // --------------------------
 // OpenAPI (public)
 // --------------------------
@@ -5566,17 +6201,58 @@ app.post("/v1/login", loginLimiter, async (req, res) => {
 // --------------------------
 // SSO Login (public)
 // --------------------------
+app.get(["/auth/providers", "/v1/auth/providers"], async (req, res) => {
+  try {
+    const requestedTenantId = resolveRequestedTenantInput(req);
+    const tenantRecord = requestedTenantId ? await getTenantById(requestedTenantId) : null;
+    if (requestedTenantId && !tenantRecord) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+    const authMode = normalizeAuthMode(tenantRecord?.auth_mode);
+    const providers = {};
+    for (const provider of ENTERPRISE_SSO_PROVIDERS) {
+      if (!isSsoAllowed(authMode)) {
+        providers[provider] = { enabled: false, source: null, provider, reason: "auth_mode_disabled" };
+        continue;
+      }
+      const cfg = resolveSsoProviderConfig({ tenant: tenantRecord, provider, env: process.env });
+      providers[provider] = formatAuthProviderAvailability(provider, cfg, tenantRecord);
+    }
+    return res.json({
+      ok: true,
+      tenantId: requestedTenantId || null,
+      authMode,
+      providers
+    });
+  } catch (err) {
+    return res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
 app.get(["/auth/:provider/login", "/v1/auth/:provider/login"], async (req, res) => {
   const provider = String(req.params.provider || "").trim();
   try {
-    const { client, cfg } = await getClient(provider);
+    const requestedTenantId = resolveRequestedTenantInput(req);
+    const tenantRecord = requestedTenantId ? await getTenantById(requestedTenantId) : null;
+    if (requestedTenantId && !tenantRecord) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+    if (requestedTenantId && !isSsoAllowed(tenantRecord?.auth_mode)) {
+      return res.status(403).json({ error: "Tenant requires password login." });
+    }
+    if (requestedTenantId && !isSsoProviderAllowed(tenantRecord, provider)) {
+      return res.status(403).json({ error: "SSO provider not allowed for tenant." });
+    }
+
+    const cfg = resolveSsoProviderConfig({ tenant: tenantRecord, provider, env: process.env });
+    const { client } = await getClient(provider, cfg);
     const state = generators.state();
     const nonce = generators.nonce();
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
     const cookieName = buildStateCookie(provider);
-    const payload = JSON.stringify({ state, nonce, codeVerifier });
+    const payload = JSON.stringify({ state, nonce, codeVerifier, tenantId: requestedTenantId || null });
     res.cookie(cookieName, payload, {
       httpOnly: true,
       sameSite: "lax",
@@ -5604,7 +6280,6 @@ app.get(["/auth/:provider/login", "/v1/auth/:provider/login"], async (req, res) 
 app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req, res) => {
   const provider = String(req.params.provider || "").trim();
   try {
-    const { client, cfg } = await getClient(provider);
     const cookieName = buildStateCookie(provider);
     const raw = req.signedCookies[cookieName];
     if (!raw) {
@@ -5620,6 +6295,13 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
       return res.status(400).json({ error: "Invalid login state" });
     }
 
+    const requestedTenantId = String(saved?.tenantId || "").trim();
+    const requestedTenant = requestedTenantId ? await getTenantById(requestedTenantId) : null;
+    if (requestedTenantId && !requestedTenant) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+    const cfg = resolveSsoProviderConfig({ tenant: requestedTenant, provider, env: process.env });
+    const { client } = await getClient(provider, cfg);
     const params = client.callbackParams(req);
     const tokenSet = await client.callback(
       getRedirectUri(provider),
@@ -5628,11 +6310,14 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
     );
 
     const claims = tokenSet.claims();
-    const tenant = resolveTenant(claims, cfg);
+    const tenant = requestedTenantId || resolveTenant(claims, cfg);
     if (!tenant || !TENANT_RE.test(tenant)) {
       return res.status(400).json({ error: "Invalid tenant from IdP" });
     }
     const tenantRecord = await getTenantById(tenant);
+    if (!tenantRecord) {
+      return res.status(404).json({ error: "Tenant not provisioned for SSO" });
+    }
     const tenantAuthMode = normalizeAuthMode(tenantRecord?.auth_mode);
     if (!isSsoAllowed(tenantAuthMode)) {
       return res.status(403).json({ error: "Tenant requires password login." });
@@ -5647,10 +6332,13 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
     }
 
     const profile = getUserProfile(claims);
+    if (!isEmailAllowedForProvider(profile.email, cfg.allowedDomains)) {
+      return res.status(403).json({ error: "Email domain not allowed for tenant SSO." });
+    }
     const randomPass = crypto.randomBytes(32).toString("hex");
     const passwordHash = await bcrypt.hash(randomPass, 12);
 
-    const user = await upsertSsoUser({
+    let user = await upsertSsoUser({
       provider,
       subject,
       tenantId: tenant,
@@ -5658,11 +6346,39 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
       fullName: profile.name,
       passwordHash
     });
+    if (user.disabled) {
+      return res.status(403).json({ error: "Account is disabled." });
+    }
+    const finalRoles = deriveSsoRoles({
+      claims,
+      providerConfig: cfg,
+      existingRoles: user.roles || []
+    });
+    const currentRoles = Array.isArray(user.roles) ? user.roles : [];
+    if (JSON.stringify(currentRoles) !== JSON.stringify(finalRoles)) {
+      user = await updateTenantUser(tenant, user.id, { roles: finalRoles }) || user;
+    }
 
     const token = issueToken({
       username: user.username,
       tenant: user.tenant_id,
-      roles: user.roles || []
+      roles: Array.isArray(user.roles) ? user.roles : finalRoles
+    });
+
+    await createAuditLog({
+      tenantId: tenant,
+      actorId: user.username,
+      actorType: "user",
+      action: "auth.sso_login",
+      targetType: "user",
+      targetId: String(user.id || ""),
+      metadata: {
+        provider,
+        email: profile.email || null,
+        roleSource: cfg.source || "instance"
+      },
+      requestId: req.requestId,
+      ip: req.ip
     });
 
     const html = `<!doctype html>
@@ -5682,6 +6398,646 @@ app.get(["/auth/:provider/callback", "/v1/auth/:provider/callback"], async (req,
     return res.status(400).json({ error: String(err.message || err) });
   }
 });
+
+// --------------------------
+// Enterprise control plane (instance admin)
+// --------------------------
+app.get(["/admin/tenants", "/v1/admin/tenants"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  try {
+    const limit = parseListLimit(req.query?.limit, { fallback: 100, max: 500 });
+    const search = String(req.query?.search || "").trim();
+    const tenants = (await listTenants({ limit, search })).map((tenant) => formatTenantRecord(tenant));
+    sendOk(res, { tenants }, null, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message.includes("must be a positive number") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to list tenants", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_TENANT_LIST_FAILED", null, null);
+  }
+});
+
+app.post(["/admin/tenants", "/v1/admin/tenants"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = normalizeTenantIdentifier(req.body?.tenantId ?? req.body?.tenantID, "tenantId");
+    const name = req.body?.name === undefined ? null : (String(req.body.name || "").trim() || null);
+    const externalId = req.body?.externalId === undefined && req.body?.external_id === undefined
+      ? null
+      : (String((req.body?.externalId ?? req.body?.external_id) || "").trim() || null);
+    const metadata = parseTenantMetadataInput(req.body?.metadata);
+    const rawMode = req.body?.authMode ?? req.body?.auth_mode;
+    const rawProviders = req.body?.ssoProviders ?? req.body?.sso_providers;
+    const rawSsoConfig = req.body?.ssoConfig ?? req.body?.sso_config;
+    const authMode = rawMode === undefined ? null : parseAuthMode(rawMode);
+    if (rawMode !== undefined && !authMode) {
+      return sendError(res, 400, "authMode must be one of: sso_only, sso_plus_password, password_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    let providersInput;
+    try {
+      providersInput = normalizeSsoProvidersInput(rawProviders);
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    let modelInput;
+    try {
+      modelInput = parseTenantModelSettingsInput(req.body || {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    let ssoConfigInput;
+    try {
+      ssoConfigInput = parseTenantSsoConfigInput(rawSsoConfig, {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    const effectiveProviders = providersInput.provided ? providersInput.value : null;
+    if (authMode === "sso_only" && Array.isArray(effectiveProviders) && effectiveProviders.length === 0) {
+      return sendError(res, 400, "ssoProviders cannot be empty when authMode is sso_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    const bootstrapAdminRaw = req.body?.bootstrapAdmin ?? req.body?.bootstrapUser;
+    if (bootstrapAdminRaw !== undefined && bootstrapAdminRaw !== null && (typeof bootstrapAdminRaw !== "object" || Array.isArray(bootstrapAdminRaw))) {
+      return sendError(res, 400, "bootstrapAdmin must be an object", "INVALID_INPUT", tenantId, null);
+    }
+    const bootstrapTokenRaw = req.body?.bootstrapServiceToken;
+    if (bootstrapTokenRaw !== undefined && bootstrapTokenRaw !== null && (typeof bootstrapTokenRaw !== "object" || Array.isArray(bootstrapTokenRaw))) {
+      return sendError(res, 400, "bootstrapServiceToken must be an object", "INVALID_INPUT", tenantId, null);
+    }
+
+    let bootstrapAdmin = null;
+    let generatedBootstrapPassword = null;
+    if (bootstrapAdminRaw && typeof bootstrapAdminRaw === "object") {
+      const username = String(bootstrapAdminRaw.username || "").trim();
+      if (!username) {
+        return sendError(res, 400, "bootstrapAdmin.username is required", "INVALID_INPUT", tenantId, null);
+      }
+      let roles;
+      try {
+        roles = bootstrapAdminRaw.roles === undefined
+          ? ["admin", "indexer", "reader"]
+          : normalizeRoles(bootstrapAdminRaw.roles, { allowInstanceAdmin: true, allowEmpty: false });
+      } catch (err) {
+        return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+      }
+      const passwordInput = String(bootstrapAdminRaw.password || "");
+      const ssoOnly = bootstrapAdminRaw.ssoOnly === true || bootstrapAdminRaw.sso_only === true;
+      if (passwordInput && passwordInput.length < 8) {
+        return sendError(res, 400, "bootstrapAdmin.password must be at least 8 characters", "INVALID_INPUT", tenantId, null);
+      }
+      const password = passwordInput || `supav_user_${crypto.randomBytes(18).toString("base64url")}`;
+      if (!passwordInput && !ssoOnly) {
+        generatedBootstrapPassword = password;
+      }
+      bootstrapAdmin = {
+        username,
+        passwordHash: await bcrypt.hash(password, 12),
+        roles,
+        email: bootstrapAdminRaw.email === undefined ? null : (String(bootstrapAdminRaw.email || "").trim() || null),
+        fullName: bootstrapAdminRaw.fullName === undefined && bootstrapAdminRaw.full_name === undefined
+          ? null
+          : (String((bootstrapAdminRaw.fullName ?? bootstrapAdminRaw.full_name) || "").trim() || null),
+        ssoOnly
+      };
+    }
+
+    let bootstrapServiceToken = null;
+    let bootstrapServiceTokenValue = null;
+    if (bootstrapTokenRaw && typeof bootstrapTokenRaw === "object") {
+      const nameValue = String(bootstrapTokenRaw.name || "").trim() || `${tenantId}-bootstrap`;
+      const principalValue = String(
+        bootstrapTokenRaw.principalId
+        ?? bootstrapTokenRaw.principal_id
+        ?? bootstrapAdmin?.username
+        ?? tenantId
+      ).trim();
+      if (!PRINCIPAL_RE.test(principalValue)) {
+        return sendError(res, 400, "bootstrapServiceToken.principalId is invalid", "INVALID_INPUT", tenantId, null);
+      }
+      let roles;
+      try {
+        roles = bootstrapTokenRaw.roles === undefined
+          ? (bootstrapAdmin?.roles?.length ? bootstrapAdmin.roles : ["admin", "indexer", "reader"])
+          : normalizeRoles(bootstrapTokenRaw.roles, { allowInstanceAdmin: true, allowEmpty: false });
+      } catch (err) {
+        return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+      }
+      let expiresAt = bootstrapTokenRaw.expiresAt || bootstrapTokenRaw.expires_at || null;
+      if (expiresAt) {
+        try {
+          expiresAt = parseTimeInput(expiresAt, "bootstrapServiceToken.expiresAt").toISOString();
+        } catch (err) {
+          return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+        }
+      }
+      bootstrapServiceTokenValue = `supav_${crypto.randomBytes(24).toString("base64url")}`;
+      bootstrapServiceToken = {
+        name: nameValue,
+        principalId: principalValue,
+        roles,
+        keyHash: hashToken(bootstrapServiceTokenValue),
+        expiresAt
+      };
+    }
+
+    const created = await createTenantWithBootstrap({
+      tenant: {
+        tenantId,
+        name,
+        externalId,
+        metadata: metadata === undefined ? {} : metadata,
+        authMode,
+        ssoProviders: providersInput.provided ? providersInput.value : undefined,
+        ssoConfig: ssoConfigInput,
+        answerProvider: modelInput.answerProvider,
+        answerModel: modelInput.answerModel,
+        booleanAskProvider: modelInput.booleanAskProvider,
+        booleanAskModel: modelInput.booleanAskModel,
+        reflectProvider: modelInput.reflectProvider,
+        reflectModel: modelInput.reflectModel,
+        compactProvider: modelInput.compactProvider,
+        compactModel: modelInput.compactModel
+      },
+      bootstrapUser: bootstrapAdmin,
+      bootstrapServiceToken
+    });
+    const summary = await buildEnterpriseTenantSummary(tenantId);
+    await recordAudit(req, tenantId, {
+      action: "enterprise.tenant.create",
+      targetType: "tenant",
+      targetId: tenantId,
+      metadata: {
+        externalId,
+        authMode: authMode || normalizeAuthMode(created?.tenant?.auth_mode),
+        bootstrapAdmin: Boolean(created?.bootstrapUser),
+        bootstrapServiceToken: Boolean(created?.bootstrapServiceToken)
+      }
+    });
+    if (created?.bootstrapUser) {
+      await recordAudit(req, tenantId, {
+        action: "enterprise.user.create",
+        targetType: "user",
+        targetId: String(created.bootstrapUser.id || ""),
+        metadata: {
+          username: created.bootstrapUser.username || null,
+          roles: created.bootstrapUser.roles || [],
+          bootstrap: true
+        }
+      });
+    }
+    if (created?.bootstrapServiceToken) {
+      await recordAudit(req, tenantId, {
+        action: "enterprise.service_token.create",
+        targetType: "service_token",
+        targetId: String(created.bootstrapServiceToken.id || ""),
+        metadata: {
+          name: created.bootstrapServiceToken.name || null,
+          principalId: created.bootstrapServiceToken.principal_id || null,
+          roles: created.bootstrapServiceToken.roles || [],
+          bootstrap: true
+        }
+      });
+    }
+    sendOk(res, {
+      tenant: formatTenantRecord(created?.tenant, { summary }),
+      bootstrapAdmin: created?.bootstrapUser
+        ? {
+            user: formatTenantUser(created.bootstrapUser),
+            ...(generatedBootstrapPassword ? { generatedPassword: generatedBootstrapPassword } : {})
+          }
+        : null,
+      bootstrapServiceToken: created?.bootstrapServiceToken
+        ? {
+            token: bootstrapServiceTokenValue,
+            tokenInfo: formatServiceToken(created.bootstrapServiceToken),
+            note: "Store this token now. It will not be shown again."
+          }
+        : null
+    }, tenantId, null);
+  } catch (err) {
+    if (String(err.code || "") === "23505") {
+      return sendError(res, 409, "tenantId, externalId, or bootstrap principal already exists", "CONFLICT", tenantId, null);
+    }
+    const message = String(err.message || err);
+    const status = message.includes("must be") || message.includes("is required") || message === "tenantId mismatch" ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to create tenant", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_TENANT_CREATE_FAILED", tenantId, null);
+  }
+});
+
+app.get(["/admin/tenants/:tenantId", "/v1/admin/tenants/:tenantId"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const summary = await buildEnterpriseTenantSummary(tenantId);
+    sendOk(res, { tenant: formatTenantRecord(tenant, { summary }) }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("is required") || message.includes("must use only") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to load tenant", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_TENANT_GET_FAILED", tenantId, null);
+  }
+});
+
+app.patch(["/admin/tenants/:tenantId", "/v1/admin/tenants/:tenantId"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const current = await getTenantById(tenantId);
+    if (!current) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+
+    const rawMode = req.body?.authMode ?? req.body?.auth_mode;
+    const rawProviders = req.body?.ssoProviders ?? req.body?.sso_providers;
+    const rawSsoConfig = req.body?.ssoConfig ?? req.body?.sso_config;
+    const rawExternalId = req.body?.externalId ?? req.body?.external_id;
+    const authMode = rawMode === undefined ? null : parseAuthMode(rawMode);
+    if (rawMode !== undefined && !authMode) {
+      return sendError(res, 400, "authMode must be one of: sso_only, sso_plus_password, password_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    let providersInput;
+    try {
+      providersInput = normalizeSsoProvidersInput(rawProviders);
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    let modelInput;
+    try {
+      modelInput = parseTenantModelSettingsInput(req.body || {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    let ssoConfigInput;
+    try {
+      ssoConfigInput = parseTenantSsoConfigInput(rawSsoConfig, current?.sso_config || {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    let metadataInput;
+    try {
+      metadataInput = parseTenantMetadataInput(req.body?.metadata);
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+
+    const nextAuthMode = authMode || normalizeAuthMode(current?.auth_mode);
+    const nextProviders = providersInput.provided ? providersInput.value : current?.sso_providers ?? null;
+    if (nextAuthMode === "sso_only" && Array.isArray(nextProviders) && nextProviders.length === 0) {
+      return sendError(res, 400, "ssoProviders cannot be empty when authMode is sso_only", "INVALID_INPUT", tenantId, null);
+    }
+
+    const name = req.body?.name === undefined ? undefined : (String(req.body.name || "").trim() || null);
+    const externalId = rawExternalId === undefined ? undefined : (String(rawExternalId || "").trim() || null);
+    if (
+      name === undefined
+      && externalId === undefined
+      && metadataInput === undefined
+      && rawMode === undefined
+      && !providersInput.provided
+      && ssoConfigInput === undefined
+      && !hasTenantModelSettingsInput(modelInput)
+    ) {
+      return sendError(res, 400, "Provide name, externalId, metadata, authMode, ssoProviders, ssoConfig, and/or models", "INVALID_INPUT", tenantId, null);
+    }
+
+    const before = buildTenantSettingsPayload(tenantId, current);
+    const updated = await setTenantSettings(tenantId, {
+      name,
+      externalId,
+      metadata: metadataInput,
+      authMode: rawMode === undefined ? undefined : authMode,
+      ssoProviders: providersInput.provided ? providersInput.value : undefined,
+      ssoConfig: ssoConfigInput,
+      answerProvider: modelInput.answerProvider,
+      answerModel: modelInput.answerModel,
+      booleanAskProvider: modelInput.booleanAskProvider,
+      booleanAskModel: modelInput.booleanAskModel,
+      reflectProvider: modelInput.reflectProvider,
+      reflectModel: modelInput.reflectModel,
+      compactProvider: modelInput.compactProvider,
+      compactModel: modelInput.compactModel
+    });
+    const summary = await buildEnterpriseTenantSummary(tenantId);
+    await recordAudit(req, tenantId, {
+      action: "enterprise.tenant.update",
+      targetType: "tenant",
+      targetId: tenantId,
+      metadata: {
+        before,
+        after: buildTenantSettingsPayload(tenantId, updated)
+      }
+    });
+    sendOk(res, { tenant: formatTenantRecord(updated, { summary }) }, tenantId, null);
+  } catch (err) {
+    if (String(err.code || "") === "23505") {
+      return sendError(res, 409, "externalId already exists", "CONFLICT", tenantId, null);
+    }
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") || message.includes("Provide ") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to update tenant", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_TENANT_UPDATE_FAILED", tenantId, null);
+  }
+});
+
+app.get(["/admin/tenants/:tenantId/users", "/v1/admin/tenants/:tenantId/users"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const users = (await listTenantUsers(tenantId)).map(formatTenantUser);
+    sendOk(res, { users }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must use only") || message.includes("is required") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to list tenant users", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_USERS_LIST_FAILED", tenantId, null);
+  }
+});
+
+app.post(["/admin/tenants/:tenantId/users", "/v1/admin/tenants/:tenantId/users"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const username = String(req.body?.username || "").trim();
+    if (!username) {
+      return sendError(res, 400, "username is required", "INVALID_INPUT", tenantId, null);
+    }
+    let roles;
+    try {
+      roles = normalizeRoles(req.body?.roles, { allowInstanceAdmin: true, allowEmpty: false });
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+    const ssoOnly = req.body?.ssoOnly === true || req.body?.sso_only === true;
+    const passwordInput = String(req.body?.password || "");
+    if (passwordInput && passwordInput.length < 8) {
+      return sendError(res, 400, "password must be at least 8 characters", "INVALID_INPUT", tenantId, null);
+    }
+    if (!passwordInput && !ssoOnly) {
+      return sendError(res, 400, "password is required unless ssoOnly is true", "INVALID_INPUT", tenantId, null);
+    }
+    const password = passwordInput || `supav_user_${crypto.randomBytes(18).toString("base64url")}`;
+    const user = await createTenantUser({
+      tenantId,
+      username,
+      passwordHash: await bcrypt.hash(password, 12),
+      roles,
+      email: req.body?.email === undefined ? null : (String(req.body.email || "").trim() || null),
+      fullName: req.body?.fullName === undefined && req.body?.full_name === undefined
+        ? null
+        : (String((req.body?.fullName ?? req.body?.full_name) || "").trim() || null),
+      ssoOnly
+    });
+    await recordAudit(req, tenantId, {
+      action: "enterprise.user.create",
+      targetType: "user",
+      targetId: String(user.id || ""),
+      metadata: {
+        username: user.username || null,
+        roles: user.roles || [],
+        ssoOnly
+      }
+    });
+    sendOk(res, {
+      user: formatTenantUser(user),
+      ...(!passwordInput && !ssoOnly ? { generatedPassword: password } : {})
+    }, tenantId, null);
+  } catch (err) {
+    if (String(err.code || "") === "23505") {
+      return sendError(res, 409, "username already exists", "CONFLICT", tenantId, null);
+    }
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") || message.includes("is required") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to create tenant user", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_USER_CREATE_FAILED", tenantId, null);
+  }
+});
+
+app.patch(["/admin/tenants/:tenantId/users/:id", "/v1/admin/tenants/:tenantId/users/:id"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const userId = parseInt(req.params.id || "0", 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return sendError(res, 400, "Invalid user id", "INVALID_INPUT", tenantId, null);
+    }
+    const existing = await getTenantUserById(tenantId, userId);
+    if (!existing) {
+      return sendError(res, 404, "User not found", "NOT_FOUND", tenantId, null);
+    }
+
+    let roles;
+    try {
+      roles = req.body?.roles === undefined
+        ? undefined
+        : normalizeRoles(req.body.roles, { allowInstanceAdmin: true, allowEmpty: true });
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+    const disabled = req.body?.disabled === undefined ? undefined : Boolean(req.body.disabled);
+    const email = req.body?.email === undefined ? undefined : (String(req.body.email || "").trim() || null);
+    const fullName = req.body?.fullName === undefined && req.body?.full_name === undefined
+      ? undefined
+      : (String((req.body?.fullName ?? req.body?.full_name) || "").trim() || null);
+    const ssoOnly = req.body?.ssoOnly === undefined && req.body?.sso_only === undefined
+      ? undefined
+      : Boolean(req.body?.ssoOnly ?? req.body?.sso_only);
+    let passwordHash = undefined;
+    if (req.body?.password !== undefined) {
+      const password = String(req.body.password || "");
+      if (!password || password.length < 8) {
+        return sendError(res, 400, "password must be at least 8 characters", "INVALID_INPUT", tenantId, null);
+      }
+      passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    if (roles === undefined && disabled === undefined && email === undefined && fullName === undefined && ssoOnly === undefined && passwordHash === undefined) {
+      return sendError(res, 400, "Provide roles, disabled, email, fullName, ssoOnly, and/or password", "INVALID_INPUT", tenantId, null);
+    }
+
+    const updated = await updateTenantUser(tenantId, userId, {
+      roles,
+      disabled,
+      passwordHash,
+      email,
+      fullName,
+      ssoOnly
+    });
+    await recordAudit(req, tenantId, {
+      action: "enterprise.user.update",
+      targetType: "user",
+      targetId: String(userId),
+      metadata: {
+        before: formatTenantUser(existing),
+        after: formatTenantUser(updated)
+      }
+    });
+    sendOk(res, { user: formatTenantUser(updated) }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") || message.includes("Provide ") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to update tenant user", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_USER_UPDATE_FAILED", tenantId, null);
+  }
+});
+
+app.get(["/admin/tenants/:tenantId/service-tokens", "/v1/admin/tenants/:tenantId/service-tokens"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const tokens = (await listServiceTokens(tenantId)).map(formatServiceToken);
+    sendOk(res, { tokens }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must use only") || message.includes("is required") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to list service tokens", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_SERVICE_TOKEN_LIST_FAILED", tenantId, null);
+  }
+});
+
+app.post(["/admin/tenants/:tenantId/service-tokens", "/v1/admin/tenants/:tenantId/service-tokens"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return sendError(res, 404, "Tenant not found", "NOT_FOUND", tenantId, null);
+    }
+    const name = String(req.body?.name || "").trim();
+    if (!name) {
+      return sendError(res, 400, "name is required", "INVALID_INPUT", tenantId, null);
+    }
+    let principalId = req.body?.principalId ?? req.body?.principal_id ?? tenantId;
+    principalId = String(principalId || "").trim();
+    if (!principalId || !PRINCIPAL_RE.test(principalId)) {
+      return sendError(res, 400, "Invalid principalId", "INVALID_INPUT", tenantId, null);
+    }
+    let roles;
+    try {
+      roles = normalizeRoles(req.body?.roles, { allowInstanceAdmin: true, allowEmpty: false });
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
+    let expiresAt = req.body?.expiresAt || req.body?.expires_at || null;
+    if (expiresAt) {
+      try {
+        expiresAt = parseTimeInput(expiresAt, "expiresAt").toISOString();
+      } catch (err) {
+        return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+      }
+    }
+
+    const minted = await mintServiceTokenForTenant({
+      tenantId,
+      name,
+      principalId,
+      roles,
+      expiresAt
+    });
+    await recordAudit(req, tenantId, {
+      action: "enterprise.service_token.create",
+      targetType: "service_token",
+      targetId: String(minted.record?.id || ""),
+      metadata: {
+        name,
+        principalId,
+        roles,
+        expiresAt
+      }
+    });
+    sendOk(res, {
+      token: minted.rawToken,
+      tokenInfo: formatServiceToken(minted.record),
+      note: "Store this token now. It will not be shown again."
+    }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") || message.includes("is required") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to create service token", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_SERVICE_TOKEN_CREATE_FAILED", tenantId, null);
+  }
+});
+
+app.delete(["/admin/tenants/:tenantId/service-tokens/:id", "/v1/admin/tenants/:tenantId/service-tokens/:id"], requireJwt, requireInstanceAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveEnterpriseTenantId(req);
+    const id = parseInt(req.params.id || "0", 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return sendError(res, 400, "Invalid token id", "INVALID_INPUT", tenantId, null);
+    }
+    const record = await revokeServiceToken(id, tenantId);
+    if (!record) {
+      return sendError(res, 404, "Token not found", "NOT_FOUND", tenantId, null);
+    }
+    await recordAudit(req, tenantId, {
+      action: "enterprise.service_token.revoke",
+      targetType: "service_token",
+      targetId: String(record.id),
+      metadata: {
+        name: record.name || null,
+        principalId: record.principal_id || null,
+        roles: record.roles || [],
+        revokedAt: record.revoked_at || null
+      }
+    });
+    sendOk(res, { token: formatServiceToken(record) }, tenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to revoke service token", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_SERVICE_TOKEN_REVOKE_FAILED", tenantId, null);
+  }
+});
+
+const enterpriseAuditHandler = async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = req.params?.tenantId ? resolveEnterpriseTenantId(req) : null;
+    const queryTenantId = req.query?.tenantId || req.query?.tenantID;
+    const filterTenantId = tenantId || (queryTenantId ? normalizeTenantIdentifier(queryTenantId, "tenantId") : null);
+    const limit = parseListLimit(req.query?.limit, { fallback: 100, max: 500 });
+    const action = req.query?.action ? String(req.query.action).trim() : null;
+    const targetType = req.query?.targetType || req.query?.target_type
+      ? String(req.query?.targetType ?? req.query?.target_type).trim()
+      : null;
+    const targetId = req.query?.targetId || req.query?.target_id
+      ? String(req.query?.targetId ?? req.query?.target_id).trim()
+      : null;
+    const logs = (await listAuditLogs({
+      tenantId: filterTenantId,
+      action,
+      targetType,
+      targetId,
+      limit
+    })).map(formatAuditLogEntry);
+    sendOk(res, { logs }, filterTenantId, null);
+  } catch (err) {
+    const message = String(err.message || err);
+    const status = message === "tenantId mismatch" || message.includes("must be") || message.includes("must use only") || message.includes("is required") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to list audit logs", status === 400 ? "INVALID_INPUT" : "ENTERPRISE_AUDIT_LIST_FAILED", tenantId, null);
+  }
+};
+
+app.get(["/admin/audit", "/v1/admin/audit"], requireJwt, requireInstanceAdmin, enterpriseAuditHandler);
+app.get(["/admin/tenants/:tenantId/audit", "/v1/admin/tenants/:tenantId/audit"], requireJwt, requireInstanceAdmin, enterpriseAuditHandler);
 
 // --------------------------
 // Tenant settings (admin)
@@ -5705,6 +7061,7 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
     tenantId = resolveTenantId(req);
     const rawMode = req.body?.authMode ?? req.body?.auth_mode;
     const rawProviders = req.body?.ssoProviders ?? req.body?.sso_providers;
+    const rawSsoConfig = req.body?.ssoConfig ?? req.body?.sso_config;
     const authMode = rawMode === undefined ? null : parseAuthMode(rawMode);
     if (rawMode !== undefined && !authMode) {
       return sendError(res, 400, "authMode must be one of: sso_only, sso_plus_password, password_only", "INVALID_INPUT", tenantId, null);
@@ -5724,11 +7081,18 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
       return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
     }
 
-    if (rawMode === undefined && !providersInput.provided && !hasTenantModelSettingsInput(modelInput)) {
-      return sendError(res, 400, "Provide authMode, ssoProviders, and/or models", "INVALID_INPUT", tenantId, null);
+    const current = await getTenantById(tenantId);
+    let ssoConfigInput;
+    try {
+      ssoConfigInput = parseTenantSsoConfigInput(rawSsoConfig, current?.sso_config || {});
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
     }
 
-    const current = await getTenantById(tenantId);
+    if (rawMode === undefined && !providersInput.provided && ssoConfigInput === undefined && !hasTenantModelSettingsInput(modelInput)) {
+      return sendError(res, 400, "Provide authMode, ssoProviders, ssoConfig, and/or models", "INVALID_INPUT", tenantId, null);
+    }
+
     const prevPayload = buildTenantSettingsPayload(tenantId, current);
     const prevAuthMode = prevPayload.authMode;
     const prevProviders = prevPayload.ssoProviders;
@@ -5741,6 +7105,7 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
     const tenant = await setTenantSettings(tenantId, {
       authMode: rawMode === undefined ? undefined : authMode,
       ssoProviders: providersInput.provided ? providersInput.value : undefined,
+      ssoConfig: ssoConfigInput,
       answerProvider: modelInput.answerProvider,
       answerModel: modelInput.answerModel,
       booleanAskProvider: modelInput.booleanAskProvider,
@@ -5761,11 +7126,13 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
         before: {
           authMode: prevAuthMode,
           ssoProviders: prevProviders,
+          ssoConfig: prevPayload.ssoConfig,
           models: prevPayload.models
         },
         after: {
           authMode: updatedAuthMode,
           ssoProviders: updatedProviders,
+          ssoConfig: nextPayload.ssoConfig,
           models: nextPayload.models
         }
       }
@@ -5773,6 +7140,125 @@ app.patch(["/admin/tenant", "/v1/admin/tenant"], requireJwt, requireAdmin, async
     sendOk(res, { tenant: nextPayload }, tenantId, null);
   } catch (err) {
     sendError(res, 500, "Failed to update tenant settings", "TENANT_SETTINGS_UPDATE_FAILED", tenantId, null);
+  }
+});
+
+// --------------------------
+// Tenant users (admin)
+// --------------------------
+app.get(["/admin/users", "/v1/admin/users"], requireJwt, requireAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const users = (await listTenantUsers(tenantId)).map(formatTenantUser);
+    sendOk(res, { users }, tenantId, null);
+  } catch (err) {
+    sendError(res, 500, "Failed to list tenant users", "TENANT_USERS_LIST_FAILED", tenantId, null);
+  }
+});
+
+app.post(["/admin/users", "/v1/admin/users"], requireJwt, requireAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    const email = String(req.body?.email || "").trim();
+    const fullName = String((req.body?.fullName ?? req.body?.full_name) || "").trim();
+    const ssoOnly = req.body?.ssoOnly === true || req.body?.sso_only === true;
+    const roles = normalizeRoleList(req.body?.roles, { allowEmpty: true }) || [];
+    if (!username) {
+      return sendError(res, 400, "username is required", "INVALID_INPUT", tenantId, null);
+    }
+    if (!password || password.length < 8) {
+      return sendError(res, 400, "password must be at least 8 characters", "INVALID_INPUT", tenantId, null);
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await createTenantUser({
+      tenantId,
+      username,
+      passwordHash,
+      roles,
+      email: email || null,
+      fullName: fullName || null,
+      ssoOnly
+    });
+    await recordAudit(req, tenantId, {
+      action: "tenant.user.create",
+      targetType: "user",
+      targetId: String(user.id || ""),
+      metadata: {
+        username,
+        roles,
+        ssoOnly,
+        authProvider: null
+      }
+    });
+    sendOk(res, { user: formatTenantUser(user) }, tenantId, null);
+  } catch (err) {
+    if (String(err.code || "") === "23505") {
+      return sendError(res, 409, "username already exists", "CONFLICT", tenantId, null);
+    }
+    sendError(res, 500, "Failed to create tenant user", "TENANT_USER_CREATE_FAILED", tenantId, null);
+  }
+});
+
+app.patch(["/admin/users/:id", "/v1/admin/users/:id"], requireJwt, requireAdmin, async (req, res) => {
+  let tenantId = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const userId = parseInt(req.params.id || "0", 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return sendError(res, 400, "Invalid user id", "INVALID_INPUT", tenantId, null);
+    }
+    const existing = await getTenantUserById(tenantId, userId);
+    if (!existing) {
+      return sendError(res, 404, "User not found", "NOT_FOUND", tenantId, null);
+    }
+
+    const roles = req.body?.roles === undefined ? undefined : (normalizeRoleList(req.body.roles, { allowEmpty: true }) || []);
+    const disabled = req.body?.disabled === undefined ? undefined : Boolean(req.body.disabled);
+    const email = req.body?.email === undefined ? undefined : String(req.body.email || "").trim();
+    const fullName = req.body?.fullName === undefined && req.body?.full_name === undefined
+      ? undefined
+      : String((req.body?.fullName ?? req.body?.full_name) || "").trim();
+    const ssoOnly = req.body?.ssoOnly === undefined && req.body?.sso_only === undefined
+      ? undefined
+      : Boolean(req.body?.ssoOnly ?? req.body?.sso_only);
+    let passwordHash = undefined;
+    if (req.body?.password !== undefined) {
+      const password = String(req.body.password || "");
+      if (!password || password.length < 8) {
+        return sendError(res, 400, "password must be at least 8 characters", "INVALID_INPUT", tenantId, null);
+      }
+      passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    if (roles === undefined && disabled === undefined && email === undefined && fullName === undefined && ssoOnly === undefined && passwordHash === undefined) {
+      return sendError(res, 400, "Provide roles, disabled, email, fullName, ssoOnly, and/or password", "INVALID_INPUT", tenantId, null);
+    }
+
+    const updated = await updateTenantUser(tenantId, userId, {
+      roles,
+      disabled,
+      passwordHash,
+      email: email === undefined ? undefined : (email || null),
+      fullName: fullName === undefined ? undefined : (fullName || null),
+      ssoOnly
+    });
+    await recordAudit(req, tenantId, {
+      action: "tenant.user.update",
+      targetType: "user",
+      targetId: String(userId),
+      metadata: {
+        before: formatTenantUser(existing),
+        after: formatTenantUser(updated)
+      }
+    });
+    sendOk(res, { user: formatTenantUser(updated) }, tenantId, null);
+  } catch (err) {
+    sendError(res, 500, "Failed to update tenant user", "TENANT_USER_UPDATE_FAILED", tenantId, null);
   }
 });
 
@@ -5805,7 +7291,12 @@ app.post(["/admin/service-tokens", "/v1/admin/service-tokens"], requireJwt, requ
       return sendError(res, 400, "Invalid principalId", "INVALID_INPUT", tenantId, null);
     }
 
-    const roles = normalizeRoles(req.body?.roles);
+    let roles;
+    try {
+      roles = normalizeRoles(req.body?.roles, { allowInstanceAdmin: false });
+    } catch (err) {
+      return sendError(res, 400, String(err.message || err), "INVALID_INPUT", tenantId, null);
+    }
     let expiresAt = req.body?.expiresAt || req.body?.expires_at || null;
     if (expiresAt) {
       const dt = new Date(expiresAt);
@@ -5942,6 +7433,7 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
   let tenantId = null;
   let collection = null;
   try {
+    const now = new Date();
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req, { track: false });
     const reply = await sendCmd("STATS");
@@ -5949,12 +7441,29 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
     const gatewayStats = {
       latency: getLatencyStats(tenantId)
     };
-    const [usageAll, usage24h, usage7d, storageRow, itemRow] = await Promise.all([
+    const [usageAll, usage24h, usage7d, billableAllRow, billable24hRow, billable7dRow, storageMeterRow, usageHistoryRows] = await Promise.all([
       getTenantUsage(tenantId),
       getTenantUsageWindow(tenantId, "24h"),
       getTenantUsageWindow(tenantId, "7d"),
-      getTenantStorageStats(tenantId),
-      getTenantItemStats(tenantId)
+      getTenantBillableGenerationUsageWindow(tenantId, "all"),
+      getTenantBillableGenerationUsageWindow(tenantId, "24h"),
+      getTenantBillableGenerationUsageWindow(tenantId, "7d"),
+      getTenantStorageUsage(tenantId),
+      listTenantUsageHistory(tenantId, { limit: 50 })
+    ]);
+    const storageMeter = storageMeterRow || (await syncTenantStorageUsage({
+      tenantId,
+      source: "admin_usage_seed",
+      recordHistory: false,
+      vectorDim: await resolveStorageVectorDim(tenantId)
+    })).current;
+    const storageBillingState = await accrueTenantStorageBillingState({
+      tenantId,
+      now
+    });
+    const [currentStoragePeriod, storageBillingPeriods] = await Promise.all([
+      getCurrentTenantStorageBillingPeriod(tenantId, { now }),
+      listTenantStorageBillingPeriods(tenantId, { limit: 7 })
     ]);
 
     const buildUsageWindow = (row) => ({
@@ -5973,13 +7482,53 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
       }
     });
 
-    const storageBytes = Number(storageRow.bytes || 0);
+    const storageBytes = Number(storageMeter?.bytes || 0);
     const totalEmbedTokens = Number(usageAll?.embedding_tokens || 0);
     const totalGenTokens = Number(usageAll?.generation_total_tokens || 0);
     const totalAiTokens = totalEmbedTokens + totalGenTokens;
-    const storagePricePerGB = parseFloat(process.env.BILLING_PRICE_PER_GB_STORAGE || "0");
+    const { storagePricePerGBMonth, includedGBMonth } = getStorageBillingRates();
     const aiTokenPricePer1K = parseFloat(process.env.BILLING_PRICE_PER_1K_AI_TOKENS || "0");
-    const storageGB = storageBytes / (1024 * 1024 * 1024);
+    const hasUsageHistory = Array.isArray(usageHistoryRows) && usageHistoryRows.length > 0;
+    const billableAllTokens = hasUsageHistory
+      ? Number(billableAllRow?.generation_total_tokens || 0)
+      : totalGenTokens;
+    const billable24hTokens = hasUsageHistory
+      ? Number(billable24hRow?.generation_total_tokens || 0)
+      : Number(usage24h?.generation_total_tokens || 0);
+    const billable7dTokens = hasUsageHistory
+      ? Number(billable7dRow?.generation_total_tokens || 0)
+      : Number(usage7d?.generation_total_tokens || 0);
+    const billingWindows = {
+      all: computeUsageCosts({
+        storageBytes,
+        storagePricePerGB: storagePricePerGBMonth,
+        totalAiTokens,
+        billableAiTokens: billableAllTokens,
+        aiTokenPricePer1K
+      }),
+      "24h": computeUsageCosts({
+        storageBytes,
+        storagePricePerGB: storagePricePerGBMonth,
+        totalAiTokens: Number(usage24h?.embedding_tokens || 0) + Number(usage24h?.generation_total_tokens || 0),
+        billableAiTokens: billable24hTokens,
+        aiTokenPricePer1K
+      }),
+      "7d": computeUsageCosts({
+        storageBytes,
+        storagePricePerGB: storagePricePerGBMonth,
+        totalAiTokens: Number(usage7d?.embedding_tokens || 0) + Number(usage7d?.generation_total_tokens || 0),
+        billableAiTokens: billable7dTokens,
+        aiTokenPricePer1K
+      })
+    };
+    const storageMonthly = buildStorageBillingSummary({
+      state: storageBillingState,
+      currentPeriod: currentStoragePeriod,
+      recentPeriods: storageBillingPeriods,
+      now,
+      storagePricePerGBMonth,
+      includedGBMonth
+    });
 
     const usage = {
       windows: {
@@ -5989,26 +7538,33 @@ app.get(["/admin/usage", "/v1/admin/usage"], requireJwt, requireAdmin, async (re
       },
       storage: {
         bytes: storageBytes,
-        chunks: Number(storageRow.chunks || 0),
-        documents: Number(itemRow.documents || 0),
-        memoryItems: Number(itemRow.memory_items || 0),
-        collections: Number(itemRow.collections || 0)
+        chunks: Number(storageMeter?.chunks || 0),
+        documents: Number(storageMeter?.documents || 0),
+        memoryItems: Number(storageMeter?.memory_items || 0),
+        collections: Number(storageMeter?.collections || 0),
+        components: {
+          chunkTextBytes: Number(storageMeter?.chunk_text_bytes || 0),
+          metadataBytes: Number(storageMeter?.metadata_bytes || 0),
+          vectorBytes: Number(storageMeter?.vector_bytes || 0),
+          vectorDim: Number(storageMeter?.vector_dim || 0),
+          formulaVersion: storageMeter?.formula_version || null
+        }
       },
       billing: {
         rates: {
-          storagePerGB: storagePricePerGB || null,
+          storagePerGB: storagePricePerGBMonth || null,
+          storageIncludedGBMonth: includedGBMonth || 0,
           aiTokensPer1K: aiTokenPricePer1K || null
         },
-        costs: {
-          storageBytes,
-          storageGB,
-          storageCharge: storagePricePerGB > 0 ? parseFloat((storageGB * storagePricePerGB).toFixed(6)) : 0,
-          aiTokens: totalAiTokens,
-          aiTokens1K: totalAiTokens / 1000,
-          aiTokensCharge: aiTokenPricePer1K > 0 ? parseFloat(((totalAiTokens / 1000) * aiTokenPricePer1K).toFixed(6)) : 0
-        }
+        costs: billingWindows.all,
+        windows: billingWindows,
+        storageMonthly
       },
-      updatedAt: usageAll?.updated_at || null
+      history: (usageHistoryRows || []).map((row) => buildUsageHistoryEntry(row, {
+        storagePerGB: storagePricePerGBMonth,
+        aiTokensPer1K: aiTokenPricePer1K
+      })),
+      updatedAt: storageMeter?.updated_at || usageAll?.updated_at || null
     };
     if (req.path.startsWith("/v1")) {
       return sendOk(res, { ...tcpStats, gateway: gatewayStats, usage }, tenantId, collection);
@@ -6087,6 +7643,17 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
       throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
+    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "collection_delete_legacy"
+    }), {
+      operation: "collection_delete",
+      deletedDocs: docs.length,
+      deletedVectors,
+      deletedMemoryItems
+    });
     await recordAudit(req, tenantId, {
       action: "collection.deleted",
       targetType: "collection",
@@ -6139,6 +7706,17 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
       throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
+    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "collection_delete_v1"
+    }), {
+      operation: "collection_delete",
+      deletedDocs: docs.length,
+      deletedVectors,
+      deletedMemoryItems
+    });
     await recordAudit(req, tenantId, {
       action: "collection.deleted",
       targetType: "collection",
@@ -6465,6 +8043,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       fallbackProvider: effectiveModels.answerProvider,
       fallbackModel: effectiveModels.answerModel
     });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
 
     const result = await answerQuestion({
       tenantId,
@@ -6479,7 +8058,8 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       model,
       provider,
       models: effectiveModels,
-      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
       embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6535,6 +8115,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       fallbackProvider: effectiveModels.answerProvider,
       fallbackModel: effectiveModels.answerModel
     });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
     const result = await answerQuestion({
       tenantId,
       collection,
@@ -6548,7 +8129,8 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       model,
       provider,
       models: effectiveModels,
-      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
       embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6595,6 +8177,7 @@ async function handleBooleanAskLegacy(req, res) {
       fallbackProvider: effectiveModels.booleanAskProvider,
       fallbackModel: effectiveModels.booleanAskModel
     });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
 
     const result = await answerBooleanAskQuestion({
       tenantId,
@@ -6608,7 +8191,8 @@ async function handleBooleanAskLegacy(req, res) {
       model,
       provider,
       models: effectiveModels,
-      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
       embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6660,6 +8244,7 @@ async function handleBooleanAskV1(req, res) {
       fallbackProvider: effectiveModels.booleanAskProvider,
       fallbackModel: effectiveModels.booleanAskModel
     });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
     const result = await answerBooleanAskQuestion({
       tenantId,
       collection,
@@ -6672,7 +8257,8 @@ async function handleBooleanAskV1(req, res) {
       model,
       provider,
       models: effectiveModels,
-      generationApiKey: resolveProviderApiKeyOverride(req, generationConfig.provider),
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
       embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
@@ -6730,6 +8316,23 @@ app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) 
   if (failedVectors > 0) {
     return res.status(400).json({ error: `Failed to delete ${failedVectors} vectors`, tenantId, collection });
   }
+  await deleteMemoryItemByNamespaceId(namespaced);
+  if (collection === DEFAULT_COLLECTION) {
+    const legacy = `${tenantId}::${docId}`;
+    if (legacy !== namespaced) {
+      await deleteMemoryItemByNamespaceId(legacy);
+    }
+  }
+  await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    requestId: req.requestId,
+    tenantId,
+    collection,
+    source: "docs_delete_legacy"
+  }), {
+    operation: "document_delete",
+    docId,
+    deletedVectors
+  });
   await recordAudit(req, tenantId, {
     action: "doc.deleted",
     targetType: "doc",
@@ -6779,6 +8382,23 @@ app.delete("/v1/docs/:docId", requireJwt, requireRole("indexer"), async (req, re
     if (failedVectors > 0) {
       throw new Error(`Failed to delete ${failedVectors} vectors`);
     }
+    await deleteMemoryItemByNamespaceId(namespaced);
+    if (collection === DEFAULT_COLLECTION) {
+      const legacy = `${tenantId}::${docId}`;
+      if (legacy !== namespaced) {
+        await deleteMemoryItemByNamespaceId(legacy);
+      }
+    }
+    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "docs_delete_v1"
+    }), {
+      operation: "document_delete",
+      docId,
+      deletedVectors
+    });
     await recordAudit(req, tenantId, {
       action: "doc.deleted",
       targetType: "doc",
@@ -7773,6 +9393,7 @@ async function start() {
       }
       scheduleAutoReindex();
       scheduleTtlSweep();
+      scheduleStorageBillingAccrualSweep();
       scheduleJobSweep();
       scheduleMemoryEventFlush();
       scheduleValueDecay();
@@ -7792,6 +9413,10 @@ if (require.main === module) {
 
 module.exports = {
   __testHooks: {
+    normalizeRuntimeRoleList,
+    normalizeTenantIdentifier,
+    parseTenantMetadataInput,
+    formatTenantRecord,
     normalizeMemoryPolicy,
     getMemoryPolicy,
     resolveMemoryPolicyConfig,
@@ -7802,6 +9427,10 @@ module.exports = {
     resolveInitialValueScore,
     decayMemoryValue,
     buildValueUpdateForMemory,
+    computeUsageCosts,
+    buildUsageHistoryEntry,
+    buildStorageBillingSummary,
+    computeStoragePeriodSummary,
     MEMORY_TIER_THRESHOLDS,
     MEMORY_VALUE_MAX,
     MEMORY_VALUE_DECAY_LAMBDA,
