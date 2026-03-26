@@ -1469,6 +1469,11 @@ function isDocsSelectionHash(value){
   ].includes(clean);
 }
 
+function isDocsLandingHash(value){
+  const clean = String(value || "").trim().toLowerCase();
+  return !clean || ["docs", "pagedocs", "pagedocstop", "documentation"].includes(clean);
+}
+
 function scrollToHashTarget(rawHash, options = {}){
   const targetId = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim());
   if (!targetId) return false;
@@ -1616,9 +1621,14 @@ function syncDocPanelsToTarget(target){
 function syncDocsPanelFromHash(rawHash){
   const targetId = decodeURIComponent(String(rawHash || "").replace(/^#/, "").trim());
   const clean = targetId.toLowerCase();
-  if (!clean) return;
+  if (!clean) {
+    docsSubmenuVisible = true;
+    activateDocPanel("docs", "core");
+    syncDocsMenuLinksFromHash(rawHash);
+    return;
+  }
 
-  docsSubmenuVisible = isDocsSelectionHash(clean);
+  docsSubmenuVisible = isDocsSelectionHash(clean) || isDocsLandingHash(clean);
   expandDocsSections();
   syncDocsMenuLinksFromHash(rawHash);
 
@@ -1684,7 +1694,7 @@ function syncDocsPanelFromHash(rawHash){
     activateDocPanel("docs", "amv");
     return;
   }
-  if (clean.startsWith("doc-") || clean === "pagedocstop" || clean === "pagedocs" || clean === "docs") {
+  if (clean.startsWith("doc-") || isDocsLandingHash(clean)) {
     activateDocPanel("docs", "core");
   }
 }
@@ -2945,13 +2955,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("tabDocs").onclick = () => {
     showPage("pageDocs");
     const cleanHash = decodeURIComponent(String(window.location.hash || "").replace(/^#/, "").trim()).toLowerCase();
-    if (!isDocsSelectionHash(cleanHash)) {
-      docsSubmenuVisible = false;
-      syncDocsTopSubmenu(getActiveDocsMenuName());
-      syncDocsSectionOutline();
-      syncDocsMenuLinksFromHash(window.location.hash);
-    } else {
+    if (isDocsSelectionHash(cleanHash) || isDocsLandingHash(cleanHash)) {
       syncDocsPanelFromHash(window.location.hash);
+    } else {
+      docsSubmenuVisible = true;
+      activateDocPanel("docs", "core");
+      syncDocsMenuLinksFromHash(window.location.hash);
     }
   };
   $("tabSettings").onclick = () => showPage("pageSettings");
