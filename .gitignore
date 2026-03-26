@@ -35,6 +35,3 @@ gateway/node_modules/
 # Lives in a separate private repository. Not part of the open-source distribution.
 gateway/plugins/
 docker-compose.override.yml
-
-# Sitemap (generated per deployment — edit gateway/public/sitemap.xml locally)
-gateway/public/sitemap.xml
