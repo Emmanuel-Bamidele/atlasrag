@@ -446,6 +446,8 @@ const CHUNK_STRATEGY = String(process.env.CHUNK_STRATEGY || "token").toLowerCase
 const CHUNK_MAX_CHARS = parseInt(process.env.CHUNK_MAX_CHARS || "900", 10);
 const CHUNK_MAX_TOKENS = parseInt(process.env.CHUNK_MAX_TOKENS || "220", 10);
 const CHUNK_OVERLAP_TOKENS = parseInt(process.env.CHUNK_OVERLAP_TOKENS || "40", 10);
+const CODE_CHUNK_MAX_TOKENS = parseInt(process.env.CODE_CHUNK_MAX_TOKENS || "360", 10);
+const CODE_CHUNK_OVERLAP_TOKENS = parseInt(process.env.CODE_CHUNK_OVERLAP_TOKENS || "72", 10);
 const HYBRID_RETRIEVAL_ENABLED = process.env.HYBRID_RETRIEVAL_ENABLED !== "0";
 const HYBRID_VECTOR_WEIGHT = parseFloat(process.env.HYBRID_VECTOR_WEIGHT || "0.72");
 const HYBRID_LEXICAL_WEIGHT = parseFloat(process.env.HYBRID_LEXICAL_WEIGHT || "0.28");
@@ -951,6 +953,39 @@ function parseTenantMetadataInput(raw) {
     throw new Error("metadata must be an object");
   }
   return raw;
+}
+
+function parseOptionalString(raw, { label, max = 2000 } = {}) {
+  if (raw === undefined || raw === null) return null;
+  const clean = String(raw).trim();
+  if (!clean) return null;
+  if (max && clean.length > max) {
+    throw new Error(`${label} too long`);
+  }
+  return clean;
+}
+
+function normalizeDocumentSourceType(raw, fallback = "text") {
+  const clean = parseOptionalString(raw, { label: "sourceType", max: 80 });
+  if (!clean) return fallback;
+  if (!/^[a-z0-9._:-]+$/i.test(clean)) {
+    throw new Error("sourceType contains unsupported characters");
+  }
+  return clean.toLowerCase();
+}
+
+function parseDocumentSourceInput(body = {}, { defaultType = "text", defaultUrl = null } = {}) {
+  const metadata = parseTenantMetadataInput(body?.metadata);
+  const sourceUrl = parseOptionalString(body?.sourceUrl ?? body?.source_url ?? defaultUrl, {
+    label: "sourceUrl",
+    max: 4000
+  });
+  return {
+    title: parseOptionalString(body?.title, { label: "title", max: 200 }),
+    metadata: metadata === undefined ? null : metadata,
+    sourceType: normalizeDocumentSourceType(body?.sourceType ?? body?.source_type, defaultType),
+    sourceUrl
+  };
 }
 
 function parseListLimit(raw, { fallback = 100, max = 500, label = "limit" } = {}) {
@@ -2782,7 +2817,27 @@ function buildChunkingOptions() {
   };
 }
 
+function buildCodeChunkingOptions() {
+  const maxChars = Number.isFinite(CHUNK_MAX_CHARS) && CHUNK_MAX_CHARS > 0 ? CHUNK_MAX_CHARS : 900;
+  const maxTokens = Number.isFinite(CODE_CHUNK_MAX_TOKENS) && CODE_CHUNK_MAX_TOKENS > 0 ? CODE_CHUNK_MAX_TOKENS : 360;
+  const rawOverlap = Number.isFinite(CODE_CHUNK_OVERLAP_TOKENS) && CODE_CHUNK_OVERLAP_TOKENS >= 0 ? CODE_CHUNK_OVERLAP_TOKENS : 72;
+  const overlapTokens = Math.max(0, Math.min(rawOverlap, Math.max(0, maxTokens - 1)));
+  return {
+    strategy: "code",
+    maxChars,
+    maxTokens,
+    overlapTokens
+  };
+}
+
 const CHUNKING_OPTIONS = buildChunkingOptions();
+const CODE_CHUNKING_OPTIONS = buildCodeChunkingOptions();
+
+function resolveChunkingOptionsForSource(source = {}) {
+  return normalizeDocumentSourceType(source?.type, "text") === "code"
+    ? CODE_CHUNKING_OPTIONS
+    : CHUNKING_OPTIONS;
+}
 
 function normalizeWhitespace(text) {
   return String(text || "")
@@ -3358,6 +3413,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
   }
 
   const namespacedDocId = namespaceDocId(tenantId, collection, docId);
+  const sourceType = normalizeDocumentSourceType(source?.type, "text");
   const principalId = source?.principalId || null;
   const resolvedVisibility = normalizeVisibility(source?.visibility);
   const aclList = resolvedVisibility === "acl" ? normalizeAclList(source?.acl, principalId) : [];
@@ -3370,8 +3426,8 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     collection,
     externalId: docId,
     namespaceId: namespacedDocId,
-    title: docId,
-    sourceType: source?.type || "text",
+    title: source?.title || docId,
+    sourceType,
     sourceUrl: source?.url || null,
     metadata: source?.metadata || null,
     expiresAt: source?.expiresAt || null,
@@ -3391,7 +3447,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   logIndex(`start tenant=${tenantId} collection=${collection} docId=${docId} chars=${cleanText.length} truncated=${truncated}`);
 
-  const chunks = chunkText(activeNamespaceId, cleanText, CHUNKING_OPTIONS);
+  const chunks = chunkText(activeNamespaceId, cleanText, resolveChunkingOptionsForSource({ type: sourceType }));
   if (chunks.length === 0) {
     throw new Error("text produced no chunks");
   }
@@ -7790,12 +7846,24 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
+    const sourceInput = parseDocumentSourceInput(req.body, { defaultType: "text" });
     const { chunksIndexed, truncated } = await indexDocument(
       tenantId,
       collection,
       cleanDocId,
       text,
-      { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+      {
+        type: sourceInput.sourceType,
+        title: sourceInput.title,
+        metadata: sourceInput.metadata,
+        url: sourceInput.sourceUrl,
+        expiresAt,
+        principalId,
+        agentId,
+        tags,
+        visibility: req.body?.visibility,
+        acl: req.body?.acl
+      },
       {
         apiKey: embedConfig.apiKey,
         embedProvider: embedConfig.embedProvider,
@@ -7827,6 +7895,7 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
   let agentId = null;
   let tags = [];
   let embedConfig = null;
+  let sourceInput = null;
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
@@ -7834,6 +7903,7 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
     embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
+    sourceInput = parseDocumentSourceInput(req.body, { defaultType: "text" });
   } catch (e) {
     return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
@@ -7853,7 +7923,18 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
           collection,
           cleanDocId,
           text,
-          { type: "text", expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+          {
+            type: sourceInput.sourceType,
+            title: sourceInput.title,
+            metadata: sourceInput.metadata,
+            url: sourceInput.sourceUrl,
+            expiresAt,
+            principalId,
+            agentId,
+            tags,
+            visibility: req.body?.visibility,
+            acl: req.body?.acl
+          },
           {
             apiKey: embedConfig.apiKey,
             embedProvider: embedConfig.embedProvider,
@@ -9416,10 +9497,12 @@ module.exports = {
     normalizeRuntimeRoleList,
     normalizeTenantIdentifier,
     parseTenantMetadataInput,
+    parseDocumentSourceInput,
     formatTenantRecord,
     normalizeMemoryPolicy,
     getMemoryPolicy,
     resolveMemoryPolicyConfig,
+    resolveChunkingOptionsForSource,
     shouldReindexStoredVectors,
     normalizeTier,
     resolveTierThresholds,

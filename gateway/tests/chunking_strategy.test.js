@@ -53,4 +53,35 @@ function toTokens(text) {
   assert.ok(chunks.length > 1, "overlap clamping should still make progress and produce multiple chunks");
 })();
 
+(() => {
+  const code = [
+    "function alpha() {",
+    "  const first = 1;",
+    "  return first;",
+    "}",
+    "",
+    "function beta() {",
+    "  const second = 2;",
+    "  return second;",
+    "}",
+    "",
+    "class Gamma {",
+    "  value() {",
+    "    return 3;",
+    "  }",
+    "}"
+  ].join("\n");
+
+  const chunks = chunkText("doc-code", code, {
+    strategy: "code",
+    maxTokens: 8,
+    overlapTokens: 0
+  });
+
+  assert.ok(chunks.length >= 2, "code strategy should split multi-symbol source");
+  assert.ok(chunks.some((item) => item.text.includes("function alpha")), "expected alpha chunk");
+  assert.ok(chunks.some((item) => item.text.includes("function beta")), "expected beta chunk");
+  assert.ok(chunks.some((item) => item.text.includes("class Gamma")), "expected class chunk");
+})();
+
 console.log("chunking_strategy tests passed");
