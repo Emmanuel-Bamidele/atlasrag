@@ -198,6 +198,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
   }'
 ```
 
+`/v1/docs` stays text-first in self-hosted deployments. If you are indexing source code directly, you can also send optional `title`, `sourceUrl`, `metadata`, and `sourceType` fields. Set `"sourceType":"code"` only when the document payload is actual code.
+
 ### 7. Ask A Question
 
 ```bash

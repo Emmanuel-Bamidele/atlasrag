@@ -125,6 +125,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   }'
 ```
 
+`/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Brain GitHub repo sync applies that automatically for matched repo files.
+
 The hosted instance supplies the AI provider by default. If you send a matching request-scoped provider key such as `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync routes, the request can use your provider key instead of the hosted default. On hosted deployments, that changes AI generation billing for that request, but it does not move storage out of SupaVector-hosted infrastructure.
 
 ## Using Your Own Provider Key On Hosted

@@ -271,6 +271,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
   }'
 ```
 
+`/v1/docs` stays text-first by default. Direct callers can also send optional `title`, `sourceUrl`, `metadata`, and `sourceType` fields. Set `"sourceType":"code"` only when the payload is source code and you want code-aware chunking for that document.
+
 ### Search
 
 ```bash
@@ -484,6 +486,8 @@ const booleanAsk = await supavector("/v1/boolean_ask", {
 console.log(booleanAsk.data.answer);
 console.log(booleanAsk.data.supportingChunks);
 ```
+
+This direct `/v1/docs` example stays on the default text path. If you are indexing source code instead, add `"sourceType":"code"` to that document payload.
 
 ## When To Use The Node SDK
 

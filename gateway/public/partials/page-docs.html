@@ -399,6 +399,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"question":"Does Supavector store memory for agents?","k":3}'</pre>
+                  <p class="hint"><span class="mono">/v1/docs</span> defaults to the normal text ingest path. Optional fields such as <span class="mono">title</span>, <span class="mono">metadata</span>, <span class="mono">sourceUrl</span>, and <span class="mono">sourceType</span> are supported. Use <span class="mono">"sourceType":"code"</span> only when the payload is actually source code and you want code-aware chunking.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Key concepts</div>
@@ -615,7 +616,10 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </p>
                 <p class="hint">
                   Public ingest APIs expect <span class="mono">docId + text</span>
-                  JSON payloads; the Playground UI and CLI can extract supported files like <span class="mono">.pdf</span> and <span class="mono">.docx</span> to text locally first. Use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
+                  JSON payloads at minimum; optional fields such as <span class="mono">title</span>, <span class="mono">metadata</span>, <span class="mono">sourceUrl</span>, and <span class="mono">sourceType</span> are also accepted. The Playground UI and CLI can extract supported files like <span class="mono">.pdf</span> and <span class="mono">.docx</span> to text locally first. Use <span class="mono">POST /v1/docs/url</span> for URL-based ingestion.
+                </p>
+                <p class="hint">
+                  Default ingest behavior stays text-first. Only payloads that explicitly set <span class="mono">"sourceType":"code"</span> use the code-aware chunker.
                 </p>
                 <p class="hint">
                   Request-scoped provider-key headers such as <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, and <span class="mono">X-Anthropic-API-Key</span> are supported on sync routes such as docs, search, ask, boolean_ask, memory write, and memory recall.
@@ -958,6 +962,26 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
     "collection": "default",
     "text": "Your document text..."
   }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Index code explicitly</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/docs \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN" \
+  -H "Idempotency-Key: idx-code-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docId": "refunds_ts",
+    "collection": "default",
+    "title": "src/refunds.ts",
+    "sourceType": "code",
+    "sourceUrl": "https://github.com/acme/support/blob/main/src/refunds.ts",
+    "metadata": {
+      "path": "src/refunds.ts",
+      "language": "typescript"
+    },
+    "text": "export function refundWindowDays() { return 30; }"
+  }'</pre>
+                  <p class="hint">Use this only for direct source-code payloads. If you omit <span class="mono">sourceType</span>, the document stays on the normal text path.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Search</div>

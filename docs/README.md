@@ -39,6 +39,7 @@ Short version:
 - Enterprise teams that need tenant-scoped SSO and rollout guidance should read [`enterprise.md`](enterprise.md).
 - Apps, backends, workers, and agents should use a service token.
 - Bootstrap once, then store `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` in your runtime environment.
+- `/v1/docs` stays text-first by default. Direct callers can opt into code-aware chunking per document by sending `"sourceType":"code"` with actual source code payloads.
 - Optional third mode: keep using the shared SupaVector deployment, but send your own `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync requests.
 - If you already have your own auth layer, keep it there and let your backend call SupaVector server-to-server.
 

@@ -515,6 +515,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
   }'
 ```
 
+`/v1/docs` stays text-first by default. If you are sending source code directly, you can also include optional fields such as `sourceType`, `title`, `sourceUrl`, and `metadata`. Set `"sourceType":"code"` only when the payload is actually code and you want code-aware chunking for that document.
+
 ### 5. Ask A Question From Your App Or Agent
 
 ```bash
