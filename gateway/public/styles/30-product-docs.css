@@ -667,8 +667,10 @@
 
 .settings-surface-note{
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  text-align: center;
   gap: 18px;
   margin: 0 0 18px;
   padding: 16px 18px;
@@ -683,6 +685,15 @@
   margin: 6px 0 0;
   color: rgba(232,242,242,0.82);
   line-height: 1.6;
+}
+
+.settings-surface-note .actions{
+  display: flex;
+  justify-content: center;
+}
+
+.settings-surface-note .btn{
+  text-decoration: none;
 }
 
 .settings-section-grid{
@@ -1485,9 +1496,10 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 }
 
 .product-installer{
-  display: grid;
-  grid-template-columns: minmax(0, 0.88fr) minmax(340px, 1.12fr);
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
   padding: clamp(22px, 3.2vw, 34px);
   border-radius: 22px;
   border: 1px solid rgba(226,232,240,0.1);
@@ -1501,7 +1513,11 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 .product-installer-copy{
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
+  width: min(100%, 900px);
+  margin: 0 auto;
+  text-align: center;
 }
 
 .product-installer-copy h3{
@@ -1515,12 +1531,13 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 .product-installer-copy > p{
   margin: 0;
   color: rgba(232,242,242,0.78);
-  max-width: 58ch;
+  max-width: 64ch;
 }
 
 .product-installer-pills{
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -1544,6 +1561,8 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 }
 
 .product-installer-shell{
+  width: min(100%, 1020px);
+  margin: 0 auto;
   border: 1px solid rgba(226,232,240,0.1);
   border-radius: 18px;
   background:
@@ -1555,6 +1574,17 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 .product-installer-shell .doc-tabs{
   margin: 0;
   padding: 14px 14px 0;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.product-installer-shell .doc-tabs::-webkit-scrollbar{
+  display: none;
 }
 
 .product-installer-shell .doc-panels{
@@ -1563,6 +1593,7 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 
 .product-installer-panel{
   padding: 6px 0 0;
+  text-align: center;
 }
 
 .product-installer-panel-label{
@@ -1585,12 +1616,16 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
   font-size: 12.5px;
   line-height: 1.55;
   color: rgba(232,242,242,0.62);
+  max-width: 72ch;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .product-installer-footer{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   padding: 0 14px 14px;
   border-top: 1px solid rgba(226,232,240,0.08);
@@ -1628,9 +1663,10 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 }
 
 .product-agents{
-  display: grid;
-  grid-template-columns: minmax(0, 0.96fr) minmax(340px, 1.04fr);
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
   padding: clamp(24px, 3.4vw, 38px);
   border-radius: 24px;
   border: 1px solid rgba(226,232,240,0.1);
@@ -1644,7 +1680,11 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 .product-agents-copy{
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  text-align: center;
 }
 
 .product-agents-copy h3{
@@ -1653,18 +1693,19 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
   line-height: 1.02;
   letter-spacing: -0.04em;
   font-family: var(--display);
-  max-width: 13ch;
+  max-width: 18ch;
 }
 
 .product-agents-copy > p{
   margin: 0;
   color: rgba(232,242,242,0.8);
-  max-width: 58ch;
+  max-width: 64ch;
 }
 
 .product-agents-pills{
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -1685,8 +1726,13 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 .product-agents-actions{
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin-top: 4px;
+}
+
+.product-agents-actions a{
+  text-decoration: none;
 }
 
 .product-agents-cta{
@@ -1719,6 +1765,7 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
 
 .product-agents-stage{
   min-height: 0;
+  width: min(100%, 1040px);
 }
 
 .product-agents-shell{
@@ -1738,6 +1785,8 @@ body.light-theme .doc-copy-wrap > .copy-inline-btn{
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-items: center;
+  text-align: center;
 }
 
 .product-agents-kicker{
@@ -2703,9 +2752,9 @@ body.light-theme .docs-orient-hint {
 }
 
 /* — Staggered entrance for remaining sections when page tab is active — */
-.page.active .product-installer   { animation: productFadeUp 0.52s 0.08s cubic-bezier(0.16,1,0.3,1) both; }
-.page.active .product-agents      { animation: productFadeUp 0.52s 0.16s cubic-bezier(0.16,1,0.3,1) both; }
-.page.active .product-belt        { animation: productFadeUp 0.52s 0.24s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-belt        { animation: productFadeUp 0.52s 0.08s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-installer   { animation: productFadeUp 0.52s 0.16s cubic-bezier(0.16,1,0.3,1) both; }
+.page.active .product-agents      { animation: productFadeUp 0.52s 0.24s cubic-bezier(0.16,1,0.3,1) both; }
 .page.active .product-quickstart  { animation: productFadeUp 0.52s 0.32s cubic-bezier(0.16,1,0.3,1) both; }
 .page.active .product-story       { animation: productFadeUp 0.52s 0.40s cubic-bezier(0.16,1,0.3,1) both; }
 .page.active .product-opensource  { animation: productFadeUp 0.52s 0.48s cubic-bezier(0.16,1,0.3,1) both; }
@@ -3590,8 +3639,7 @@ body.light-theme .product-story-panel:hover {
     padding: 12px 14px;
   }
   .settings-surface-note{
-    flex-direction: column;
-    align-items: stretch;
+    align-items: center;
   }
   .settings-section-tabs{
     padding: 4px;
