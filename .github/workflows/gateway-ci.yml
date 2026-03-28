@@ -1,5 +1,12 @@
 name: Gateway CI
 
+concurrency:
+  group: gateway-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -11,41 +18,22 @@ jobs:
   gateway-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      JWT_SECRET: ci_jwt_secret
-      COOKIE_SECRET: ci_cookie_secret
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: gateway/package-lock.json
-
-      - name: Install gateway dependencies
-        working-directory: gateway
-        run: npm ci
-
       - name: Prepare CI env file
         run: |
-          cat > .env.ci << 'EOF'
-          POSTGRES_DB=supavector
-          POSTGRES_USER=supavector
+          cp .env.example .env.ci
+          cat >> .env.ci << 'EOF'
           POSTGRES_PASSWORD=supavector
           OPENAI_API_KEY=
           JWT_SECRET=ci_jwt_secret
-          JWT_ISSUER=supavector
-          JWT_AUDIENCE=supavector
-          JWT_EXPIRES_IN=1h
           COOKIE_SECRET=ci_cookie_secret
           COOKIE_SECURE=0
           PUBLIC_BASE_URL=http://localhost:3000
           OPENAPI_BASE_URL=http://localhost:3000
-          MIGRATIONS_AUTO=1
           MIGRATIONS_ATTEMPTS=30
           MIGRATIONS_DELAY_MS=1000
           RATE_LIMIT_MAX=500
@@ -59,53 +47,20 @@ jobs:
           FETCH_USER_AGENT=supavector-ci
           EOF
 
-      - name: Start services
-        run: docker compose --env-file .env.ci up -d --build
-
-      - name: Wait for gateway health
+      - name: Run gateway CI flow
         run: |
-          for i in $(seq 1 90); do
-            if curl -fsS http://localhost:3000/health >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose --env-file .env.ci logs gateway
-          exit 1
-
-      - name: Ensure e2e user
-        run: |
-          docker compose --env-file .env.ci exec -T gateway node scripts/ensure_user.js \
-            --username ci_admin \
-            --password ci_admin_password \
-            --tenant ci_admin \
-            --roles admin
-
-      - name: Run unit tests
-        working-directory: gateway
-        run: npm run test:unit
-
-      - name: Run integration tests (public MCP)
-        working-directory: gateway
-        env:
-          E2E_BASE_URL: http://127.0.0.1:3000
-        run: npm run test:integration
-
-      - name: Run API end-to-end tests
-        working-directory: gateway
-        env:
-          E2E_BASE_URL: http://127.0.0.1:3000
-          E2E_USERNAME: ci_admin
-          E2E_PASSWORD: ci_admin_password
-        run: npm run test:e2e
+          ENV_FILE=.env.ci \
+          DOWN_ON_SUCCESS=1 \
+          DOWN_ON_FAIL=1 \
+          ./scripts/test_ci_local.sh
 
       - name: Print service logs on failure
         if: failure()
-        run: docker compose --env-file .env.ci logs --no-color
+        run: docker compose --env-file .env.ci logs --no-color || true
 
       - name: Stop services
         if: always()
-        run: docker compose --env-file .env.ci down -v
+        run: docker compose --env-file .env.ci down -v --remove-orphans || true
 
   quickstart-smoke:
     runs-on: ubuntu-latest
@@ -126,53 +81,35 @@ jobs:
           OPENAPI_BASE_URL=http://localhost:3000
           EOF
 
-      - name: Start services from .env.example
-        run: docker compose --env-file .env.quickstart.ci up -d --build
-
-      - name: Wait for gateway health
+      - name: Run quickstart smoke flow
         run: |
-          for i in $(seq 1 90); do
-            if curl -fsS http://localhost:3000/health >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose --env-file .env.quickstart.ci logs gateway
-          exit 1
-
-      - name: Create quickstart admin user
-        run: |
-          docker compose --env-file .env.quickstart.ci exec -T gateway node scripts/create_user.js \
-            --username smoke_admin \
-            --password smoke_admin_password \
-            --tenant smoke \
-            --role admin
-
-      - name: Exercise quickstart flow
-        run: |
-          LOGIN_JSON=$(curl -fsS http://localhost:3000/v1/login \
-            -H 'content-type: application/json' \
-            -d '{"username":"smoke_admin","password":"smoke_admin_password"}')
-          TOKEN=$(printf '%s' "$LOGIN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["token"])')
-          test -n "$TOKEN"
-
-          INDEX_JSON=$(curl -fsS http://localhost:3000/v1/docs \
-            -H "authorization: Bearer $TOKEN" \
-            -H 'content-type: application/json' \
-            -H 'Idempotency-Key: smoke-doc-1' \
-            -d '{"docId":"welcome","text":"SupaVector stores memory for agents and returns grounded answers with citations."}')
-          printf '%s' "$INDEX_JSON" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] is True; assert data["data"]["docId"] == "welcome"; assert data["data"]["chunksIndexed"] >= 1'
-
-          ASK_JSON=$(curl -fsS http://localhost:3000/v1/ask \
-            -H "authorization: Bearer $TOKEN" \
-            -H 'content-type: application/json' \
-            -d '{"question":"What does SupaVector store?","k":3}')
-          printf '%s' "$ASK_JSON" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] is True; assert isinstance(data["data"].get("answer"), str) and data["data"]["answer"].strip()'
+          ENV_FILE=.env.quickstart.ci \
+          DOWN_ON_SUCCESS=1 \
+          DOWN_ON_FAIL=1 \
+          ./scripts/test_quickstart_ci_local.sh
 
       - name: Print service logs on failure
         if: failure()
-        run: docker compose --env-file .env.quickstart.ci logs --no-color
+        run: docker compose --env-file .env.quickstart.ci logs --no-color || true
 
       - name: Stop services
         if: always()
-        run: docker compose --env-file .env.quickstart.ci down -v
+        run: docker compose --env-file .env.quickstart.ci down -v --remove-orphans || true
+
+  oss-public-checkout-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Run OSS no-git smoke target
+        run: npm run test:oss-smoke

@@ -34,6 +34,20 @@ npm run test:integration
 npm run test:e2e
 ```
 
+To verify the public OSS path from a clean checkout without `.git`, run:
+
+```bash
+npm run test:oss-smoke
+```
+
+That target creates a temporary copy of the repo, drops git metadata, installs the public root dependencies, runs the CLI tests, and then runs the full Docker-backed end-to-end harness against that isolated copy.
+
+To verify the docs-oriented quickstart flow from `.env.example`, run:
+
+```bash
+npm run test:quickstart-smoke
+```
+
 ## Pull Request Guidelines
 
 - Explain the problem being solved, not just the code change.

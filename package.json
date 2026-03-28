@@ -11,7 +11,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "test:cli": "node cli/tests/cli_helpers.test.js && node cli/tests/admin_commands.test.js"
+    "test:cli": "node cli/tests/cli_helpers.test.js && node cli/tests/admin_commands.test.js",
+    "test:quickstart-smoke": "./scripts/test_quickstart_ci_local.sh",
+    "test:oss-smoke": "./scripts/test_oss_ci_local.sh"
   },
   "dependencies": {
     "mammoth": "^1.12.0",
