@@ -83,7 +83,7 @@ const {
   upsertSsoUser
 } = require("./db");
 const { requireJwt, limiter, loginLimiter } = require("./security");
-const { generateAnswer, generateBooleanAskAnswer } = require("./answer");
+const { generateAnswer, generateBooleanAskAnswer, generateCodeAnswer, normalizeCodeTask } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
 const {
   DEFAULT_EMBED_PROVIDER,
@@ -597,6 +597,9 @@ function classifyTelemetryEndpoint(rawPath) {
   }
   if (cleanPath === "/ask" || cleanPath === "/v1/ask") {
     return "ask";
+  }
+  if (cleanPath === "/code" || cleanPath === "/v1/code") {
+    return "code";
   }
   if (
     cleanPath === "/yes-no" || cleanPath === "/v1/yes-no" ||
@@ -2674,6 +2677,102 @@ function parseAnswerLength(raw) {
   return null;
 }
 
+function parseQuestionInput(input = {}) {
+  return String(input?.question ?? input?.query ?? input?.q ?? "").trim();
+}
+
+function parseStringListInput(raw, { maxItems = 16, maxItemLength = 240, label = "value" } = {}) {
+  if (raw === undefined || raw === null || raw === "") return [];
+  let values = [];
+  if (Array.isArray(raw)) {
+    values = raw;
+  } else if (typeof raw === "string") {
+    values = raw.split(/[\n,]+/);
+  } else {
+    throw new Error(`${label} must be a string or array`);
+  }
+
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const clean = parseOptionalString(value, { label, max: maxItemLength });
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function parseCodeRepositoryInput(raw) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw === "string") {
+    const name = parseOptionalString(raw, { label: "repository", max: 240 });
+    return name ? { name, branch: null } : null;
+  }
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("repository must be a string or object");
+  }
+  const name = parseOptionalString(raw?.name ?? raw?.repo ?? raw?.repository ?? raw?.url, {
+    label: "repository.name",
+    max: 240
+  });
+  const branch = parseOptionalString(raw?.branch ?? raw?.ref, {
+    label: "repository.branch",
+    max: 120
+  });
+  if (!name && !branch) return null;
+  if (!name) throw new Error("repository.name is required");
+  return {
+    name,
+    branch: branch || null
+  };
+}
+
+function parseCodeContextInput(raw) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw === "string") {
+    const notes = parseOptionalString(raw, { label: "context", max: 4000 });
+    return notes ? { notes } : null;
+  }
+  return parseTenantMetadataInput(raw);
+}
+
+function parseCodeInput(body = {}) {
+  return {
+    question: parseQuestionInput(body),
+    k: parseInt(body?.k || "5", 10),
+    docIds: parseDocFilter(body?.docIds ?? body?.doc_ids),
+    answerLength: parseAnswerLength(body?.answerLength || body?.responseLength),
+    task: normalizeCodeTask(body?.task ?? body?.mode, "general"),
+    language: parseOptionalString(body?.language ?? body?.lang, { label: "language", max: 80 }),
+    deployment: parseOptionalString(body?.deployment, { label: "deployment", max: 120 }),
+    paths: parseStringListInput(body?.paths ?? body?.path ?? body?.filePaths ?? body?.file_paths ?? body?.files, {
+      label: "paths",
+      maxItems: 20,
+      maxItemLength: 320
+    }),
+    constraints: parseStringListInput(body?.constraints ?? body?.constraint, {
+      label: "constraints",
+      maxItems: 20,
+      maxItemLength: 240
+    }),
+    repository: parseCodeRepositoryInput(body?.repository ?? body?.repo),
+    errorMessage: parseOptionalString(body?.errorMessage ?? body?.error_message ?? body?.error, {
+      label: "errorMessage",
+      max: 2000
+    }),
+    stackTrace: parseOptionalString(body?.stackTrace ?? body?.stack_trace, {
+      label: "stackTrace",
+      max: 8000
+    }),
+    context: parseCodeContextInput(body?.context),
+    provider: resolveAskProviderOverride(body),
+    model: resolveAskModelOverride(body),
+    policy: resolveRequestedMemoryPolicy(body)
+  };
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -3943,6 +4042,147 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   return results;
 }
 
+function normalizeCodeMetadataString(value, max = 320) {
+  const clean = String(value || "").trim();
+  if (!clean) return null;
+  return clean.slice(0, max);
+}
+
+function extractCodeMemoryMetadata(memory) {
+  const metadata = memory?.metadata && typeof memory.metadata === "object" && !Array.isArray(memory.metadata)
+    ? memory.metadata
+    : {};
+  return {
+    sourceType: normalizeCodeMetadataString(memory?.source_type, 80)?.toLowerCase() || null,
+    repo: normalizeCodeMetadataString(metadata.repo ?? metadata.repository),
+    branch: normalizeCodeMetadataString(metadata.branch ?? metadata.ref, 120),
+    path: normalizeCodeMetadataString(metadata.path ?? metadata.filePath ?? metadata.file_path ?? memory?.title),
+    language: normalizeCodeMetadataString(metadata.language ?? metadata.lang, 80)?.toLowerCase() || null,
+    sourceUrl: normalizeCodeMetadataString(memory?.source_url ?? metadata.sourceUrl ?? metadata.source_url, 4000),
+    title: normalizeCodeMetadataString(memory?.title, 240),
+    metadata
+  };
+}
+
+function buildCodeRetrievalQuery(question, input = {}) {
+  const parts = [String(question || "").trim()];
+  if (input?.task && input.task !== "general") parts.push(`task ${input.task}`);
+  if (input?.language) parts.push(`language ${input.language}`);
+  if (input?.deployment) parts.push(`deployment ${input.deployment}`);
+  if (input?.repository?.name) parts.push(`repository ${input.repository.name}`);
+  if (Array.isArray(input?.paths) && input.paths.length) parts.push(`paths ${input.paths.join(" ")}`);
+  if (input?.errorMessage) parts.push(`error ${input.errorMessage}`);
+  if (input?.stackTrace) parts.push(String(input.stackTrace).slice(0, 1200));
+  return parts.filter(Boolean).join("\n");
+}
+
+function includesLower(haystack, needle) {
+  const left = String(haystack || "").trim().toLowerCase();
+  const right = String(needle || "").trim().toLowerCase();
+  if (!left || !right) return false;
+  return left.includes(right);
+}
+
+function buildCodeScoreBoost(question, metadata, input = {}) {
+  let boost = 0;
+  const lowerQuestion = String(question || "").trim().toLowerCase();
+  const lowerPath = String(metadata?.path || "").trim().toLowerCase();
+  const lowerRepo = String(metadata?.repo || "").trim().toLowerCase();
+  const lowerLanguage = String(metadata?.language || "").trim().toLowerCase();
+  const requestedLanguage = String(input?.language || "").trim().toLowerCase();
+  const requestedRepo = String(input?.repository?.name || "").trim().toLowerCase();
+  const requestedPaths = Array.isArray(input?.paths) ? input.paths : [];
+
+  if (metadata?.sourceType === "code") boost += 0.32;
+  if (requestedLanguage && lowerLanguage && requestedLanguage === lowerLanguage) boost += 0.14;
+  if (requestedRepo && lowerRepo && includesLower(lowerRepo, requestedRepo)) boost += 0.18;
+
+  for (const requestedPath of requestedPaths) {
+    const cleanRequested = String(requestedPath || "").trim().toLowerCase();
+    if (!cleanRequested || !lowerPath) continue;
+    if (lowerPath === cleanRequested) {
+      boost += 0.28;
+      continue;
+    }
+    if (lowerPath.endsWith(cleanRequested) || cleanRequested.endsWith(lowerPath) || lowerPath.includes(cleanRequested)) {
+      boost += 0.18;
+    }
+  }
+
+  if (lowerPath) {
+    const baseName = path.basename(lowerPath).toLowerCase();
+    if (baseName && lowerQuestion.includes(baseName)) boost += 0.08;
+    if (/package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|poetry\.lock|pyproject\.toml|pom\.xml|build\.gradle|cargo\.toml/.test(lowerPath)
+      && /\b(dependenc|package|import|module|library|version)\b/.test(lowerQuestion)) {
+      boost += 0.08;
+    }
+  }
+
+  if (lowerRepo) {
+    const repoName = lowerRepo.split("/").pop();
+    if (repoName && lowerQuestion.includes(repoName)) boost += 0.06;
+  }
+
+  return boost;
+}
+
+function buildCodeFilesFromRanked(ranked, limit = 8) {
+  const seen = new Set();
+  const files = [];
+  for (const candidate of ranked) {
+    const file = candidate?.file || {};
+    const key = [
+      file.repo || "",
+      file.path || "",
+      file.docId || "",
+      file.language || ""
+    ].join("::");
+    if (!key.replace(/:+/g, "").trim() || seen.has(key)) continue;
+    seen.add(key);
+    files.push({
+      docId: file.docId || null,
+      collection: file.collection || null,
+      path: file.path || null,
+      repo: file.repo || null,
+      branch: file.branch || null,
+      language: file.language || null,
+      sourceType: file.sourceType || null,
+      title: file.title || null,
+      sourceUrl: file.sourceUrl || null,
+      score: Number(candidate?.score ?? 0)
+    });
+    if (files.length >= limit) break;
+  }
+  return files;
+}
+
+function buildCodeSourceSummary(files = []) {
+  const repositories = [];
+  const languages = [];
+  const repoSeen = new Set();
+  const langSeen = new Set();
+  let codeHits = 0;
+  let nonCodeHits = 0;
+  for (const file of files) {
+    if (file?.sourceType === "code") codeHits += 1;
+    else nonCodeHits += 1;
+    if (file?.repo && !repoSeen.has(file.repo)) {
+      repoSeen.add(file.repo);
+      repositories.push(file.repo);
+    }
+    if (file?.language && !langSeen.has(file.language)) {
+      langSeen.add(file.language);
+      languages.push(file.language);
+    }
+  }
+  return {
+    codeHits,
+    nonCodeHits,
+    repositories,
+    languages
+  };
+}
+
 async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource, embedProvider, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
@@ -4043,6 +4283,186 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     telemetryContext,
     usedItems,
     chunks
+  };
+}
+
+async function buildCodeAnswerContext({
+  tenantId,
+  collection,
+  question,
+  k,
+  docIds,
+  principalId,
+  privileges,
+  telemetry,
+  policy,
+  apiKey,
+  operation,
+  retrievalSource,
+  embedProvider,
+  embedModel,
+  task,
+  language,
+  deployment,
+  repository,
+  paths,
+  errorMessage,
+  stackTrace,
+  constraints,
+  context
+}) {
+  const telemetryContext = buildTelemetryContext({
+    requestId: telemetry?.requestId,
+    tenantId,
+    collection,
+    source: telemetry?.source || operation
+  });
+  const topK = Number.isFinite(k) && k > 0 ? k : 5;
+  const retrievalQuery = buildCodeRetrievalQuery(question, {
+    task,
+    language,
+    deployment,
+    repository,
+    paths,
+    errorMessage,
+    stackTrace,
+    constraints,
+    context
+  });
+  const retrievalK = Math.max(topK * 3, 12);
+  const results = await searchChunks({
+    tenantId,
+    collection,
+    query: retrievalQuery,
+    k: retrievalK,
+    docIds,
+    principalId,
+    privileges,
+    enforceArtifactVisibility: true,
+    candidateTypes: ["artifact"],
+    policy,
+    apiKey,
+    embedProvider,
+    embedModel,
+    telemetry: buildTelemetryContext({
+      requestId: telemetryContext.requestId,
+      tenantId,
+      collection,
+      source: retrievalSource || "code_retrieval_query"
+    })
+  });
+
+  let memoryMap = new Map();
+  const usedItems = [];
+  const namespaceIds = results.map((result) => result._row.doc_id);
+  if (namespaceIds.length) {
+    try {
+      memoryMap = await getMemoryItemsByNamespaceIds({
+        namespaceIds,
+        types: ["artifact"],
+        excludeExpired: true,
+        principalId,
+        privileges
+      });
+    } catch (err) {
+      console.warn("[memory_events] Failed to resolve retrieved code memory rows:", err?.message || err);
+    }
+  }
+
+  const ranked = results.map((result) => {
+    const memory = memoryMap.get(result._row.doc_id) || null;
+    const metadata = extractCodeMemoryMetadata(memory);
+    const boost = buildCodeScoreBoost(question, metadata, {
+      task,
+      language,
+      deployment,
+      repository,
+      paths,
+      errorMessage,
+      stackTrace,
+      constraints,
+      context
+    });
+    return {
+      result,
+      memory,
+      file: {
+        docId: result.docId,
+        collection: result.collection,
+        path: metadata.path,
+        repo: metadata.repo,
+        branch: metadata.branch,
+        language: metadata.language,
+        sourceType: metadata.sourceType,
+        title: metadata.title,
+        sourceUrl: metadata.sourceUrl
+      },
+      score: Number(result.score || 0) + boost
+    };
+  });
+  const hasCodeCandidate = ranked.some((candidate) => candidate.file.sourceType === "code");
+  const reranked = ranked
+    .map((candidate) => ({
+      ...candidate,
+      score: candidate.score + (hasCodeCandidate && candidate.file.sourceType !== "code" ? -0.05 : 0)
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.result?.score || 0) - (a.result?.score || 0);
+    });
+
+  const selected = reranked.slice(0, topK);
+  const seen = new Set();
+  const retrieved = [];
+  for (const candidate of selected) {
+    const mem = candidate.memory;
+    if (!mem) continue;
+    retrieved.push({
+      memory_id: mem.id,
+      namespace_id: mem.namespace_id,
+      item_type: mem.item_type,
+      chunk_id: candidate.result.chunkId,
+      score: candidate.score,
+      value_score: mem.value_score ?? null,
+      source_type: mem.source_type || null,
+      path: candidate.file.path || null,
+      language: candidate.file.language || null,
+      repo: candidate.file.repo || null
+    });
+    if (seen.has(mem.id)) continue;
+    seen.add(mem.id);
+    usedItems.push(mem);
+  }
+  emitTelemetry("memory_retrieval", telemetryContext, {
+    operation,
+    response_mode: "code",
+    task: task || "general",
+    query_chars: String(question || "").length,
+    retrieved_top_n: retrieved.length,
+    retrieved_count: retrieved.length,
+    retrieved
+  });
+
+  const chunks = selected.map((candidate) => ({
+    ...candidate.result._row,
+    _retrieval_score: candidate.score,
+    memory_id: candidate.memory?.id || null,
+    memory_type: candidate.memory?.item_type || null,
+    source_type: candidate.file.sourceType || candidate.memory?.source_type || null,
+    source_url: candidate.file.sourceUrl || candidate.memory?.source_url || null,
+    title: candidate.file.title || candidate.memory?.title || null,
+    metadata: candidate.memory?.metadata && typeof candidate.memory.metadata === "object" && !Array.isArray(candidate.memory.metadata)
+      ? candidate.memory.metadata
+      : {}
+  })).filter(Boolean);
+  const files = buildCodeFilesFromRanked(selected);
+
+  return {
+    telemetryContext,
+    usedItems,
+    chunks,
+    files,
+    sourceSummary: buildCodeSourceSummary(files)
   };
 }
 
@@ -4187,6 +4607,155 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     answerLength: resolvedAnswerLength || answerLength || "auto",
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model
+  };
+}
+
+async function answerCodeQuestion({
+  tenantId,
+  collection,
+  question,
+  k,
+  docIds,
+  principalId,
+  privileges,
+  answerLength,
+  telemetry,
+  policy,
+  generationApiKey,
+  generationBillable = true,
+  embedApiKey,
+  model,
+  provider,
+  models,
+  task,
+  language,
+  deployment,
+  repository,
+  paths,
+  errorMessage,
+  stackTrace,
+  constraints,
+  context
+}) {
+  const effectiveModels = models || await getEffectiveTenantModels(tenantId);
+  const requestedAnswerConfig = resolveRequestedGenerationConfig({
+    provider,
+    model,
+    fallbackProvider: effectiveModels.answerProvider,
+    fallbackModel: effectiveModels.answerModel
+  });
+  const {
+    telemetryContext,
+    usedItems,
+    chunks,
+    files,
+    sourceSummary
+  } = await buildCodeAnswerContext({
+    tenantId,
+    collection,
+    question,
+    k,
+    docIds,
+    principalId,
+    privileges,
+    telemetry,
+    policy,
+    apiKey: embedApiKey,
+    embedModel: effectiveModels.embedModel,
+    embedProvider: effectiveModels.embedProvider,
+    operation: "answer_code",
+    retrievalSource: "answer_code_retrieval_query",
+    task,
+    language,
+    deployment,
+    repository,
+    paths,
+    errorMessage,
+    stackTrace,
+    constraints,
+    context
+  });
+
+  const injectedMemoryIds = new Set();
+  const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateCodeAnswer(question, chunks, {
+    apiKey: generationApiKey,
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model,
+    answerLength,
+    task,
+    language,
+    deployment,
+    repository,
+    paths,
+    errorMessage,
+    stackTrace,
+    constraints,
+    context,
+    onPromptBuilt: (promptStats) => {
+      const memoryIds = [];
+      const seen = new Set();
+      const chunkIds = [];
+      for (const chunk of promptStats?.chunks || []) {
+        if (chunk?.chunkId) {
+          chunkIds.push(chunk.chunkId);
+        }
+        const memoryId = chunk?.memoryId;
+        if (!memoryId || seen.has(memoryId)) continue;
+        seen.add(memoryId);
+        memoryIds.push(memoryId);
+        injectedMemoryIds.add(memoryId);
+      }
+      emitTelemetry("prompt_constructed", telemetryContext, {
+        operation: "answer_code",
+        response_mode: "code",
+        task: promptStats?.task || task || "general",
+        answer_length: promptStats?.answerLength || answerLength || "auto",
+        requested_answer_length: promptStats?.requestedAnswerLength || answerLength || "auto",
+        question_chars: String(question || "").length,
+        prompt_chars: Number(promptStats?.promptChars || 0),
+        prompt_tokens: Number(promptStats?.promptTokensEst || 0),
+        prompt_tokens_est: Number(promptStats?.promptTokensEst || 0),
+        memory_tokens_est: Number(promptStats?.memoryTokensEst || 0),
+        total_tokens_est: Number(promptStats?.totalTokensEst || promptStats?.promptTokensEst || 0),
+        injected_chunks_count: chunkIds.length,
+        chunk_count: chunkIds.length,
+        memory_count: memoryIds.length || Number(promptStats?.memoriesIncluded || 0),
+        chunk_ids: chunkIds,
+        memory_ids: memoryIds
+      });
+    }
+  });
+
+  const injectedItems = collectInjectedMemoryItems(usedItems, injectedMemoryIds);
+  if (injectedItems.length) {
+    await recordMemoryEventsForItems(injectedItems, "used_in_answer");
+    emitTelemetry("memory_used", telemetryContext, {
+      operation: "answer_code",
+      response_mode: "code",
+      task: task || "general",
+      answer_length: resolvedAnswerLength || answerLength || "auto",
+      memory_count: injectedItems.length,
+      memory_ids: injectedItems.map((mem) => mem.id)
+    });
+  }
+
+  recordGenerationUsage(tenantId, usage, buildTelemetryContext({
+    requestId: telemetryContext.requestId,
+    tenantId,
+    collection,
+    source: "answer_code_generation",
+    billable: generationBillable
+  }));
+
+  return {
+    answer,
+    citations: mapAnswerCitations(citations),
+    chunksUsed: chunks.length,
+    answerLength: resolvedAnswerLength || answerLength || "auto",
+    provider: requestedAnswerConfig.provider,
+    model: requestedAnswerConfig.model,
+    files,
+    sourceSummary
   };
 }
 
@@ -8232,6 +8801,156 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "ASK_FAILED", tenantId, collection);
+  }
+});
+
+app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
+  const input = parseCodeInput(req.body || {});
+  if (!input.question) {
+    return res.status(400).json({ error: "question is required" });
+  }
+  if (!input.answerLength) {
+    return res.status(400).json({ error: "answerLength must be one of: auto, short, medium, long" });
+  }
+
+  try {
+    const tenantId = resolveTenantId(req);
+    const access = resolveAccessContext(req);
+    const collection = resolveCollectionScope(req, { defaultAll: true });
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider: input.provider,
+      model: input.model,
+      fallbackProvider: effectiveModels.answerProvider,
+      fallbackModel: effectiveModels.answerModel
+    });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
+    const result = await answerCodeQuestion({
+      tenantId,
+      collection,
+      question: input.question,
+      k: input.k,
+      docIds: input.docIds,
+      principalId: access.principalId,
+      privileges: access.privileges,
+      answerLength: input.answerLength,
+      policy: input.policy,
+      task: input.task,
+      language: input.language,
+      deployment: input.deployment,
+      repository: input.repository,
+      paths: input.paths,
+      errorMessage: input.errorMessage,
+      stackTrace: input.stackTrace,
+      constraints: input.constraints,
+      context: input.context,
+      model: input.model,
+      provider: input.provider,
+      models: effectiveModels,
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "code_legacy"
+      })
+    });
+    const citationIds = result.citations.map((c) => c.chunkId);
+
+    res.json({
+      question: input.question,
+      answer: result.answer,
+      citations: citationIds,
+      sources: result.citations,
+      files: result.files,
+      sourceSummary: result.sourceSummary,
+      answerLength: result.answerLength,
+      task: input.task,
+      provider: result.provider,
+      model: result.model,
+      tenantId,
+      collection
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
+  const input = parseCodeInput(req.body || {});
+  if (!input.question) {
+    return sendError(res, 400, "question is required", "INVALID_INPUT", null, null);
+  }
+  if (!input.answerLength) {
+    return sendError(res, 400, "answerLength must be one of: auto, short, medium, long", "INVALID_INPUT", null, null);
+  }
+
+  let tenantId = null;
+  let collection = null;
+  try {
+    tenantId = resolveTenantId(req);
+    const access = resolveAccessContext(req);
+    collection = resolveCollectionScope(req, { defaultAll: true });
+    const effectiveModels = await getEffectiveTenantModels(tenantId);
+    const generationConfig = resolveRequestedGenerationConfig({
+      provider: input.provider,
+      model: input.model,
+      fallbackProvider: effectiveModels.answerProvider,
+      fallbackModel: effectiveModels.answerModel
+    });
+    const generationApiKey = resolveProviderApiKeyOverride(req, generationConfig.provider);
+    const result = await answerCodeQuestion({
+      tenantId,
+      collection,
+      question: input.question,
+      k: input.k,
+      docIds: input.docIds,
+      principalId: access.principalId,
+      privileges: access.privileges,
+      answerLength: input.answerLength,
+      policy: input.policy,
+      task: input.task,
+      language: input.language,
+      deployment: input.deployment,
+      repository: input.repository,
+      paths: input.paths,
+      errorMessage: input.errorMessage,
+      stackTrace: input.stackTrace,
+      constraints: input.constraints,
+      context: input.context,
+      model: input.model,
+      provider: input.provider,
+      models: effectiveModels,
+      generationApiKey,
+      generationBillable: !isRequestScopedProviderUsage(generationApiKey),
+      embedApiKey: resolveProviderApiKeyOverride(req, effectiveModels.embedProvider),
+      telemetry: buildTelemetryContext({
+        requestId: req.requestId,
+        tenantId,
+        collection,
+        source: "code_v1"
+      })
+    });
+    sendOk(res, {
+      question: input.question,
+      answer: result.answer,
+      citations: result.citations,
+      chunksUsed: result.chunksUsed,
+      answerLength: result.answerLength,
+      task: input.task,
+      language: input.language,
+      deployment: input.deployment,
+      repository: input.repository,
+      files: result.files,
+      sourceSummary: result.sourceSummary,
+      provider: result.provider,
+      model: result.model,
+      k: input.k
+    }, tenantId, collection);
+  } catch (e) {
+    sendError(res, 400, e, "CODE_FAILED", tenantId, collection);
   }
 });
 

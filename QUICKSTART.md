@@ -101,6 +101,20 @@ Typical flow:
 supavector onboard
 ```
 
+Alternative install paths on macOS/Linux:
+
+```bash
+sudo ./scripts/install.sh --system
+supavector onboard
+```
+
+```bash
+npm install -g .
+supavector onboard
+```
+
+Use the `--system` path when you want a machine-wide `/usr/local/bin/supavector`. Use the npm path when you want npm to own installation and upgrades instead of the managed installer checkout.
+
 During onboarding, SupaVector will prompt for the initial setup and create the **first admin** and the **first service token** for the self-hosted deployment.
 
 ### Step 4 — Verify the service is up

@@ -87,6 +87,30 @@ Install from a one-line remote command:
 curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash
 ```
 
+Install system-wide on macOS/Linux when you want `/usr/local/bin/supavector` and are comfortable using `sudo`:
+
+```bash
+sudo ./scripts/install.sh --system
+```
+
+Or the one-line remote system install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | sudo bash -s -- --system
+```
+
+Install with npm if you prefer a package-managed global CLI instead of the managed git-checkout installer:
+
+```bash
+npm install -g .
+```
+
+Or install straight from GitHub with npm:
+
+```bash
+npm install -g github:Emmanuel-Bamidele/supavector
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -104,6 +128,10 @@ What the installer creates:
 - macOS/Linux wrapper: `~/.supavector/bin/supavector`
 - Windows wrappers: `%USERPROFILE%\.supavector\bin\supavector.ps1` and `supavector.cmd`
 - a PATH update so new terminals can find `supavector`
+
+For `--system`, the installer writes the wrapper to `/usr/local/bin/supavector`, uses `/usr/local/lib/supavector` as the managed install home, and skips shell profile edits because `/usr/local/bin` should already be on PATH.
+
+For `npm install -g`, npm owns the wrapper location and upgrade lifecycle instead of the installer.
 
 If your current terminal still says `supavector: command not found`, open a new shell or add the install bin directory to PATH manually.
 
@@ -228,6 +256,8 @@ supavector changemodel
 ```
 
 For the managed install under `~/.supavector`, `supavector update` can recover from a force-pushed `origin/main` as long as the checkout is clean.
+
+If you installed with `npm install -g`, update by reinstalling with npm instead of running `supavector update`.
 
 To remove the managed CLI install later:
 

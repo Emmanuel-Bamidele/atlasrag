@@ -331,6 +331,7 @@
 supavector onboard
 supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
 supavector ask --question "What does Supavector store?" --collection local-demo
+supavector code --question "Explain the main retrieval path." --collection local-demo
 supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use <strong>Install</strong> if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
                 </div>
@@ -359,17 +360,30 @@ supavector boolean_ask --question "Does Supavector store memory for agents?" --c
                   <pre class="doc-code">supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
 supavector search --q "memory for agents" --collection local-demo --k 5
 supavector ask --question "What does Supavector store?" --collection local-demo
+supavector code --question "How is document indexing structured?" --collection local-demo
 supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
                   <p class="hint">Use the same collection name on both write and read operations when you want tighter control over what the CLI searches. Later, refresh the installed CLI checkout with <span class="mono">supavector update</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Ingest a folder and use the folder name as the collection</div>
-                  <p>If you point the CLI at a folder, it ingests supported files inside it. Plain text files are read directly, while <span class="mono">.pdf</span> and <span class="mono">.docx</span> files are extracted to text locally before indexing. By default, the folder name becomes the collection name.</p>
+                  <p>If you point the CLI at a folder, it ingests supported files inside it. Plain text files are read directly, while <span class="mono">.pdf</span> and <span class="mono">.docx</span> files are extracted to text locally before indexing. Codebases are indexed with file path and language metadata so <span class="mono">supavector code</span> can reason over structure, dependencies, and debugging context.</p>
                   <pre class="doc-code">supavector write --folder ./customer-support
 supavector search --q "refund policy" --collection customer-support --k 5
 supavector ask --question "What is the refund policy?" --collection customer-support
-supavector boolean_ask --question "Does the refund policy mention store credit?" --collection customer-support</pre>
-                  <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported files are skipped. Legacy <span class="mono">.doc</span> files still need conversion to <span class="mono">.docx</span> first.</p>
+supavector boolean_ask --question "Does the refund policy mention store credit?" --collection customer-support
+
+supavector write --folder ./my-app --collection my-app
+supavector code --question "How is auth wired end to end?" --collection my-app --task understand</pre>
+                  <p class="hint">You can override the derived collection with <span class="mono">--collection</span>. Unsupported files are skipped. Common generated and dependency directories such as <span class="mono">node_modules</span> and <span class="mono">.git</span> are skipped automatically for codebases.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Ingest a GitHub repo for code understanding</div>
+                  <pre class="doc-code">supavector write --github-repo https://github.com/acme/platform --branch main
+supavector code --question "Where does the request auth loop start?" --collection acme-platform --task debug
+
+export SUPAVECTOR_GITHUB_TOKEN="github_pat_..."
+supavector write --github-repo acme/private-repo --branch main</pre>
+                  <p class="hint">For private repositories, set <span class="mono">SUPAVECTOR_GITHUB_TOKEN</span>, <span class="mono">GITHUB_TOKEN</span>, or pass <span class="mono">--github-token</span>. Supavector clones the repo to a temporary directory, indexes it with GitHub path metadata, then removes the temp checkout.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Use Supavector in your app or script on this machine</div>
@@ -576,6 +590,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                       <tr><td><span class="mono">GET /v1/collections</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">GET /v1/search</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/ask</span></td><td>Reader+</td></tr>
+                      <tr><td><span class="mono">POST /v1/code</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/boolean_ask</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/memory/recall</span></td><td>Reader+</td></tr>
                       <tr><td><span class="mono">POST /v1/feedback</span></td><td>Reader+</td></tr>
@@ -622,7 +637,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   Default ingest behavior stays text-first. Only payloads that explicitly set <span class="mono">"sourceType":"code"</span> use the code-aware chunker.
                 </p>
                 <p class="hint">
-                  Request-scoped provider-key headers such as <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, and <span class="mono">X-Anthropic-API-Key</span> are supported on sync routes such as docs, search, ask, boolean_ask, memory write, and memory recall.
+                  Request-scoped provider-key headers such as <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, and <span class="mono">X-Anthropic-API-Key</span> are supported on sync routes such as docs, search, ask, code, boolean_ask, memory write, and memory recall.
                   They are currently rejected by async <span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span>.
                 </p>
                 <ul>
@@ -631,6 +646,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   <li><span class="mono">/v1/docs/:docId</span> delete a document</li>
                   <li><span class="mono">/v1/search</span> retrieve top‑K chunks</li>
                   <li><span class="mono">/v1/ask</span> RAG answers with citations and controllable response length</li>
+                  <li><span class="mono">/v1/code</span> code-aware grounded answers for debugging, review, structure, and implementation guidance</li>
                   <li><span class="mono">/v1/boolean_ask</span> grounded responses constrained to true, false, or invalid</li>
                   <li><span class="mono">/v1/memory/write</span> durable memory items</li>
                   <li><span class="mono">/v1/memory/recall</span> filtered recall</li>
@@ -1502,13 +1518,48 @@ while (true) {
                   <p class="hint">Those commands install the CLI from the current <span class="mono">main</span> branch. If you want to inspect the installer first, use the local-checkout path instead.</p>
                 </div>
                 <div class="doc-block">
+                  <div class="doc-label">System install with sudo</div>
+                  <div class="doc-tabs doc-tabs-compact" data-doc-tabs="cliInstallSystemOs">
+                    <button class="doc-tab active" data-doc-tab="unix" type="button">macOS / Linux</button>
+                    <button class="doc-tab" data-doc-tab="windows" type="button">Windows</button>
+                  </div>
+                  <div class="doc-panels" data-doc-panels="cliInstallSystemOs">
+                    <div class="doc-panel active" data-doc-panel="unix">
+                      <pre class="doc-code">sudo ./scripts/install.sh --system
+curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | sudo bash -s -- --system</pre>
+                    </div>
+                    <div class="doc-panel" data-doc-panel="windows">
+                      <pre class="doc-code">Use the standard Windows installer path instead.</pre>
+                    </div>
+                  </div>
+                  <p class="hint">Use <span class="mono">--system</span> when you want a machine-wide <span class="mono">/usr/local/bin/supavector</span>. This path uses <span class="mono">/usr/local/lib/supavector</span> as the managed install home and skips shell profile edits.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Global npm install</div>
+                  <div class="doc-tabs doc-tabs-compact" data-doc-tabs="cliInstallNpmOs">
+                    <button class="doc-tab active" data-doc-tab="unix" type="button">macOS / Linux</button>
+                    <button class="doc-tab" data-doc-tab="windows" type="button">Windows</button>
+                  </div>
+                  <div class="doc-panels" data-doc-panels="cliInstallNpmOs">
+                    <div class="doc-panel active" data-doc-panel="unix">
+                      <pre class="doc-code">npm install -g .
+npm install -g github:Emmanuel-Bamidele/supavector</pre>
+                    </div>
+                    <div class="doc-panel" data-doc-panel="windows">
+                      <pre class="doc-code">npm install -g .
+npm install -g github:Emmanuel-Bamidele/supavector</pre>
+                    </div>
+                  </div>
+                  <p class="hint">Use npm when you want package-managed global installs instead of the managed installer checkout. Upgrade npm installs by reinstalling with npm rather than running <span class="mono">supavector update</span>.</p>
+                </div>
+                <div class="doc-block">
                   <div class="doc-label">What the installer creates</div>
                   <ul>
                     <li>macOS/Linux wrapper: <span class="mono">~/.supavector/bin/supavector</span></li>
                     <li>Windows wrappers: <span class="mono">%USERPROFILE%\.supavector\bin\supavector.ps1</span> and <span class="mono">supavector.cmd</span></li>
                     <li>A PATH update so new terminals can find <span class="mono">supavector</span></li>
                   </ul>
-                  <p class="hint">If your current terminal still says <span class="mono">supavector: command not found</span>, open a new shell or add the install bin directory to PATH manually.</p>
+                  <p class="hint">For <span class="mono">--system</span>, the wrapper lives in <span class="mono">/usr/local/bin</span> and no shell profile edits are needed. If your current terminal still says <span class="mono">supavector: command not found</span>, open a new shell or add the install bin directory to PATH manually.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What it saves</div>
@@ -2046,6 +2097,8 @@ supavector search --q "tenant auth mode" --collection default --json</pre>
                   <div class="doc-label">Ask and boolean_ask examples</div>
                   <pre class="doc-code">supavector ask --question "What does Supavector store?" --collection local-demo --k 3
 supavector ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short --model 2
+supavector code --question "Review the auth middleware for redirect loops." --collection default --task review --paths src/middleware.ts,src/auth.ts
+supavector code --question "Write a retry helper for failed webhooks." --collection default --task write --language typescript --constraints "do not add dependencies"
 supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo --k 3
 supavector boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model o1</pre>
                   <p class="hint"><span class="mono">--model</span> is optional. If you omit it, Supavector uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">supavector changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>

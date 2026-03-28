@@ -38,10 +38,17 @@ function testBooleanAskAnswerNormalization() {
   assert.equal(__testHooks.normalizeBooleanAskAnswer("maybe"), "invalid");
 }
 
+function testCodeTaskNormalization() {
+  assert.equal(__testHooks.normalizeCodeTask("DEBUG"), "debug");
+  assert.equal(__testHooks.normalizeCodeTask("structure"), "structure");
+  assert.equal(__testHooks.normalizeCodeTask("unknown-mode"), "general");
+}
+
 function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
   testPromptInjectionLinesAreStillRemoved();
   testBooleanAskAnswerNormalization();
+  testCodeTaskNormalization();
   console.log("answer guard tests passed");
 }
 

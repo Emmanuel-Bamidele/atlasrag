@@ -73,6 +73,143 @@ const INGESTIBLE_BINARY_EXTENSIONS = new Set([
   ".pdf",
   ".docx"
 ]);
+const CODEBASE_MARKER_NAMES = new Set([
+  ".git",
+  "Dockerfile",
+  "Makefile",
+  "package.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "package-lock.json",
+  "tsconfig.json",
+  "jsconfig.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "Pipfile",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "settings.gradle",
+  "settings.gradle.kts",
+  "composer.json",
+  "Gemfile",
+  "mix.exs"
+]);
+const CODEBASE_SKIP_DIR_NAMES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".next",
+  ".nuxt",
+  ".turbo",
+  ".cache",
+  ".pnpm-store",
+  ".yarn",
+  ".gradle",
+  ".idea",
+  ".vscode",
+  ".venv",
+  "venv",
+  "env",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  "out",
+  "target",
+  "vendor",
+  "Pods",
+  "DerivedData",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".tox",
+  ".serverless",
+  ".aws-sam"
+]);
+const CODE_LANGUAGE_BY_BASENAME = new Map([
+  ["dockerfile", "docker"],
+  ["makefile", "makefile"],
+  ["jenkinsfile", "groovy"],
+  ["procfile", "procfile"],
+  ["gemfile", "ruby"],
+  ["rakefile", "ruby"],
+  ["podfile", "ruby"],
+  ["brewfile", "ruby"],
+  ["package.json", "json"],
+  ["package-lock.json", "json"],
+  ["pnpm-lock.yaml", "yaml"],
+  ["yarn.lock", "yaml"],
+  ["tsconfig.json", "json"],
+  ["jsconfig.json", "json"],
+  ["pyproject.toml", "toml"],
+  ["requirements.txt", "text"],
+  ["pipfile", "toml"],
+  ["cargo.toml", "toml"],
+  ["cargo.lock", "toml"],
+  ["go.mod", "go"],
+  ["go.sum", "go"],
+  ["pom.xml", "xml"],
+  ["build.gradle", "groovy"],
+  ["build.gradle.kts", "kotlin"],
+  ["settings.gradle", "groovy"],
+  ["settings.gradle.kts", "kotlin"],
+  ["gradle.properties", "properties"],
+  ["composer.json", "json"],
+  ["composer.lock", "json"],
+  ["mix.exs", "elixir"],
+  ["mix.lock", "elixir"]
+]);
+const CODE_LANGUAGE_BY_EXTENSION = new Map([
+  [".c", "c"],
+  [".cc", "cpp"],
+  [".conf", "conf"],
+  [".cpp", "cpp"],
+  [".cs", "csharp"],
+  [".css", "css"],
+  [".cxx", "cpp"],
+  [".go", "go"],
+  [".gradle", "groovy"],
+  [".groovy", "groovy"],
+  [".h", "c"],
+  [".hh", "cpp"],
+  [".hpp", "cpp"],
+  [".htm", "html"],
+  [".html", "html"],
+  [".ini", "ini"],
+  [".java", "java"],
+  [".js", "javascript"],
+  [".json", "json"],
+  [".jsx", "jsx"],
+  [".kt", "kotlin"],
+  [".kts", "kotlin"],
+  [".less", "less"],
+  [".mjs", "javascript"],
+  [".mdx", "mdx"],
+  [".php", "php"],
+  [".ps1", "powershell"],
+  [".py", "python"],
+  [".rb", "ruby"],
+  [".rs", "rust"],
+  [".sass", "sass"],
+  [".scala", "scala"],
+  [".scss", "scss"],
+  [".sh", "shell"],
+  [".sql", "sql"],
+  [".svelte", "svelte"],
+  [".swift", "swift"],
+  [".toml", "toml"],
+  [".ts", "typescript"],
+  [".tsx", "tsx"],
+  [".vue", "vue"],
+  [".xml", "xml"],
+  [".yaml", "yaml"],
+  [".yml", "yaml"],
+  [".zsh", "shell"]
+]);
 const BOOLEAN_FLAGS = new Set([
   "build",
   "down",
@@ -395,6 +532,72 @@ function detectIngestibleFileType(filePath) {
   return "unsupported";
 }
 
+function detectCodeLanguage(filePath) {
+  const text = String(filePath || "").trim();
+  if (!text) return null;
+  const base = path.basename(text).toLowerCase();
+  if (CODE_LANGUAGE_BY_BASENAME.has(base)) {
+    return CODE_LANGUAGE_BY_BASENAME.get(base);
+  }
+  const ext = path.extname(base).toLowerCase();
+  return CODE_LANGUAGE_BY_EXTENSION.get(ext) || null;
+}
+
+function isCodeLikePath(filePath) {
+  return Boolean(detectCodeLanguage(filePath));
+}
+
+function looksLikeCodebaseRoot(dirPath) {
+  const root = path.resolve(String(dirPath || "").trim() || ".");
+  for (const name of CODEBASE_MARKER_NAMES) {
+    if (fs.existsSync(path.join(root, name))) return true;
+  }
+  return false;
+}
+
+function shouldSkipCodebaseRelPath(relativePath) {
+  const clean = String(relativePath || "").trim();
+  if (!clean) return false;
+  const segments = clean.split(/[\\/]+/).filter(Boolean);
+  return segments.some((segment) => CODEBASE_SKIP_DIR_NAMES.has(segment));
+}
+
+function parseGitHubRepoSpec(raw) {
+  const input = String(raw || "").trim();
+  if (!input) {
+    throw new Error("GitHub repository is required.");
+  }
+
+  let owner = "";
+  let repo = "";
+  let branch = null;
+  let match = null;
+
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input)) {
+    [owner, repo] = input.split("/");
+  } else {
+    match = /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?(?:tree\/(.+))?$/i.exec(input)
+      || /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(input)
+      || /^ssh:\/\/git@github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(input);
+    if (!match) {
+      throw new Error("GitHub repository must be owner/repo or a github.com repository URL.");
+    }
+    owner = match[1];
+    repo = match[2];
+    branch = match[3] ? decodeURIComponent(match[3]) : null;
+  }
+
+  const repoName = `${owner}/${repo}`;
+  return {
+    owner,
+    repo,
+    name: repoName,
+    branch: branch || null,
+    htmlUrl: `https://github.com/${owner}/${repo}`,
+    cloneUrl: `https://github.com/${owner}/${repo}.git`
+  };
+}
+
 function isProbablyTextBuffer(buffer) {
   if (!buffer || !buffer.length) return true;
   const sample = buffer.subarray(0, Math.min(buffer.length, 2048));
@@ -576,6 +779,7 @@ module.exports = {
   defaultProviderSelection,
   defaultCollectionFromFolder,
   detectIngestibleFileType,
+  detectCodeLanguage,
   detectProjectRoot,
   defaultEmbeddingModelSelectionForProvider,
   defaultGenerationModelSelectionForProvider,
@@ -584,8 +788,10 @@ module.exports = {
   formatEnvValue,
   INGESTIBLE_BINARY_EXTENSIONS,
   INGESTIBLE_TEXT_EXTENSIONS,
+  isCodeLikePath,
   isIngestibleTextPath,
   isProbablyTextBuffer,
+  looksLikeCodebaseRoot,
   maskSecret,
   mergeEnvText,
   normalizeExtractedText,
@@ -600,6 +806,7 @@ module.exports = {
   parseCliArgs,
   parseEnvAssignments,
   preferredBaseUrl,
+  parseGitHubRepoSpec,
   randomPassword,
   randomSecret,
   readConfig,
@@ -610,6 +817,7 @@ module.exports = {
   resolveInstallHome,
   resolveProjectRoot,
   safeDocIdFromPath,
+  shouldSkipCodebaseRelPath,
   stripManagedShellPath,
   writeConfig
 };

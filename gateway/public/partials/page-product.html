@@ -58,6 +58,160 @@
               </div>
             </section>
 
+            <section class="product-installer" aria-label="Install Supavector in one line">
+              <div class="product-installer-copy">
+                <p class="product-card-eyebrow">One-Line Installer</p>
+                <h3>Install SupaVector on your machine in one command.</h3>
+                <p>
+                  Pick the environment you want to run from, copy the command, and get a working
+                  <span class="mono">supavector</span> CLI without stepping through setup docs first.
+                </p>
+                <div class="product-installer-pills" aria-label="Installer highlights">
+                  <span class="product-installer-pill">User install</span>
+                  <span class="product-installer-pill">System install with sudo</span>
+                  <span class="product-installer-pill">npm global option</span>
+                </div>
+                <p class="product-installer-note">
+                  Requires <span class="mono">Node.js 18+</span>, <span class="mono">npm</span>, and <span class="mono">git</span>.
+                  Docker is only needed if you want to self-host locally after install.
+                </p>
+              </div>
+
+              <div class="product-installer-shell">
+                <div class="doc-tabs doc-tabs-compact" data-doc-tabs="productInstallerTargets">
+                  <button class="doc-tab active" data-doc-tab="macos" type="button">macOS</button>
+                  <button class="doc-tab" data-doc-tab="linux" type="button">Linux</button>
+                  <button class="doc-tab" data-doc-tab="aws" type="button">AWS / EC2</button>
+                  <button class="doc-tab" data-doc-tab="npm" type="button">npm</button>
+                  <button class="doc-tab" data-doc-tab="windows" type="button">Windows</button>
+                </div>
+
+                <div class="doc-panels" data-doc-panels="productInstallerTargets">
+                  <div class="doc-panel active" data-doc-panel="macos">
+                    <div class="product-installer-panel">
+                      <div class="product-installer-panel-label">Default user install</div>
+                      <div class="doc-copy-wrap">
+                        <pre class="doc-code" id="productInstallMacos">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
+                      </div>
+                      <p class="product-installer-panel-note">Installs the CLI under <span class="mono">~/.supavector</span> and updates your user shell PATH.</p>
+                    </div>
+                  </div>
+
+                  <div class="doc-panel" data-doc-panel="linux">
+                    <div class="product-installer-panel">
+                      <div class="product-installer-panel-label">Default user install</div>
+                      <div class="doc-copy-wrap">
+                        <pre class="doc-code" id="productInstallLinux">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
+                      </div>
+                      <p class="product-installer-panel-note">Best for local Linux development when you want a user-level install instead of a machine-wide wrapper.</p>
+                    </div>
+                  </div>
+
+                  <div class="doc-panel" data-doc-panel="aws">
+                    <div class="product-installer-panel">
+                      <div class="product-installer-panel-label">Machine-wide install</div>
+                      <div class="doc-copy-wrap">
+                        <pre class="doc-code" id="productInstallAws">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | sudo bash -s -- --system</pre>
+                      </div>
+                      <p class="product-installer-panel-note">Good for EC2 or other cloud VMs when you want <span class="mono">/usr/local/bin/supavector</span> available for the box.</p>
+                    </div>
+                  </div>
+
+                  <div class="doc-panel" data-doc-panel="npm">
+                    <div class="product-installer-panel">
+                      <div class="product-installer-panel-label">npm global install</div>
+                      <div class="doc-copy-wrap">
+                        <pre class="doc-code" id="productInstallNpm">npm install -g github:Emmanuel-Bamidele/supavector</pre>
+                      </div>
+                      <p class="product-installer-panel-note">Use this when you want npm to own the global CLI install and upgrade path.</p>
+                    </div>
+                  </div>
+
+                  <div class="doc-panel" data-doc-panel="windows">
+                    <div class="product-installer-panel">
+                      <div class="product-installer-panel-label">PowerShell remote install</div>
+                      <div class="doc-copy-wrap">
+                        <pre class="doc-code" id="productInstallWindows">irm https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.ps1 | iex</pre>
+                      </div>
+                      <p class="product-installer-panel-note">Runs the Windows installer and adds the SupaVector wrapper to your user environment.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="product-installer-footer">
+                  <span class="product-installer-footer-label">Next</span>
+                  <code class="mono">supavector onboard</code>
+                  <a href="#" onclick="event.preventDefault();document.getElementById('tabDocs').click()">Full install docs</a>
+                </div>
+              </div>
+            </section>
+
+            <section class="product-agents" aria-label="Build and use hosted Agent Brains">
+              <div class="product-agents-copy">
+                <p class="product-card-eyebrow">Hosted Agent Brain</p>
+                <h3>Build an Agent Brain once, then use it in your app or in Supavector Agents Library.</h3>
+                <p>
+                  Agent Brain is the hosted layer for connecting sources, syncing knowledge, testing grounded behavior,
+                  and shipping the same Brain through your own application or through our hosted UI.
+                </p>
+                <div class="product-agents-pills" aria-label="Agent Brain highlights">
+                  <span class="product-agents-pill">Hosted only</span>
+                  <span class="product-agents-pill">Use in your app</span>
+                  <span class="product-agents-pill">Use in our UI</span>
+                  <span class="product-agents-pill">Chat, Boolean Ask, Code</span>
+                </div>
+                <div class="product-agents-actions">
+                  <a class="btn product-agents-cta" href="/brains">Open Agents Library</a>
+                  <a class="btn secondary" href="/brains/docs">Agent Brain Docs</a>
+                </div>
+                <p class="product-agents-note">
+                  Opening Agents Library takes you to <span class="mono">/brains</span>. If you're not signed in,
+                  you'll be taken through login first and then into the hosted Brain workspace.
+                </p>
+              </div>
+
+              <div class="product-agents-stage" aria-hidden="true">
+                <div class="product-agents-shell">
+                  <div class="product-agents-shell-head">
+                    <span class="product-agents-kicker">Same Brain, two entrypoints</span>
+                    <h4>One hosted Brain object, two ways to work with it.</h4>
+                    <p>The sources, sync state, memory, and runtime stay aligned whether you call the Brain from code or operate it in the hosted studio.</p>
+                  </div>
+
+                  <div class="product-agents-grid">
+                    <article class="product-agents-card product-agents-card--app">
+                      <span class="product-agents-card-label">In your application</span>
+                      <h5>Call the Brain API from your backend.</h5>
+                      <p>Use your project service token and Brain ID to wire the same hosted Brain into your own product.</p>
+                      <div class="product-agents-code">
+                        <pre class="doc-code">POST /v1/brains/:brainId/chat
+POST /v1/brains/:brainId/code
+POST /v1/brains/:brainId/ask</pre>
+                      </div>
+                    </article>
+
+                    <article class="product-agents-card product-agents-card--ui">
+                      <span class="product-agents-card-label">In Supavector Agents Library</span>
+                      <h5>Create, connect, sync, and test it in the hosted UI.</h5>
+                      <p>Use the same Brain through a guided library with source management, Playground, and copy-ready integration snippets.</p>
+                      <div class="product-agents-routes">
+                        <span class="product-agents-route">/brains</span>
+                        <span class="product-agents-route">/brains/new</span>
+                        <span class="product-agents-route">/brains/:id</span>
+                        <span class="product-agents-route">/brains/:id/playground</span>
+                      </div>
+                    </article>
+                  </div>
+
+                  <div class="product-agents-footer">
+                    <span>Same Brain object</span>
+                    <span>Same hosted runtime</span>
+                    <span>Same grounded answers and sources</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <section class="product-belt" aria-label="Supavector use cases">
               <div class="product-belt-track">
                 <span>Customer support copilots</span>
@@ -349,6 +503,7 @@ console.log(data.answer);</pre>
                     <pre class="doc-code">git clone https://github.com/Emmanuel-Bamidele/supavector.git
 cd supavector && ./scripts/install.sh</pre>
                   </div>
+                  <p>Need a machine-wide install instead? Use <span class="mono">sudo ./scripts/install.sh --system</span>. Prefer npm-managed global installs? Use <span class="mono">npm install -g .</span> from the checkout or <span class="mono">npm install -g github:Emmanuel-Bamidele/supavector</span>.</p>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">02</span>

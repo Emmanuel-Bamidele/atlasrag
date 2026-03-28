@@ -59,6 +59,8 @@ async function deleteDocWithAdmin(adminJwt, docId) {
   const unique = randomId("ci-e2e");
   const marker = `supavector_${unique}_marker`;
   const docId = `${unique}_doc`;
+  const codeMarker = `supavector_${unique}_code_marker`;
+  const codeDocId = `${unique}_code_doc`;
 
   let adminJwt = null;
   let svcToken = null;
@@ -90,6 +92,34 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     assert.strictEqual(indexedData.docId, docId, "indexed doc id mismatch");
     assert(indexedData.chunksIndexed >= 1, "expected at least one indexed chunk");
 
+    const indexedCode = await requestJson("POST", "/v1/docs", {
+      headers: {
+        ...apiKey(svcToken),
+        "Idempotency-Key": randomId("idem-code-doc")
+      },
+      body: {
+        docId: codeDocId,
+        sourceType: "code",
+        title: "src/auth.ts",
+        metadata: {
+          repo: "ci/e2e",
+          branch: "main",
+          path: "src/auth.ts",
+          language: "typescript"
+        },
+        text: [
+          `// ${codeMarker}`,
+          "export function validateSession(token: string) {",
+          "  if (!token) throw new Error('missing token');",
+          "  return token.startsWith('sess_');",
+          "}"
+        ].join("\n")
+      }
+    });
+    assertStatus(indexedCode, 200, "/v1/docs code");
+    const indexedCodeData = assertOkEnvelope(indexedCode, "/v1/docs code");
+    assert.strictEqual(indexedCodeData.docId, codeDocId, "indexed code doc id mismatch");
+
     const searched = await requestJson("GET", "/v1/search", {
       headers: apiKey(svcToken),
       query: { q: marker, k: 5, docIds: docId }
@@ -114,6 +144,24 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     const askedData = assertOkEnvelope(asked, "/v1/ask");
     assert(typeof askedData.answer === "string" && askedData.answer.length > 0, "ask should return answer text");
     assert(Array.isArray(askedData.citations), "ask should return citations");
+
+    const coded = await requestJson("POST", "/v1/code", {
+      headers: apiKey(svcToken),
+      body: {
+        question: "Explain how validateSession checks a session token.",
+        task: "understand",
+        language: "typescript",
+        paths: ["src/auth.ts"],
+        k: 4,
+        docIds: [codeDocId]
+      }
+    });
+    assertStatus(coded, 200, "/v1/code");
+    const codedData = assertOkEnvelope(coded, "/v1/code");
+    assert(typeof codedData.answer === "string" && codedData.answer.length > 0, "code should return answer text");
+    assert(Array.isArray(codedData.citations), "code should return citations");
+    assert(Array.isArray(codedData.files), "code should return files");
+    assert(codedData.files.some((file) => file.path === "src/auth.ts"), "code should include relevant file metadata");
 
     const booleanAsk = await requestJson("POST", "/v1/boolean_ask", {
       headers: apiKey(svcToken),
@@ -190,6 +238,12 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     assertStatus(deleted, 200, "/v1/docs/:docId delete");
     assertOkEnvelope(deleted, "/v1/docs/:docId delete");
 
+    const deletedCode = await requestJson("DELETE", `/v1/docs/${encodeURIComponent(codeDocId)}`, {
+      headers: apiKey(svcToken)
+    });
+    assertStatus(deletedCode, 200, "/v1/docs/:codeDocId delete");
+    assertOkEnvelope(deletedCode, "/v1/docs/:codeDocId delete");
+
     await revokeServiceToken(adminJwt, svcTokenId);
     svcTokenId = null;
 
@@ -207,6 +261,13 @@ async function deleteDocWithAdmin(adminJwt, docId) {
         await deleteDocWithAdmin(adminJwt, docId);
       } catch (err) {
         console.warn(`cleanup warning: failed to delete doc ${docId}: ${err.message}`);
+      }
+    }
+    if (codeDocId && adminJwt) {
+      try {
+        await deleteDocWithAdmin(adminJwt, codeDocId);
+      } catch (err) {
+        console.warn(`cleanup warning: failed to delete doc ${codeDocId}: ${err.message}`);
       }
     }
   }

@@ -212,6 +212,13 @@ class SupaVectorClient {
     });
   }
 
+  async code(question, params = {}) {
+    return this.request("/v1/code", {
+      method: "POST",
+      body: { question, ...params }
+    });
+  }
+
   async booleanAsk(question, params = {}) {
     return this.request("/v1/boolean_ask", {
       method: "POST",

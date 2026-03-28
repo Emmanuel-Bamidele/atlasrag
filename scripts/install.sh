@@ -6,12 +6,14 @@ usage() {
 SupaVector CLI installer
 
 Usage:
-  ./scripts/install.sh [--repo-dir PATH] [--run-onboard] [--no-path-update]
+  ./scripts/install.sh [--repo-dir PATH] [--run-onboard] [--no-path-update] [--system]
 
 Environment overrides:
   SUPAVECTOR_REPO_URL     Override the git clone URL
   SUPAVECTOR_HOME         Override the install root (default: ~/.supavector)
   SUPAVECTOR_REPO_DIR     Force a specific repo checkout
+  SUPAVECTOR_SYSTEM_HOME  Override the system install root (default: /usr/local/lib/supavector)
+  SUPAVECTOR_SYSTEM_BIN_DIR Override the system wrapper dir (default: /usr/local/bin)
 EOF
 }
 
@@ -57,8 +59,26 @@ upsert_path_block() {
   printf '\n%s\n%s\n%s\n' "$PATH_BLOCK_START" "$line" "$PATH_BLOCK_END" >>"$rc_file"
 }
 
+can_write_target_path() {
+  local target="$1"
+  local probe="$target"
+  while [[ ! -e "$probe" ]]; do
+    local parent
+    parent="$(dirname "$probe")"
+    if [[ "$parent" == "$probe" ]]; then
+      break
+    fi
+    probe="$parent"
+  done
+  [[ -w "$probe" ]]
+}
+
 REPO_URL="${SUPAVECTOR_REPO_URL:-https://github.com/Emmanuel-Bamidele/supavector.git}"
-INSTALL_HOME="${SUPAVECTOR_HOME:-$HOME/.supavector}"
+SYSTEM_INSTALL=0
+USER_INSTALL_HOME="${SUPAVECTOR_HOME:-$HOME/.supavector}"
+SYSTEM_INSTALL_HOME="${SUPAVECTOR_SYSTEM_HOME:-/usr/local/lib/supavector}"
+SYSTEM_BIN_DIR="${SUPAVECTOR_SYSTEM_BIN_DIR:-/usr/local/bin}"
+INSTALL_HOME="$USER_INSTALL_HOME"
 BIN_DIR="$INSTALL_HOME/bin"
 DEFAULT_REPO_DIR="$INSTALL_HOME/src/supavector"
 REPO_DIR_OVERRIDE="${SUPAVECTOR_REPO_DIR:-}"
@@ -79,6 +99,10 @@ while [[ $# -gt 0 ]]; do
       UPDATE_PATH=0
       shift
       ;;
+    --system)
+      SYSTEM_INSTALL=1
+      shift
+      ;;
     --help|-h)
       usage
       exit 0
@@ -90,6 +114,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$SYSTEM_INSTALL" -eq 1 ]]; then
+  INSTALL_HOME="$SYSTEM_INSTALL_HOME"
+  BIN_DIR="$SYSTEM_BIN_DIR"
+  DEFAULT_REPO_DIR="$INSTALL_HOME/src/supavector"
+  UPDATE_PATH=0
+fi
 
 NODE_BIN="$(find_bin node /usr/local/bin/node /opt/homebrew/bin/node)" || {
   printf 'Node.js 18+ is required to run the SupaVector CLI.\n' >&2
@@ -134,6 +165,13 @@ else
   fi
 fi
 
+if [[ "$SYSTEM_INSTALL" -eq 1 && "${EUID:-$(id -u)}" -ne 0 ]]; then
+  if ! can_write_target_path "$(dirname "$REPO_DIR")" || ! can_write_target_path "$BIN_DIR"; then
+    printf 'System install target is not writable. Re-run with sudo or use the default user install.\n' >&2
+    exit 1
+  fi
+fi
+
 (
   cd "$REPO_DIR"
   PATH="$(dirname "$NODE_BIN")${PATH:+:$PATH}" "$NPM_BIN" install
@@ -144,6 +182,8 @@ WRAPPER_PATH="$BIN_DIR/supavector"
 cat >"$WRAPPER_PATH" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+export SUPAVECTOR_HOME="$INSTALL_HOME"
+export SUPAVECTOR_BIN_DIR="$BIN_DIR"
 exec "$NODE_BIN" "$REPO_DIR/bin/supavector.js" "\$@"
 EOF
 chmod +x "$WRAPPER_PATH"
@@ -171,6 +211,7 @@ CLI wrapper: $WRAPPER_PATH
 Repo checkout: $REPO_DIR
 Node: $NODE_BIN
 Docker: ${DOCKER_BIN:-not detected in this shell}
+Install mode: $(if [[ "$SYSTEM_INSTALL" -eq 1 ]]; then printf 'system'; else printf 'user'; fi)
 
 If this is a new shell, make sure this path is available:
   export PATH="$BIN_DIR:\$PATH"

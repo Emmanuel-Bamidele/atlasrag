@@ -29,9 +29,12 @@ const {
   defaultGenerationModelSelectionForProvider,
   defaultEmbeddingModelSelectionForProvider,
   defaultCollectionFromFolder,
+  detectCodeLanguage,
   detectIngestibleFileType,
+  isCodeLikePath,
   listEmbeddingModelPresets,
   listGenerationModelPresets,
+  looksLikeCodebaseRoot,
   extractDocumentText,
   EMBEDDING_PROVIDER_PRESETS,
   GENERATION_PROVIDER_PRESETS,
@@ -42,6 +45,7 @@ const {
   normalizeGenerationModelSelectionForProvider,
   normalizeProviderSelection,
   parseCliArgs,
+  parseGitHubRepoSpec,
   normalizeTcpPort,
   preferredBaseUrl,
   randomPassword,
@@ -53,6 +57,7 @@ const {
   resolveBaseUrl,
   resolveProjectRoot,
   safeDocIdFromPath,
+  shouldSkipCodebaseRelPath,
   stripManagedShellPath,
   writeConfig
 } = require("../cli/lib");
@@ -83,9 +88,10 @@ Usage:
   supavector docs list [--collection NAME] [--json]
   supavector docs delete --doc-id ID [--collection NAME] [--yes] [--json]
   supavector docs replace --doc-id ID [--text TEXT | --file PATH | --url URL] [--collection NAME] [--yes] [--json]
-  supavector write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH) [--collection NAME] [--replace] [--sync] [--yes] [--json]
+  supavector write (--doc-id ID [--text TEXT | --file PATH | --url URL] | --folder PATH | --github-repo OWNER/REPO_OR_URL) [--collection NAME] [--replace] [--sync] [--branch BRANCH] [--yes] [--json]
   supavector search --q QUERY [--k 5] [--collection NAME] [--json]
   supavector ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--answer-length auto|short|medium|long] [--provider PROVIDER_OR_CHOICE] [--model MODEL_OR_CHOICE] [--json]
+  supavector code --question TEXT [--k 5] [--collection NAME] [--task TASK] [--language LANG] [--deployment NAME] [--paths a,b] [--constraints a,b] [--error-message TEXT] [--stack-trace TEXT] [--repository NAME] [--provider PROVIDER_OR_CHOICE] [--model MODEL_OR_CHOICE] [--json]
   supavector boolean_ask --question TEXT [--k 5] [--collection NAME] [--policy amvl|ttl|lru] [--provider PROVIDER_OR_CHOICE] [--model MODEL_OR_CHOICE] [--json]
   supavector config show [--show-secrets]
   supavector help
@@ -102,6 +108,10 @@ Common flags:
   --collection NAME            Override collection scope; folder writes use folder name if omitted
   --replace                    Replace matching docs before re-indexing
   --sync                       Reconcile a folder collection to exactly match local files
+  --github-repo OWNER/REPO     Clone a GitHub repo to a temp dir and ingest it
+  --branch NAME                Branch to clone for --github-repo
+  --github-token TOKEN         Personal access token for private GitHub repo ingest
+  --github-token-env NAME      Env var name that stores the GitHub token
   --restart                    Restart the local SupaVector stack after changing local settings
   --yes                        Skip destructive action confirmation prompts
   --json                       Print JSON output where supported
@@ -133,6 +143,18 @@ Onboarding / model flags:
   --anthropic-key KEY
   --non-interactive            Fail instead of prompting for missing values
   --force                      Overwrite env file after creating a backup
+
+Code command flags:
+  --task TASK                  understand | debug | review | write | structure | general
+  --language LANG              Prefer a language such as typescript, python, or go
+  --deployment NAME            Runtime or deployment hint such as vercel, docker, aws lambda
+  --repository NAME            Repository name hint such as acme/web
+  --paths a,b                  File or folder paths to focus on
+  --constraints a,b            Constraints for fixes or code generation
+  --error-message TEXT         Error message or failing symptom
+  --stack-trace TEXT           Stack trace or log excerpt
+  --context-json JSON          Extra structured context for code analysis
+  --context-file PATH          Read extra structured context from a JSON file
 
 Tenant / enterprise setup flags:
   --name NAME
@@ -1705,7 +1727,7 @@ function resolveWindowsShellBin() {
 function resolveUninstallPlan() {
   const saved = readConfig();
   const installHome = resolveInstallHome(process.env);
-  const binDir = buildInstallBinDir(installHome);
+  const binDir = path.resolve(String(process.env.SUPAVECTOR_BIN_DIR || buildInstallBinDir(installHome)));
   const defaultRepoDir = buildInstallRepoDir(installHome);
   const packageRoot = path.resolve(PACKAGE_ROOT);
   const repoDir = looksLikeAtlasragCheckout(packageRoot) && isSameOrChildPath(installHome, packageRoot)
@@ -1895,7 +1917,10 @@ function resolveUpdateTargetRoot(parsed) {
     throw new Error(`Not an SupaVector checkout: ${projectRoot}`);
   }
   if (!fs.existsSync(path.join(projectRoot, ".git"))) {
-    throw new Error(`Git metadata not found at ${projectRoot}. SupaVector update requires a git checkout.`);
+    throw new Error(
+      `Git metadata not found at ${projectRoot}. SupaVector update requires a git checkout. `
+      + `If you installed via npm, update by reinstalling with npm install -g instead, or use scripts/install.sh for a managed checkout.`
+    );
   }
   return projectRoot;
 }
@@ -2321,6 +2346,253 @@ function parseListFlag(value) {
     .filter(Boolean);
 }
 
+function buildGitHttpAuthEnv(token, baseEnv = process.env) {
+  const clean = String(token || "").trim();
+  if (!clean) return { ...baseEnv, GIT_TERMINAL_PROMPT: "0" };
+  const basic = Buffer.from(`x-access-token:${clean}`, "utf8").toString("base64");
+  return {
+    ...baseEnv,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.extraHeader",
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`
+  };
+}
+
+function parseGitHubPathList(parsed, ...names) {
+  for (const name of names) {
+    const value = getFlag(parsed, name);
+    if (value === undefined) continue;
+    return parseListFlag(value);
+  }
+  return [];
+}
+
+function buildGitHubBlobUrl(repoInfo, relativePath) {
+  if (!repoInfo?.htmlUrl || !repoInfo?.branch || !relativePath) return null;
+  const cleanPath = String(relativePath || "")
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  if (!cleanPath) return null;
+  return `${repoInfo.htmlUrl}/blob/${encodeURIComponent(repoInfo.branch)}/${cleanPath}`;
+}
+
+function defaultCollectionFromRepositoryName(repoName, fallbackPath = "") {
+  const raw = String(repoName || "").trim();
+  if (raw) {
+    return raw
+      .replace(/[\\/]+/g, "-")
+      .replace(/[^A-Za-z0-9._-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[-.]+|[-.]+$/g, "") || defaultCollectionFromFolder(fallbackPath || ".");
+  }
+  return defaultCollectionFromFolder(fallbackPath || ".");
+}
+
+async function readTrimmedCommandOutput(command, args, options = {}) {
+  const result = await runCommand(command, args, options);
+  return String(result.stdout || "").trim();
+}
+
+function parseGitHubRepoFromRemoteUrl(remoteUrl) {
+  const clean = String(remoteUrl || "").trim();
+  if (!clean) return null;
+  try {
+    return parseGitHubRepoSpec(clean);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLocalRepoContext(folderPath) {
+  const gitBin = resolveExecutable("git", ["--version"]);
+  if (!gitBin) return null;
+
+  const cwd = path.resolve(String(folderPath || "").trim() || ".");
+  try {
+    const repoRoot = await readTrimmedCommandOutput(gitBin, ["-C", cwd, "rev-parse", "--show-toplevel"]);
+    const branchRaw = await readTrimmedCommandOutput(gitBin, ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "");
+    const remoteUrl = await readTrimmedCommandOutput(gitBin, ["-C", cwd, "remote", "get-url", "origin"]).catch(() => "");
+    const github = parseGitHubRepoFromRemoteUrl(remoteUrl);
+    const repositoryName = github?.name || path.basename(repoRoot);
+    return {
+      repoRoot,
+      repositoryName,
+      branch: branchRaw && branchRaw !== "HEAD" ? branchRaw : (github?.branch || null),
+      provider: github ? "github" : null,
+      htmlUrl: github?.htmlUrl || null,
+      remoteUrl: remoteUrl || null
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function cloneGitHubRepoToTempDir(parsed, repoSpec, branch) {
+  const gitBin = ensureGitAvailable();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "supavector-github-"));
+  const targetDir = path.join(tempRoot, repoSpec.repo);
+  const args = ["clone", "--depth", "1", "--single-branch"];
+  if (branch) {
+    args.push("--branch", branch);
+  }
+  args.push(repoSpec.cloneUrl, targetDir);
+
+  const tokenEnvName = maybeStringFlag(parsed, "github-token-env");
+  const token = maybeStringFlag(parsed, "github-token")
+    || (tokenEnvName ? process.env[tokenEnvName] : "")
+    || process.env.SUPAVECTOR_GITHUB_TOKEN
+    || process.env.GITHUB_TOKEN
+    || "";
+
+  try {
+    await runCommand(gitBin, args, {
+      cwd: tempRoot,
+      env: buildGitHttpAuthEnv(token, process.env)
+    });
+    return {
+      tempRoot,
+      targetDir,
+      repoContext: {
+        repoRoot: targetDir,
+        repositoryName: repoSpec.name,
+        branch: branch || repoSpec.branch || null,
+        provider: "github",
+        htmlUrl: repoSpec.htmlUrl,
+        remoteUrl: repoSpec.cloneUrl
+      }
+    };
+  } catch (error) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    const tokenHint = token
+      ? ""
+      : " For private repositories, set SUPAVECTOR_GITHUB_TOKEN, GITHUB_TOKEN, or pass --github-token.";
+    throw new Error(`Failed to clone ${repoSpec.name}.${tokenHint} ${String(error.message || error)}`.trim());
+  }
+}
+
+function buildDocumentSourcePayload(item, options = {}) {
+  const repoContext = options.repoContext || null;
+  const explicitSourceType = String(options.sourceType || "").trim().toLowerCase();
+  const metadata = { ...(options.metadata || {}) };
+  const relPath = String(item?.repoRelPath || item?.relPath || "").trim();
+  const language = item?.language || detectCodeLanguage(relPath || item?.absPath || "");
+  const inferredSourceType = explicitSourceType || (language ? "code" : "text");
+
+  if (repoContext?.provider) metadata.provider = repoContext.provider;
+  if (repoContext?.repositoryName) metadata.repo = repoContext.repositoryName;
+  if (repoContext?.branch) metadata.branch = repoContext.branch;
+  if (relPath) metadata.path = relPath;
+  if (language) metadata.language = language;
+
+  const hasMetadata = Object.keys(metadata).length > 0;
+  return {
+    title: relPath || item?.docId || null,
+    sourceType: inferredSourceType,
+    sourceUrl: buildGitHubBlobUrl(repoContext, relPath),
+    metadata: hasMetadata ? metadata : null
+  };
+}
+
+async function buildSingleInputSourcePayload(parsed, docId) {
+  const explicitSourceType = maybeStringFlag(parsed, "source-type");
+  const filePath = maybeStringFlag(parsed, "file");
+  if (!filePath && !explicitSourceType) return {};
+  if (!filePath) {
+    return {
+      title: docId,
+      sourceType: explicitSourceType
+    };
+  }
+
+  const absPath = path.resolve(filePath);
+  const repoContext = await resolveLocalRepoContext(path.dirname(absPath));
+  const relPath = repoContext?.repoRoot && absPath.startsWith(repoContext.repoRoot)
+    ? path.relative(repoContext.repoRoot, absPath)
+    : path.basename(absPath);
+  return buildDocumentSourcePayload({
+    absPath,
+    relPath,
+    repoRelPath: relPath,
+    docId,
+    language: detectCodeLanguage(relPath)
+  }, {
+    repoContext,
+    sourceType: explicitSourceType || undefined
+  });
+}
+
+function renderCodeFiles(files = []) {
+  files.forEach((item, index) => {
+    const parts = [];
+    if (item?.path) parts.push(item.path);
+    if (item?.repo) parts.push(item.repo);
+    if (item?.language) parts.push(item.language);
+    const label = parts.length ? parts.join("  ") : (item?.docId || item?.chunkId || "source");
+    console.log(`${index + 1}. ${label}`);
+  });
+}
+
+async function ingestCollectedDocuments(client, parsed, collection, documents, options = {}) {
+  const tenantId = getFlag(parsed, "tenant");
+  const replaceExisting = options.replaceExisting === true;
+  const syncFolder = options.syncFolder === true;
+  const commonParams = {
+    collection,
+    tenantId,
+    policy: getFlag(parsed, "policy"),
+    expiresAt: getFlag(parsed, "expires-at"),
+    visibility: getFlag(parsed, "visibility"),
+    acl: parseListFlag(getFlag(parsed, "acl")),
+    agentId: getFlag(parsed, "agent-id"),
+    tags: parseListFlag(getFlag(parsed, "tags"))
+  };
+  const replaced = [];
+  const pruned = [];
+
+  if (syncFolder) {
+    const existingPayload = await client.listDocs({ collection, tenantId });
+    const existingDocs = extractDocs(existingPayload);
+    const desiredDocIds = new Set(documents.accepted.map((item) => item.docId));
+    for (const item of existingDocs) {
+      if (desiredDocIds.has(item.docId)) continue;
+      await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
+      pruned.push(item.docId);
+    }
+  }
+
+  const indexed = [];
+  for (const item of documents.accepted) {
+    if (replaceExisting || syncFolder) {
+      await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
+      replaced.push(item.docId);
+    }
+    const payload = await client.indexText(item.docId, item.text, {
+      ...commonParams,
+      ...buildDocumentSourcePayload(item, options),
+      idempotencyKey: `supavector-cli-${Date.now()}-${randomSecret(6)}`
+    });
+    const data = payload?.data || payload;
+    indexed.push({
+      path: item.repoRelPath || item.relPath,
+      docId: data.docId || item.docId,
+      chunksIndexed: data.chunksIndexed ?? null,
+      sourceType: item.sourceType || null,
+      language: item.language || null
+    });
+  }
+
+  return {
+    collection,
+    indexed,
+    skipped: documents.skipped,
+    replaced: Array.from(new Set(replaced)),
+    pruned
+  };
+}
+
 function getNestedSubcommand(parsed, index = 2) {
   return String(parsed?.positionals?.[index] || "").trim().toLowerCase();
 }
@@ -2683,7 +2955,7 @@ function walkFiles(rootDir) {
   return out;
 }
 
-async function collectFolderDocuments(folderPath) {
+async function collectFolderDocuments(folderPath, options = {}) {
   const rootDir = path.resolve(String(folderPath || "").trim());
   if (!fs.existsSync(rootDir)) {
     throw new Error(`Folder not found: ${rootDir}`);
@@ -2692,6 +2964,8 @@ async function collectFolderDocuments(folderPath) {
     throw new Error(`Not a folder: ${rootDir}`);
   }
 
+  const repoContext = options.repoContext || await resolveLocalRepoContext(rootDir);
+  const codebaseMode = options.forceCode === true || Boolean(repoContext) || looksLikeCodebaseRoot(rootDir);
   const files = walkFiles(rootDir);
   const usedDocIds = new Map();
   const accepted = [];
@@ -2699,6 +2973,10 @@ async function collectFolderDocuments(folderPath) {
 
   for (const absPath of files) {
     const relPath = path.relative(rootDir, absPath);
+    if (codebaseMode && shouldSkipCodebaseRelPath(relPath)) {
+      skipped.push({ path: relPath, reason: "ignored generated or dependency directory" });
+      continue;
+    }
     const fileType = detectIngestibleFileType(absPath);
     if (fileType === "unsupported") {
       skipped.push({ path: relPath, reason: "unsupported extension" });
@@ -2714,20 +2992,30 @@ async function collectFolderDocuments(folderPath) {
       continue;
     }
 
-    const baseDocId = safeDocIdFromPath(relPath);
+    const repoRelPath = repoContext?.repoRoot && absPath.startsWith(repoContext.repoRoot)
+      ? path.relative(repoContext.repoRoot, absPath)
+      : relPath;
+    const baseDocId = safeDocIdFromPath(repoRelPath);
     const nextCount = (usedDocIds.get(baseDocId) || 0) + 1;
     usedDocIds.set(baseDocId, nextCount);
     const docId = nextCount === 1 ? baseDocId : `${baseDocId}-${nextCount}`;
+    const language = detectCodeLanguage(repoRelPath);
+    const sourceType = options.sourceType
+      ? String(options.sourceType).trim().toLowerCase()
+      : (language ? "code" : "text");
 
     accepted.push({
       absPath,
       relPath,
+      repoRelPath,
       docId,
+      language,
+      sourceType,
       text
     });
   }
 
-  return { rootDir, accepted, skipped };
+  return { rootDir, accepted, skipped, repoContext, codebaseMode };
 }
 
 function extractDocs(payload) {
@@ -2905,8 +3193,10 @@ async function handleDocsReplace(parsed) {
     tenantId: getFlag(parsed, "tenant")
   });
 
+  const sourcePayload = await buildSingleInputSourcePayload(parsed, docId);
   const payload = await indexDocumentInput(client, docId, text, url, buildWriteParams(parsed, {
-    collection
+    collection,
+    ...sourcePayload
   }));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
@@ -2927,98 +3217,103 @@ async function handleWrite(parsed) {
   const replaceExisting = boolFromFlag(getFlag(parsed, "replace"), false);
   const syncFolder = boolFromFlag(getFlag(parsed, "sync"), false);
   const folder = String(getFlag(parsed, "folder") || "").trim();
-  if (folder) {
+  const githubRepoRaw = String(getFlag(parsed, "github-repo") || getFlag(parsed, "repo-url") || "").trim();
+  if (folder || githubRepoRaw) {
     const docId = String(getFlag(parsed, "doc-id") || getFlag(parsed, "docId") || "").trim();
     const url = String(getFlag(parsed, "url") || "").trim();
     const directText = getFlag(parsed, "text");
     const filePath = getFlag(parsed, "file");
-    if (docId || url || (directText && directText !== true) || (filePath && filePath !== true) || !process.stdin.isTTY) {
-      throw new Error("write --folder cannot be combined with --doc-id, --text, --file, --url, or piped stdin.");
+    if (folder && githubRepoRaw) {
+      throw new Error("Use either --folder or --github-repo, not both.");
+    }
+    if (docId || url || (directText && directText !== true) || (filePath && filePath !== true)) {
+      throw new Error("write --folder and write --github-repo cannot be combined with --doc-id, --text, --file, or --url.");
     }
 
-    const { rootDir, accepted, skipped } = await collectFolderDocuments(folder);
-    if (!accepted.length) {
-      throw new Error("No supported files were found in the folder. SupaVector CLI folder ingest accepts text, PDF, and DOCX files.");
+    let cloned = null;
+    let documents = null;
+    try {
+      if (githubRepoRaw) {
+        const repoSpec = parseGitHubRepoSpec(githubRepoRaw);
+        const branch = maybeStringFlag(parsed, "branch") || repoSpec.branch || "main";
+        cloned = await cloneGitHubRepoToTempDir(parsed, repoSpec, branch);
+        documents = await collectFolderDocuments(cloned.targetDir, {
+          repoContext: cloned.repoContext,
+          forceCode: true
+        });
+      } else {
+        documents = await collectFolderDocuments(folder);
+      }
+    } finally {
+      if (cloned && !documents) {
+        fs.rmSync(cloned.tempRoot, { recursive: true, force: true });
+      }
     }
 
-    const collection = String(getFlag(parsed, "collection") || defaultCollectionFromFolder(rootDir)).trim();
-    const tenantId = getFlag(parsed, "tenant");
-    const commonParams = {
-      collection,
-      tenantId,
-      policy: getFlag(parsed, "policy"),
-      expiresAt: getFlag(parsed, "expires-at"),
-      visibility: getFlag(parsed, "visibility"),
-      acl: parseListFlag(getFlag(parsed, "acl")),
-      agentId: getFlag(parsed, "agent-id"),
-      tags: parseListFlag(getFlag(parsed, "tags"))
-    };
-    const replaced = [];
-    const pruned = [];
+    if (!documents?.accepted?.length) {
+      throw new Error("No supported files were found. SupaVector CLI codebase ingest accepts text, PDF, DOCX, and common source/config files.");
+    }
+
+    const collection = String(
+      getFlag(parsed, "collection")
+      || defaultCollectionFromRepositoryName(documents.repoContext?.repositoryName, documents.rootDir)
+    ).trim();
 
     if (syncFolder) {
+      const targetLabel = githubRepoRaw ? githubRepoRaw : documents.rootDir;
       await ensureConfirmedAction(
         parsed,
-        `Sync collection "${collection}" to match folder "${rootDir}"? This may delete docs that are not present in the folder.`,
+        `Sync collection "${collection}" to match ${targetLabel}? This may delete docs that are not present in the current source.`,
         false
       );
-      const existingPayload = await client.listDocs({ collection, tenantId });
-      const existingDocs = extractDocs(existingPayload);
-      const desiredDocIds = new Set(accepted.map((item) => item.docId));
-      for (const item of existingDocs) {
-        if (desiredDocIds.has(item.docId)) continue;
-        await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
-        pruned.push(item.docId);
-      }
     }
 
-    const indexed = [];
-    for (const item of accepted) {
-      if (replaceExisting || syncFolder) {
-        await deleteDocumentForUpdate(client, item.docId, { collection, tenantId });
-        replaced.push(item.docId);
+    let result = null;
+    try {
+      result = await ingestCollectedDocuments(client, parsed, collection, documents, {
+        replaceExisting,
+        syncFolder,
+        repoContext: documents.repoContext
+      });
+    } finally {
+      if (cloned) {
+        fs.rmSync(cloned.tempRoot, { recursive: true, force: true });
       }
-      const payload = await client.indexText(item.docId, item.text, {
-        ...commonParams,
-        idempotencyKey: `supavector-cli-${Date.now()}-${randomSecret(6)}`
-      });
-      const data = payload?.data || payload;
-      indexed.push({
-        path: item.relPath,
-        docId: data.docId || item.docId,
-        chunksIndexed: data.chunksIndexed ?? null
-      });
     }
 
     if (boolFromFlag(getFlag(parsed, "json"), false)) {
       console.log(JSON.stringify({
         ok: true,
-        folder: rootDir,
-        collection,
-        indexed,
-        skipped,
-        replaced: Array.from(new Set(replaced)),
-        pruned
+        source: githubRepoRaw || documents.rootDir,
+        collection: result.collection,
+        indexed: result.indexed,
+        skipped: result.skipped,
+        replaced: result.replaced,
+        pruned: result.pruned,
+        repository: documents.repoContext?.repositoryName || null,
+        branch: documents.repoContext?.branch || null
       }, null, 2));
       return;
     }
 
-    printSummary("Folder ingest complete.", [
-      `folder: ${rootDir}`,
-      `collection: ${collection}`,
-      `indexed: ${indexed.length}`,
-      `replaced: ${Array.from(new Set(replaced)).length}`,
-      `pruned: ${pruned.length}`,
-      `skipped: ${skipped.length}`
+    printSummary(githubRepoRaw ? "GitHub repo ingest complete." : "Folder ingest complete.", [
+      `${githubRepoRaw ? "source" : "folder"}: ${githubRepoRaw || documents.rootDir}`,
+      `collection: ${result.collection}`,
+      `repository: ${documents.repoContext?.repositoryName || "(none)"}`,
+      `branch: ${documents.repoContext?.branch || "(unknown)"}`,
+      `indexed: ${result.indexed.length}`,
+      `replaced: ${result.replaced.length}`,
+      `pruned: ${result.pruned.length}`,
+      `skipped: ${result.skipped.length}`
     ]);
-    if (skipped.length) {
+    if (result.skipped.length) {
       console.log("");
       console.log("Skipped:");
-      skipped.slice(0, 10).forEach((item) => {
+      result.skipped.slice(0, 10).forEach((item) => {
         console.log(`- ${item.path} (${item.reason})`);
       });
-      if (skipped.length > 10) {
-        console.log(`- ... and ${skipped.length - 10} more`);
+      if (result.skipped.length > 10) {
+        console.log(`- ... and ${result.skipped.length - 10} more`);
       }
     }
     return;
@@ -3043,7 +3338,8 @@ async function handleWrite(parsed) {
     await deleteDocumentForUpdate(client, docId, { collection, tenantId });
   }
 
-  const payload = await indexDocumentInput(client, docId, text, url, buildWriteParams(parsed));
+  const sourcePayload = await buildSingleInputSourcePayload(parsed, docId);
+  const payload = await indexDocumentInput(client, docId, text, url, buildWriteParams(parsed, sourcePayload));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -3149,6 +3445,91 @@ async function handleAsk(parsed) {
         return;
       }
       console.log(`${index + 1}. ${item.docId || item.chunkId || "source"}`);
+    });
+  }
+}
+
+async function handleCode(parsed) {
+  const client = buildClient(parsed);
+  const question = String(getFlag(parsed, "question") || parsed.positionals.slice(1).join(" ") || "").trim();
+  if (!question) {
+    throw new Error("code requires --question TEXT or a positional question.");
+  }
+  const k = parseInt(String(getFlag(parsed, "k") || "5"), 10);
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error("code requires --k to be a positive integer.");
+  }
+
+  const provider = (() => {
+    const raw = getFlag(parsed, "provider") ?? getFlag(parsed, "answer-provider");
+    if (raw === undefined) return "";
+    return normalizeProviderSelection(raw, "generation", DEFAULT_ANSWER_PROVIDER);
+  })();
+  const model = normalizeCliOptionalModelFlag(
+    getFlag(parsed, "model") ?? getFlag(parsed, "answer-model"),
+    provider || DEFAULT_ANSWER_PROVIDER,
+    "",
+    { allowInherit: false, kind: "generation" }
+  );
+  const context = readJsonObjectInput(parsed, {
+    jsonFlag: "context-json",
+    fileFlag: "context-file",
+    label: "code context"
+  });
+  const payload = await client.code(question, {
+    k,
+    docIds: parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds")),
+    answerLength: String(getFlag(parsed, "answer-length") || getFlag(parsed, "answerLength") || "auto"),
+    task: maybeStringFlag(parsed, "task", "mode"),
+    language: maybeStringFlag(parsed, "language", "lang"),
+    deployment: maybeStringFlag(parsed, "deployment"),
+    repository: maybeStringFlag(parsed, "repository", "repo"),
+    paths: parseGitHubPathList(parsed, "paths", "path"),
+    constraints: parseGitHubPathList(parsed, "constraints", "constraint"),
+    errorMessage: maybeStringFlag(parsed, "error-message", "error"),
+    stackTrace: maybeStringFlag(parsed, "stack-trace"),
+    context: Object.keys(context).length ? context : undefined,
+    provider: provider || undefined,
+    model: model || undefined
+  });
+
+  if (boolFromFlag(getFlag(parsed, "json"), false)) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const data = payload?.data || payload;
+  console.log(`Question: ${question}`);
+  console.log(`Collection: ${resolveEffectiveCollection(client, payload)}`);
+  if (data.provider) console.log(`Provider: ${data.provider}`);
+  if (data.model) console.log(`Model: ${data.model}`);
+  if (data.sourceSummary?.repositories?.length) {
+    console.log(`Repositories: ${data.sourceSummary.repositories.join(", ")}`);
+  }
+  if (data.sourceSummary?.languages?.length) {
+    console.log(`Languages: ${data.sourceSummary.languages.join(", ")}`);
+  }
+  console.log("");
+  console.log(data.answer || "(no answer)");
+
+  const files = Array.isArray(data.files) ? data.files : [];
+  if (files.length) {
+    console.log("");
+    console.log("Relevant files:");
+    renderCodeFiles(files);
+  }
+
+  const citations = Array.isArray(data.citations) ? data.citations : [];
+  if (citations.length) {
+    console.log("");
+    console.log("Sources:");
+    citations.forEach((item, index) => {
+      if (typeof item === "string") {
+        console.log(`${index + 1}. ${item}`);
+        return;
+      }
+      const label = item.path || item.docId || item.chunkId || "source";
+      console.log(`${index + 1}. ${label}`);
     });
   }
 }
@@ -3733,6 +4114,9 @@ async function main() {
       return;
     case "ask":
       await handleAsk(parsed);
+      return;
+    case "code":
+      await handleCode(parsed);
       return;
     case "boolean_ask":
     case "boolean-ask":

@@ -13,26 +13,31 @@ const {
   DEFAULT_EMBED_MODEL,
   DEFAULT_REFLECT_MODEL,
   GENERATION_MODEL_PRESETS,
+  detectCodeLanguage,
   detectIngestibleFileType,
   defaultOnboardAnswerModelSelection,
   defaultCollectionFromFolder,
   detectProjectRoot,
   extractDocumentText,
+  isCodeLikePath,
   isIngestibleTextPath,
-    isProbablyTextBuffer,
-    mergeEnvText,
-    normalizeConfiguredModel,
-    normalizeOnboardAnswerModelSelection,
-    removePathEntry,
-    normalizeTcpPort,
-    parseCliArgs,
-    parseEnvAssignments,
-    preferredBaseUrl,
-    readEnvAssignments,
-    resolveInstallHome,
-    resolveBaseUrl,
-    safeDocIdFromPath,
-    stripManagedShellPath
+  isProbablyTextBuffer,
+  looksLikeCodebaseRoot,
+  mergeEnvText,
+  normalizeConfiguredModel,
+  normalizeOnboardAnswerModelSelection,
+  removePathEntry,
+  normalizeTcpPort,
+  parseCliArgs,
+  parseEnvAssignments,
+  parseGitHubRepoSpec,
+  preferredBaseUrl,
+  readEnvAssignments,
+  resolveInstallHome,
+  resolveBaseUrl,
+  safeDocIdFromPath,
+  shouldSkipCodebaseRelPath,
+  stripManagedShellPath
 } = require("../lib");
 
 async function withTempDir(fn) {
@@ -205,6 +210,29 @@ function testFolderHelpers() {
   assert.equal(safeDocIdFromPath("guides/intro file.md"), "guides__intro-file.md");
   assert.equal(isProbablyTextBuffer(Buffer.from("hello world", "utf8")), true);
   assert.equal(isProbablyTextBuffer(Buffer.from([0, 1, 2, 3])), false);
+  assert.equal(detectCodeLanguage("src/index.ts"), "typescript");
+  assert.equal(detectCodeLanguage("Dockerfile"), "docker");
+  assert.equal(detectCodeLanguage("README.md"), null);
+  assert.equal(isCodeLikePath("package.json"), true);
+  assert.equal(isCodeLikePath("README.md"), false);
+  assert.equal(shouldSkipCodebaseRelPath("node_modules/react/index.js"), true);
+  assert.equal(shouldSkipCodebaseRelPath("src/app/index.ts"), false);
+}
+
+async function testCodebaseHelpers() {
+  await withTempDir(async (dir) => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{\n  \"name\": \"demo\"\n}\n", "utf8");
+    assert.equal(looksLikeCodebaseRoot(dir), true);
+  });
+
+  const repo = parseGitHubRepoSpec("https://github.com/acme/platform/tree/main");
+  assert.equal(repo.name, "acme/platform");
+  assert.equal(repo.branch, "main");
+  assert.equal(repo.cloneUrl, "https://github.com/acme/platform.git");
+
+  const short = parseGitHubRepoSpec("acme/platform");
+  assert.equal(short.name, "acme/platform");
+  assert.equal(short.branch, null);
 }
 
 async function testDocumentExtraction() {
@@ -320,6 +348,7 @@ async function main() {
   testCreateOnboardConfig();
   testFolderHelpers();
   await testDocumentExtraction();
+  await testCodebaseHelpers();
   testNormalizeTcpPort();
   testBaseUrlHelpers();
   testModelHelpers();

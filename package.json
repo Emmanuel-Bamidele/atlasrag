@@ -7,6 +7,33 @@
   "bin": {
     "supavector": "bin/supavector.js"
   },
+  "files": [
+    "bin/",
+    "cli/",
+    "gateway/",
+    "sdk/",
+    "atlasrag/",
+    "deploy/",
+    "docs/",
+    "scripts/",
+    ".env.example",
+    ".env.external-postgres.example",
+    ".env.prod.example",
+    "docker-compose.yml",
+    "docker-compose.external-postgres.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.ec2.override.yml",
+    "Dockerfile.node",
+    "Dockerfile.redis",
+    "Dockerfile.stunnel",
+    "README.md",
+    "QUICKSTART.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "LICENSE",
+    "AGENTS.md"
+  ],
   "engines": {
     "node": ">=18"
   },

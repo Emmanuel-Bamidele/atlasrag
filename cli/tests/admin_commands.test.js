@@ -1,5 +1,7 @@
 const assert = require("assert/strict");
+const fs = require("fs");
 const http = require("http");
+const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
 
@@ -80,6 +82,15 @@ async function withMockServer(handler, fn) {
     await new Promise((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     });
+  }
+}
+
+async function withTempDir(fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "supavector-cli-admin-"));
+  try {
+    await fn(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -335,11 +346,240 @@ async function testAuditListCommand() {
   });
 }
 
+async function testCodeCommand() {
+  await withMockServer(async (req) => {
+    assert.equal(req.method, "POST");
+    assert.equal(req.path, "/v1/code");
+    assert.equal(req.headers["x-api-key"], "supav_test_token");
+    assert.deepEqual(req.body, {
+      question: "Why is auth middleware looping?",
+      k: 7,
+      docIds: ["middleware.ts"],
+      answerLength: "short",
+      task: "debug",
+      language: "typescript",
+      deployment: "vercel",
+      repository: "acme/web",
+      paths: ["src/middleware.ts", "src/auth.ts"],
+      constraints: ["do not add dependencies"],
+      errorMessage: "Too many redirects",
+      stackTrace: "Error: redirect loop",
+      context: { framework: "nextjs" },
+      provider: "openai",
+      model: "gpt-4o"
+    });
+    return {
+      body: {
+        ok: true,
+        data: {
+          answer: "The refresh redirect loop starts in middleware.",
+          provider: "openai",
+          model: "gpt-4o",
+          files: [
+            { path: "src/middleware.ts", repo: "acme/web", language: "typescript" }
+          ],
+          citations: [
+            { path: "src/middleware.ts", docId: "middleware.ts" }
+          ],
+          sourceSummary: {
+            repositories: ["acme/web"],
+            languages: ["typescript"]
+          }
+        },
+        meta: {}
+      }
+    };
+  }, async ({ baseUrl }) => {
+    const result = await runCli([
+      "code",
+      "--question",
+      "Why is auth middleware looping?",
+      "--k",
+      "7",
+      "--doc-ids",
+      "middleware.ts",
+      "--answer-length",
+      "short",
+      "--task",
+      "debug",
+      "--language",
+      "typescript",
+      "--deployment",
+      "vercel",
+      "--repository",
+      "acme/web",
+      "--paths",
+      "src/middleware.ts,src/auth.ts",
+      "--constraints",
+      "do not add dependencies",
+      "--error-message",
+      "Too many redirects",
+      "--stack-trace",
+      "Error: redirect loop",
+      "--context-json",
+      "{\"framework\":\"nextjs\"}",
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-4o",
+      "--json"
+    ], {
+      SUPAVECTOR_BASE_URL: baseUrl,
+      SUPAVECTOR_API_KEY: "supav_test_token"
+    });
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.data.answer, "The refresh redirect loop starts in middleware.");
+    assert.equal(payload.data.files[0].path, "src/middleware.ts");
+  });
+}
+
+async function testWriteFolderCodebaseMetadata() {
+  await withTempDir(async (dir) => {
+    fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "node_modules", "left-pad"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "package.json"), "{\n  \"name\": \"demo\"\n}\n", "utf8");
+    fs.writeFileSync(path.join(dir, "README.md"), "# Demo\n", "utf8");
+    fs.writeFileSync(path.join(dir, "src", "index.ts"), "export const value = 1;\n", "utf8");
+    fs.writeFileSync(path.join(dir, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n", "utf8");
+
+    await withMockServer(async (req) => {
+      assert.equal(req.method, "POST");
+      assert.equal(req.path, "/v1/docs");
+      return {
+        body: {
+          ok: true,
+          data: {
+            docId: req.body.docId,
+            chunksIndexed: 1
+          },
+          meta: {}
+        }
+      };
+    }, async ({ baseUrl, requests }) => {
+      const result = await runCli([
+        "write",
+        "--folder",
+        dir,
+        "--collection",
+        "demo-codebase",
+        "--json"
+      ], {
+        SUPAVECTOR_BASE_URL: baseUrl,
+        SUPAVECTOR_API_KEY: "supav_test_token"
+      });
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.collection, "demo-codebase");
+      assert.equal(payload.indexed.length, 3);
+      assert.equal(payload.skipped.length, 1);
+      assert.match(payload.skipped[0].path, /node_modules/);
+
+      const docs = requests.filter((item) => item.path === "/v1/docs");
+      assert.equal(docs.length, 3);
+      const tsDoc = docs.find((item) => item.body.docId === "src__index.ts");
+      assert.equal(tsDoc.body.sourceType, "code");
+      assert.equal(tsDoc.body.title, "src/index.ts");
+      assert.deepEqual(tsDoc.body.metadata, {
+        path: "src/index.ts",
+        language: "typescript"
+      });
+
+      const readmeDoc = docs.find((item) => item.body.docId === "README.md");
+      assert.equal(readmeDoc.body.sourceType, "text");
+      assert.deepEqual(readmeDoc.body.metadata, {
+        path: "README.md"
+      });
+    });
+  });
+}
+
+async function testWriteGitHubRepoCommand() {
+  await withTempDir(async (dir) => {
+    const fakeGit = path.join(dir, "fake-git.sh");
+    fs.writeFileSync(fakeGit, `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "git version 2.42.0"
+  exit 0
+fi
+if [ "$1" = "clone" ]; then
+  target=""
+  for arg in "$@"; do
+    target="$arg"
+  done
+  mkdir -p "$target/src" "$target/node_modules/pkg"
+  cat > "$target/package.json" <<'EOF'
+{"name":"platform"}
+EOF
+  cat > "$target/src/main.ts" <<'EOF'
+export function main() { return "ok"; }
+EOF
+  cat > "$target/README.md" <<'EOF'
+# Platform
+EOF
+  cat > "$target/node_modules/pkg/index.js" <<'EOF'
+module.exports = 1;
+EOF
+  exit 0
+fi
+echo "unexpected git args: $@" >&2
+exit 1
+`, { mode: 0o755 });
+
+    await withMockServer(async (req) => {
+      assert.equal(req.method, "POST");
+      assert.equal(req.path, "/v1/docs");
+      return {
+        body: {
+          ok: true,
+          data: {
+            docId: req.body.docId,
+            chunksIndexed: 1
+          },
+          meta: {}
+        }
+      };
+    }, async ({ baseUrl, requests }) => {
+      const result = await runCli([
+        "write",
+        "--github-repo",
+        "acme/platform",
+        "--branch",
+        "main",
+        "--collection",
+        "acme-platform",
+        "--json"
+      ], {
+        SUPAVECTOR_BASE_URL: baseUrl,
+        SUPAVECTOR_API_KEY: "supav_test_token",
+        SUPAVECTOR_GIT_BIN: fakeGit
+      });
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.collection, "acme-platform");
+      assert.equal(payload.repository, "acme/platform");
+      assert.equal(payload.branch, "main");
+      assert.equal(payload.indexed.length, 3);
+
+      const tsDoc = requests.find((item) => item.body.docId === "src__main.ts");
+      assert.equal(tsDoc.body.sourceType, "code");
+      assert.equal(tsDoc.body.sourceUrl, "https://github.com/acme/platform/blob/main/src/main.ts");
+      assert.deepEqual(tsDoc.body.metadata, {
+        provider: "github",
+        repo: "acme/platform",
+        branch: "main",
+        path: "src/main.ts",
+        language: "typescript"
+      });
+    });
+  });
+}
+
 async function main() {
   await testTenantTokenCreateCommand();
   await testTenantUpdateCommand();
   await testEnterpriseTenantCreateCommand();
   await testAuditListCommand();
+  await testCodeCommand();
+  await testWriteFolderCodebaseMetadata();
+  await testWriteGitHubRepoCommand();
   console.log("admin_commands.test.js passed");
 }
 
