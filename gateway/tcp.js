@@ -35,6 +35,32 @@ function extractReplyLines(buffer) {
   return { lines, remainder: remaining };
 }
 
+function createInactivityTimer(timeoutMs, onTimeout) {
+  const safeTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8000;
+  let timer = null;
+
+  function clear() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function schedule() {
+    clear();
+    timer = setTimeout(() => {
+      timer = null;
+      onTimeout();
+    }, safeTimeoutMs);
+  }
+
+  return {
+    timeoutMs: safeTimeoutMs,
+    start: schedule,
+    bump: schedule,
+    clear
+  };
+}
+
 // sendCmd sends ONE command and returns ONE line reply
 function sendCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -101,12 +127,13 @@ function sendCmdBatch(commands) {
     const replies = [];
     const timeoutMs = Number.isFinite(TCP_TIMEOUT_MS) && TCP_TIMEOUT_MS > 0 ? TCP_TIMEOUT_MS : 8000;
     const label = `batch ${cleanCommands.length}`;
-    const timer = setTimeout(() => {
+    const inactivityTimer = createInactivityTimer(timeoutMs, () => {
       if (settled) return;
       settled = true;
       client.destroy();
       reject(new Error(`TCP command timeout (${label})`));
-    }, timeoutMs);
+    });
+    inactivityTimer.start();
 
     client.connect(TCP_PORT, TCP_HOST, () => {
       client.setNoDelay(true);
@@ -115,6 +142,7 @@ function sendCmdBatch(commands) {
 
     client.on("data", (chunk) => {
       pending += chunk.toString();
+      inactivityTimer.bump();
       const parsed = extractReplyLines(pending);
       pending = parsed.remainder;
       for (const line of parsed.lines) {
@@ -122,7 +150,7 @@ function sendCmdBatch(commands) {
         if (replies.length >= cleanCommands.length) {
           if (settled) return;
           settled = true;
-          clearTimeout(timer);
+          inactivityTimer.clear();
           client.destroy();
           resolve(replies.slice(0, cleanCommands.length));
           return;
@@ -133,14 +161,14 @@ function sendCmdBatch(commands) {
     client.on("error", (err) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      inactivityTimer.clear();
       reject(err);
     });
 
     client.on("timeout", () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      inactivityTimer.clear();
       client.destroy();
       reject(new Error(`TCP command timeout (${label})`));
     });
@@ -148,7 +176,7 @@ function sendCmdBatch(commands) {
     client.on("close", () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      inactivityTimer.clear();
       reject(new Error(`TCP connection closed before all replies were received (${replies.length}/${cleanCommands.length})`));
     });
 
@@ -235,6 +263,7 @@ module.exports = {
   buildVclear,
   parseVsearchReply,
   __testHooks: {
-    extractReplyLines
+    extractReplyLines,
+    createInactivityTimer
   }
 };

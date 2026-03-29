@@ -44,11 +44,39 @@ function testCodeTaskNormalization() {
   assert.equal(__testHooks.normalizeCodeTask("unknown-mode"), "general");
 }
 
+function testAskPromptRemainsSingleStringPrompt() {
+  const prompt = __testHooks.buildPrompt("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], "short");
+
+  assert.equal(typeof prompt, "string");
+  assert.match(prompt, /Question:\s*\nWhat does SupaVector store\?/);
+  assert.match(prompt, /Sources:\s*\nSOURCE default::cli-smoke::welcome#0/);
+}
+
+function testBooleanAskPromptRemainsSingleStringPrompt() {
+  const prompt = __testHooks.buildBooleanAskPrompt("Is SupaVector a database?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ]);
+
+  assert.equal(typeof prompt, "string");
+  assert.match(prompt, /Return exactly one lowercase answer token:/);
+  assert.match(prompt, /Question:\s*\nIs SupaVector a database\?/);
+}
+
 function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
   testPromptInjectionLinesAreStillRemoved();
   testBooleanAskAnswerNormalization();
   testCodeTaskNormalization();
+  testAskPromptRemainsSingleStringPrompt();
+  testBooleanAskPromptRemainsSingleStringPrompt();
   console.log("answer guard tests passed");
 }
 
