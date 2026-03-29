@@ -153,10 +153,14 @@ async function fetchJson(url, options = {}) {
 
 async function generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode = false }) {
   const client = getOpenAIClient(apiKey);
+  // Support input as { system, user } object or plain string
+  const resolvedInput = (input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined)
+    ? [{ role: "developer", content: input.system }, { role: "user", content: input.user }]
+    : input;
   const resp = await client.responses.create(buildResponsesCreateParams({
     provider: "openai",
     model,
-    input,
+    input: resolvedInput,
     temperature,
     ...(jsonMode ? { text: { format: { type: "json_object" } } } : {})
   }));
@@ -171,6 +175,16 @@ async function generateTextWithGemini({ model, input, apiKey, temperature, jsonM
   const generationConfig = {};
   if (temperature !== undefined) generationConfig.temperature = temperature;
   if (jsonMode) generationConfig.responseMimeType = "application/json";
+  // Support input as { system, user } object or plain string
+  const isStructured = input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined;
+  const body = {
+    contents: [{
+      role: "user",
+      parts: [{ text: isStructured ? String(input.user || "") : String(input || "") }]
+    }],
+    ...(isStructured ? { systemInstruction: { parts: [{ text: String(input.system || "") }] } } : {}),
+    ...(Object.keys(generationConfig).length ? { generationConfig } : {})
+  };
   const payload = await fetchJson(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(normalizeGeminiModelPath(model))}:generateContent`,
     {
@@ -179,13 +193,7 @@ async function generateTextWithGemini({ model, input, apiKey, temperature, jsonM
         "Content-Type": "application/json",
         "x-goog-api-key": key
       },
-      body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [{ text: String(input || "") }]
-        }],
-        ...(Object.keys(generationConfig).length ? { generationConfig } : {})
-      })
+      body: JSON.stringify(body)
     }
   );
   return {
@@ -194,8 +202,10 @@ async function generateTextWithGemini({ model, input, apiKey, temperature, jsonM
   };
 }
 
-async function generateTextWithAnthropic({ model, input, apiKey, temperature, maxTokens = 1024 }) {
+async function generateTextWithAnthropic({ model, input, apiKey, temperature, maxTokens = 4096 }) {
   const key = resolveProviderApiKey("anthropic", apiKey);
+  // Support input as { system, user } object or plain string
+  const isStructured = input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined;
   const payload = await fetchJson("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -206,9 +216,10 @@ async function generateTextWithAnthropic({ model, input, apiKey, temperature, ma
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
+      ...(isStructured ? { system: String(input.system || "") } : {}),
       messages: [{
         role: "user",
-        content: String(input || "")
+        content: isStructured ? String(input.user || "") : String(input || "")
       }],
       ...(temperature !== undefined ? { temperature } : {})
     })

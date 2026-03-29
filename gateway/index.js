@@ -4391,6 +4391,24 @@ function buildCodeRetrievalQuery(question, input = {}) {
   if (Array.isArray(input?.paths) && input.paths.length) parts.push(`paths ${input.paths.join(" ")}`);
   if (input?.errorMessage) parts.push(`error ${input.errorMessage}`);
   if (input?.stackTrace) parts.push(String(input.stackTrace).slice(0, 1200));
+  // For debug: extract file/function identifiers from stack trace for better retrieval
+  if (input?.task === "debug" && input?.stackTrace) {
+    const trace = String(input.stackTrace).slice(0, 2000);
+    const fileParts = [];
+    for (const match of trace.matchAll(/(?:at\s+\S+\s+\(|at\s+)([\w./\\-]+\.\w+):\d+/g)) {
+      const filePath = match[1];
+      if (filePath && !fileParts.includes(filePath)) fileParts.push(filePath);
+      if (fileParts.length >= 4) break;
+    }
+    if (fileParts.length) parts.push(`files ${fileParts.join(" ")}`);
+    const fnParts = [];
+    for (const match of trace.matchAll(/at\s+([\w$.<>]+)\s+\(/g)) {
+      const fn = match[1];
+      if (fn && fn !== "async" && fn !== "Object" && !fnParts.includes(fn)) fnParts.push(fn);
+      if (fnParts.length >= 3) break;
+    }
+    if (fnParts.length) parts.push(`functions ${fnParts.join(" ")}`);
+  }
   return parts.filter(Boolean).join("\n");
 }
 
@@ -4647,7 +4665,8 @@ async function buildCodeAnswerContext({
     constraints,
     context
   });
-  const retrievalK = Math.max(topK * 3, 12);
+  const complexTask = task === "debug" || task === "write";
+  const retrievalK = Math.max(topK * (complexTask ? 5 : 3), complexTask ? 20 : 12);
   const results = await searchChunks({
     tenantId,
     collection,
@@ -4995,7 +5014,7 @@ async function answerCodeQuestion({
   });
 
   const injectedMemoryIds = new Set();
-  const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateCodeAnswer(question, chunks, {
+  const { answer, citations, usage, answerLength: resolvedAnswerLength, answerConfidence } = await generateCodeAnswer(question, chunks, {
     apiKey: generationApiKey,
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
@@ -5073,7 +5092,8 @@ async function answerCodeQuestion({
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     files,
-    sourceSummary
+    sourceSummary,
+    answerConfidence: answerConfidence || "high"
   };
 }
 
@@ -9296,7 +9316,8 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       sourceSummary: result.sourceSummary,
       provider: result.provider,
       model: result.model,
-      k: input.k
+      k: input.k,
+      answerConfidence: result.answerConfidence || "high"
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "CODE_FAILED", tenantId, collection);
