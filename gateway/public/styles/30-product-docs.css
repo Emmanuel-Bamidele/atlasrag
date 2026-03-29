@@ -3654,6 +3654,108 @@ body.light-theme .product-story-panel:hover {
   }
 }
 
+@media (max-width: 760px) {
+  .doc-tabs,
+  .doc-route-tabs,
+  .settings-section-tabs,
+  .settings-provider-tabs,
+  .product-hosted-lang-tabs {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .doc-tabs::-webkit-scrollbar,
+  .doc-route-tabs::-webkit-scrollbar,
+  .settings-section-tabs::-webkit-scrollbar,
+  .settings-provider-tabs::-webkit-scrollbar,
+  .product-hosted-lang-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .doc-tabs .doc-tab,
+  .doc-route-tabs .doc-tab,
+  .settings-section-tabs .doc-tab,
+  .settings-provider-tabs .doc-tab,
+  .product-hosted-lang-tabs .doc-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .product-installer-shell .doc-tabs {
+    justify-content: flex-start;
+    padding: 12px 12px 0;
+  }
+
+  .product-installer-shell .doc-panels {
+    padding: 0 12px 12px;
+  }
+
+  .settings-surface-note .actions,
+  .product-showcase-actions,
+  .product-installer-footer,
+  .product-agents-actions,
+  .product-doc-bridge-links {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-surface-note .actions .btn,
+  .product-showcase-actions .btn,
+  .product-installer-footer .btn,
+  .product-agents-actions .btn,
+  .product-doc-bridge-links .btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .product-agents-card,
+  .product-qs-step {
+    text-align: center;
+  }
+
+  .product-hosted-code-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-hosted-code-block {
+    border-right: none;
+    border-bottom: 1px solid rgba(226,232,240,0.08);
+  }
+
+  .product-hosted-code-block:last-child {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 540px) {
+  .settings-surface-note,
+  .product-showcase,
+  .product-installer,
+  .product-agents,
+  .product-quickstart,
+  .product-opensource,
+  .product-story,
+  .product-trajectory,
+  .product-doc-bridge {
+    padding: 16px;
+  }
+
+  .product-trajectory-step,
+  .product-doc-link {
+    text-align: center;
+  }
+
+  .product-doc-link {
+    justify-content: center;
+    gap: 8px;
+  }
+}
+
 /* ============================================================
    REDUCED MOTION — NEW ANIMATIONS
    ============================================================ */
