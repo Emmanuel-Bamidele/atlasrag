@@ -15,7 +15,10 @@ const { embedProviderTexts } = require("./provider_clients");
 const DEFAULT_BATCH_SIZE = parseInt(process.env.EMBED_BATCH_SIZE || "64", 10);
 const FALLBACK_DIM = parseInt(process.env.EMBED_FALLBACK_DIM || "1536", 10);
 const EMBED_FALLBACK_ON_ERROR = process.env.EMBED_FALLBACK_ON_ERROR !== "0";
+const QUERY_EMBED_CACHE_TTL_MS = parseInt(process.env.QUERY_EMBED_CACHE_TTL_MS || "30000", 10);
+const QUERY_EMBED_CACHE_MAX_ITEMS = parseInt(process.env.QUERY_EMBED_CACHE_MAX_ITEMS || "256", 10);
 let fallbackWarned = false;
+const queryEmbeddingCache = new Map();
 const MODEL_FALLBACK_DIMS = Object.freeze({
   "text-embedding-3-large": 3072,
   "text-embedding-3-small": 1536,
@@ -118,6 +121,87 @@ function normalizeEmbedOptions(batchSizeOrOptions) {
   return {};
 }
 
+function normalizeQueryCacheText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hashApiKeyScope(apiKey) {
+  const clean = String(apiKey || "").trim();
+  if (!clean) return "env";
+  return crypto.createHash("sha256").update(clean).digest("hex").slice(0, 16);
+}
+
+function shouldUseQueryEmbeddingCache(texts, options = {}) {
+  const ttlMs = Number.isFinite(QUERY_EMBED_CACHE_TTL_MS) ? QUERY_EMBED_CACHE_TTL_MS : 0;
+  const maxItems = Number.isFinite(QUERY_EMBED_CACHE_MAX_ITEMS) ? QUERY_EMBED_CACHE_MAX_ITEMS : 0;
+  if (ttlMs <= 0 || maxItems <= 0) return false;
+  if (String(options?.taskType || "").trim() !== "RETRIEVAL_QUERY") return false;
+  if (!Array.isArray(texts) || texts.length !== 1) return false;
+  return Boolean(normalizeQueryCacheText(texts[0]));
+}
+
+function buildQueryEmbeddingCacheKey(text, options = {}) {
+  const provider = resolveEmbedProvider(options);
+  const model = resolveEmbedModel(options);
+  const normalizedText = normalizeQueryCacheText(text);
+  const apiKeyScope = hashApiKeyScope(options.apiKey);
+  return `${provider}::${model}::${apiKeyScope}::${normalizedText}`;
+}
+
+function cloneVector(vector) {
+  return Array.isArray(vector) ? vector.slice() : [];
+}
+
+function getQueryEmbeddingCacheEntry(key, now = Date.now()) {
+  const entry = queryEmbeddingCache.get(key);
+  if (!entry) return null;
+  if (!Number.isFinite(entry.expiresAt) || entry.expiresAt <= now) {
+    queryEmbeddingCache.delete(key);
+    return null;
+  }
+  queryEmbeddingCache.delete(key);
+  queryEmbeddingCache.set(key, entry);
+  return {
+    vector: cloneVector(entry.vector),
+    expiresAt: entry.expiresAt
+  };
+}
+
+function trimQueryEmbeddingCache(now = Date.now()) {
+  if (queryEmbeddingCache.size === 0) return;
+  for (const [key, entry] of queryEmbeddingCache.entries()) {
+    if (Number.isFinite(entry?.expiresAt) && entry.expiresAt > now) continue;
+    queryEmbeddingCache.delete(key);
+  }
+  const maxItems = Number.isFinite(QUERY_EMBED_CACHE_MAX_ITEMS) ? QUERY_EMBED_CACHE_MAX_ITEMS : 0;
+  if (maxItems <= 0) {
+    queryEmbeddingCache.clear();
+    return;
+  }
+  while (queryEmbeddingCache.size > maxItems) {
+    const oldestKey = queryEmbeddingCache.keys().next().value;
+    if (!oldestKey) break;
+    queryEmbeddingCache.delete(oldestKey);
+  }
+}
+
+function setQueryEmbeddingCacheEntry(key, vector, now = Date.now()) {
+  const ttlMs = Number.isFinite(QUERY_EMBED_CACHE_TTL_MS) ? QUERY_EMBED_CACHE_TTL_MS : 0;
+  if (!key || ttlMs <= 0) return;
+  queryEmbeddingCache.delete(key);
+  queryEmbeddingCache.set(key, {
+    vector: cloneVector(vector),
+    expiresAt: now + ttlMs
+  });
+  trimQueryEmbeddingCache(now);
+}
+
+function clearQueryEmbeddingCache() {
+  queryEmbeddingCache.clear();
+}
+
 async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
   const out = [];
   const usage = { prompt_tokens: 0, total_tokens: 0 };
@@ -130,6 +214,17 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
 
   for (let i = 0; i < list.length; i += safeBatch) {
     const slice = list.slice(i, i + safeBatch);
+    const useQueryCache = shouldUseQueryEmbeddingCache(slice, options);
+    const cacheKey = useQueryCache ? buildQueryEmbeddingCacheKey(slice[0], options) : null;
+    if (cacheKey) {
+      const cached = getQueryEmbeddingCacheEntry(cacheKey);
+      if (cached) {
+        out.push(cached.vector);
+        usage.cached = true;
+        usage.cached_hits = Number(usage.cached_hits || 0) + 1;
+        continue;
+      }
+    }
     try {
       const resp = await embedProviderTexts({
         provider: embedProvider,
@@ -139,6 +234,9 @@ async function embedTexts(texts, batchSizeOrOptions = DEFAULT_BATCH_SIZE) {
         taskType: options.taskType
       });
       out.push(...resp.vectors);
+      if (cacheKey && Array.isArray(resp.vectors) && resp.vectors[0]) {
+        setQueryEmbeddingCacheEntry(cacheKey, resp.vectors[0]);
+      }
       if (resp.usage) {
         usage.prompt_tokens += Number(resp.usage.prompt_tokens || 0);
         usage.total_tokens += Number(resp.usage.total_tokens || 0);
@@ -158,6 +256,12 @@ module.exports = {
   __testHooks: {
     resolveEmbedProvider,
     resolveEmbedModel,
-    resolveEmbedDimension
+    resolveEmbedDimension,
+    normalizeQueryCacheText,
+    shouldUseQueryEmbeddingCache,
+    buildQueryEmbeddingCacheKey,
+    getQueryEmbeddingCacheEntry,
+    setQueryEmbeddingCacheEntry,
+    clearQueryEmbeddingCache
   }
 };
