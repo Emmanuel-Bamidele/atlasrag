@@ -2534,6 +2534,12 @@ function buildChunkRows(docId, chunks) {
   }));
 }
 
+function isVectorCommandReplyOk(reply) {
+  const text = String(reply || "").trim();
+  if (!text) return false;
+  return !/^ERR\b/i.test(text);
+}
+
 async function runBatchedCommandSet(commands, options = {}) {
   const cleanCommands = Array.isArray(commands)
     ? commands.map((item) => String(item || "").trim()).filter(Boolean)
@@ -2552,7 +2558,10 @@ async function runBatchedCommandSet(commands, options = {}) {
     try {
       const replies = await runBatch(batch);
       for (let i = 0; i < batch.length; i += 1) {
-        results[offset + i] = { ok: true, reply: String(replies[i] || "") };
+        const reply = String(replies[i] || "");
+        results[offset + i] = isVectorCommandReplyOk(reply)
+          ? { ok: true, reply }
+          : { ok: false, reply, error: new Error(reply || "Vector command failed") };
       }
     } catch (err) {
       for (let i = 0; i < batch.length; i += 1) {
@@ -4941,6 +4950,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     answer,
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
+    supportingChunks: mapSupportingChunks(chunks),
     answerLength: resolvedAnswerLength || answerLength || "auto",
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model
@@ -9163,6 +9173,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answer: result.answer,
       citations: result.citations,
       chunksUsed: result.chunksUsed,
+      supportingChunks: result.supportingChunks,
       answerLength: result.answerLength,
       provider: result.provider,
       model: result.model,
@@ -10594,6 +10605,7 @@ module.exports = {
     resolveChunkingOptionsForSource,
     shouldReindexStoredVectors,
     splitIntoBatches,
+    isVectorCommandReplyOk,
     runBatchedCommandSet,
     normalizeTier,
     resolveTierThresholds,

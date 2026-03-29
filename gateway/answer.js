@@ -189,6 +189,15 @@ function fallbackFromChunks(chunks) {
   };
 }
 
+function isCanonicalUnknownAnswer(answer) {
+  const normalized = String(answer || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return normalized === "i don't know based on the provided sources."
+    || normalized === "i dont know based on the provided sources.";
+}
+
 function estimateTokenCountFromChars(charCount) {
   const chars = Number(charCount || 0);
   if (!Number.isFinite(chars) || chars <= 0) return 0;
@@ -480,6 +489,18 @@ async function generateAnswer(question, chunks, options = {}) {
   if (!citations.length) {
     citations = safeChunks.slice(0, 3).map((c) => c.chunk_id).filter(Boolean);
   }
+  if (isCanonicalUnknownAnswer(answer) && safeChunks.length) {
+    const fallback = fallbackFromChunks(safeChunks);
+    if (!isCanonicalUnknownAnswer(fallback.answer)) {
+      return {
+        ...fallback,
+        usage,
+        answerLength: effectiveAnswerLength,
+        provider: resolved.provider,
+        model: resolved.model
+      };
+    }
+  }
   if (!answer) {
     const fallback = fallbackFromChunks(safeChunks);
     return {
@@ -743,6 +764,8 @@ module.exports = {
     normalizeCodeTask,
     sanitizeChunkText,
     sanitizeChunks,
+    fallbackFromChunks,
+    isCanonicalUnknownAnswer,
     buildPrompt,
     buildBooleanAskPrompt,
     resolveAnswerProvider,

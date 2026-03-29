@@ -70,6 +70,24 @@ function testBooleanAskPromptRemainsSingleStringPrompt() {
   assert.match(prompt, /Question:\s*\nIs SupaVector a database\?/);
 }
 
+function testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText() {
+  const fallback = __testHooks.fallbackFromChunks([
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents. It can also retrieve grounded context."
+    }
+  ]);
+
+  assert.equal(__testHooks.isCanonicalUnknownAnswer(fallback.answer), false);
+  assert.match(fallback.answer, /SupaVector stores memory for agents/);
+}
+
+function testCanonicalUnknownDetectionMatchesExpectedForms() {
+  assert.equal(__testHooks.isCanonicalUnknownAnswer("I don't know based on the provided sources."), true);
+  assert.equal(__testHooks.isCanonicalUnknownAnswer("I dont know based on the provided sources."), true);
+  assert.equal(__testHooks.isCanonicalUnknownAnswer("SupaVector stores memory for agents."), false);
+}
+
 function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
   testPromptInjectionLinesAreStillRemoved();
@@ -77,6 +95,8 @@ function main() {
   testCodeTaskNormalization();
   testAskPromptRemainsSingleStringPrompt();
   testBooleanAskPromptRemainsSingleStringPrompt();
+  testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
+  testCanonicalUnknownDetectionMatchesExpectedForms();
   console.log("answer guard tests passed");
 }
 

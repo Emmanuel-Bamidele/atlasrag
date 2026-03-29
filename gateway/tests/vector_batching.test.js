@@ -14,6 +14,13 @@ function testSplitIntoBatches() {
   assert.deepEqual(batches, [[1, 2], [3, 4], [5]]);
 }
 
+function testVectorReplyClassification() {
+  assert.equal(__testHooks.isVectorCommandReplyOk("OK updated"), true);
+  assert.equal(__testHooks.isVectorCommandReplyOk("1"), true);
+  assert.equal(__testHooks.isVectorCommandReplyOk("ERR bad command"), false);
+  assert.equal(__testHooks.isVectorCommandReplyOk(""), false);
+}
+
 async function testRunBatchedCommandSetPreservesOrder() {
   let active = 0;
   let maxActive = 0;
@@ -68,10 +75,28 @@ async function testRunBatchedCommandSetMarksBatchFailures() {
   assert.match(String(results[2].error?.message || ""), /boom/);
 }
 
+async function testRunBatchedCommandSetMarksErrRepliesAsFailures() {
+  const results = await __testHooks.runBatchedCommandSet(
+    ["a", "b", "c"],
+    {
+      batchSize: 3,
+      concurrency: 1,
+      runBatch: async () => ["OK updated", "ERR bad command", "1"]
+    }
+  );
+
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, false);
+  assert.match(String(results[1].reply || ""), /ERR bad command/);
+  assert.equal(results[2].ok, true);
+}
+
 async function main() {
   testSplitIntoBatches();
+  testVectorReplyClassification();
   await testRunBatchedCommandSetPreservesOrder();
   await testRunBatchedCommandSetMarksBatchFailures();
+  await testRunBatchedCommandSetMarksErrRepliesAsFailures();
   console.log("vector batching tests passed");
 }
 
