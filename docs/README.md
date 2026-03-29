@@ -17,6 +17,7 @@ If you are not sure which guide to open first, use this table.
 | Use a shared SupaVector deployment with your own provider key | SupaVector keeps the shared Postgres/auth/runtime, but each request should use your provider key | [`agents.md#shared-provider-key`](agents.md#shared-provider-key) |
 | Keep your own product auth and place SupaVector behind your backend | End users should not log into SupaVector directly | [`agents.md#backend-as-caller`](agents.md#backend-as-caller) |
 | Use SupaVector mainly as a human admin or browser UI | You are managing tenant settings, keys, or interactive sessions | [`agents.md#human-jwt`](agents.md#human-jwt) |
+| Compare hosted, OSS, and Agent Brain cost patterns | You want to understand where cost comes from and why retrieval-first and memory-backed flows are usually cheaper than traditional prompt stuffing | [`cost.md`](cost.md) |
 
 ## Reading Order
 
@@ -32,11 +33,14 @@ If you are not sure which guide to open first, use this table.
    Use this if you already have Postgres, secret management, and your own deployment conventions.
 6. [`agents.md`](agents.md)
    Use this if you are integrating SupaVector into an app backend, worker, or AI agent runtime.
+7. [`cost.md`](cost.md)
+   Use this if you want a cost-oriented comparison of hosted, OSS, Agent Brain, and traditional DIY approaches.
 
 Short version:
 
 - Human admins log in with username/password or SSO.
 - Enterprise teams that need tenant-scoped SSO and rollout guidance should read [`enterprise.md`](enterprise.md).
+- Cost and affordability analysis lives in [`cost.md`](cost.md).
 - Apps, backends, workers, and agents should use a service token.
 - Bootstrap once, then store `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` in your runtime environment.
 - `/v1/docs` stays text-first by default. Direct callers can opt into code-aware chunking per document by sending `"sourceType":"code"` with actual source code payloads.
