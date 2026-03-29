@@ -7,10 +7,10 @@ const net = require("net");
 
 const { embedTexts, resolveEmbedDimension } = require("./ai");
 const { chunkText } = require("./chunk");
-const { sendCmd, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
+const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
-  saveChunk,
+  saveChunks,
   getChunksByDocIds,
   searchChunksLexical,
   getChunksByDocId,
@@ -367,6 +367,8 @@ const TTL_SWEEP_ENABLED = process.env.TTL_SWEEP_ENABLED !== "0";
 const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300000", 10);
 const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
 const STORAGE_BILLING_ACCRUAL_INTERVAL_MS = parseInt(process.env.STORAGE_BILLING_ACCRUAL_INTERVAL_MS || "3600000", 10);
+const STORAGE_USAGE_SYNC_DEBOUNCE_MS = parseInt(process.env.STORAGE_USAGE_SYNC_DEBOUNCE_MS || "5000", 10);
+const DOCS_BULK_MAX_ITEMS = parseInt(process.env.DOCS_BULK_MAX_ITEMS || "25", 10);
 const JOB_MAX_ATTEMPTS = parseInt(process.env.JOB_MAX_ATTEMPTS || "3", 10);
 const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
 const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
@@ -428,6 +430,7 @@ let redundancyRunning = false;
 let lifecycleRunning = false;
 let memorySnapshotRunning = false;
 let memoryEventFlushRunning = false;
+const storageUsageSyncQueue = new Map();
 const redundancyPending = new Set();
 const memoryEventQueue = [];
 const FETCH_USER_AGENT = process.env.FETCH_USER_AGENT
@@ -455,6 +458,11 @@ const HYBRID_LEXICAL_MULTIPLIER = parseInt(process.env.HYBRID_LEXICAL_MULTIPLIER
 const HYBRID_LEXICAL_CAP = parseInt(process.env.HYBRID_LEXICAL_CAP || "120", 10);
 const HYBRID_RERANK_OVERLAP_BOOST = parseFloat(process.env.HYBRID_RERANK_OVERLAP_BOOST || "0.12");
 const HYBRID_RERANK_EXACT_BOOST = parseFloat(process.env.HYBRID_RERANK_EXACT_BOOST || "0.08");
+const CHUNK_UPSERT_BATCH_SIZE = 128;
+const VECTOR_WRITE_BATCH_SIZE = 8;
+const VECTOR_WRITE_BATCH_CONCURRENCY = 2;
+const VECTOR_DELETE_BATCH_SIZE = 128;
+const VECTOR_DELETE_BATCH_CONCURRENCY = 2;
 const SSO_PROVIDERS = ["google", "azure", "okta"];
 const ROLE_DEFAULT = "reader";
 const ROLE_ALIASES = new Map([
@@ -988,6 +996,94 @@ function parseDocumentSourceInput(body = {}, { defaultType = "text", defaultUrl 
     metadata: metadata === undefined ? null : metadata,
     sourceType: normalizeDocumentSourceType(body?.sourceType ?? body?.source_type, defaultType),
     sourceUrl
+  };
+}
+
+function parseBulkDocumentsInput(body = {}) {
+  const documents = Array.isArray(body?.documents)
+    ? body.documents
+    : (Array.isArray(body?.items) ? body.items : null);
+  if (!documents) {
+    throw new Error("documents array is required");
+  }
+  if (!documents.length) {
+    throw new Error("documents array cannot be empty");
+  }
+  if (documents.length > DOCS_BULK_MAX_ITEMS) {
+    throw new Error(`documents array too large (max ${DOCS_BULK_MAX_ITEMS})`);
+  }
+  for (const document of documents) {
+    if (!document || typeof document !== "object" || Array.isArray(document)) {
+      throw new Error("each bulk document must be an object");
+    }
+  }
+  return documents;
+}
+
+function buildBulkDocumentFailure(index, body, err, tenantId, collection) {
+  const cleanDocId = String(body?.docId || "").trim() || null;
+  const errorPayload = buildErrorPayload(err, err?.code || "INDEX_FAILED", tenantId, collection).error;
+  return {
+    index,
+    ok: false,
+    docId: cleanDocId,
+    error: errorPayload
+  };
+}
+
+async function indexDocumentRequestBody({
+  tenantId,
+  collection,
+  principalId,
+  embedConfig,
+  body = {},
+  telemetrySource = "docs_index_v1",
+  requestId = null
+}) {
+  const { docId, text } = body || {};
+  const cleanDocId = String(docId || "").trim();
+  if (!cleanDocId || !text) {
+    const err = new Error("docId and text required");
+    err.code = "INVALID_INPUT";
+    throw err;
+  }
+  if (!isValidDocId(cleanDocId)) {
+    const err = new Error("docId must use only letters, numbers, dot, dash, or underscore (no spaces)");
+    err.code = "INVALID_DOC_ID";
+    throw err;
+  }
+  const agentId = normalizeAgentId(body?.agentId ?? body?.agent_id);
+  const tags = parseTagsInput(body?.tags);
+  const sourceInput = parseDocumentSourceInput(body, { defaultType: "text" });
+  const expiresAt = resolveExpiresAt(body);
+  const { chunksIndexed, truncated } = await indexDocument(
+    tenantId,
+    collection,
+    cleanDocId,
+    text,
+    {
+      type: sourceInput.sourceType,
+      title: sourceInput.title,
+      metadata: sourceInput.metadata,
+      url: sourceInput.sourceUrl,
+      expiresAt,
+      principalId,
+      agentId,
+      tags,
+      visibility: body?.visibility,
+      acl: body?.acl
+    },
+    {
+      apiKey: embedConfig.apiKey,
+      embedProvider: embedConfig.embedProvider,
+      embedModel: embedConfig.embedModel,
+      telemetry: buildTelemetryContext({ requestId, tenantId, collection, source: telemetrySource })
+    }
+  );
+  return {
+    docId: cleanDocId,
+    chunksIndexed,
+    truncated
   };
 }
 
@@ -2001,6 +2097,136 @@ async function syncStorageUsageMeter(tenantId, telemetryContext, metadata) {
   });
 }
 
+function normalizeQueuedStorageSyncMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  return { ...metadata };
+}
+
+function getOrCreateQueuedStorageUsageEntry(tenantId) {
+  const key = String(tenantId || "").trim();
+  let entry = storageUsageSyncQueue.get(key) || null;
+  if (!entry) {
+    entry = {
+      tenantId: key,
+      timer: null,
+      running: false,
+      pending: false,
+      count: 0,
+      lastRequestId: null,
+      lastCollection: null,
+      lastSource: null,
+      collections: new Set(),
+      sources: new Set(),
+      lastMetadata: null
+    };
+    storageUsageSyncQueue.set(key, entry);
+  }
+  return entry;
+}
+
+function clearQueuedStorageUsageTimer(entry) {
+  if (!entry?.timer) return;
+  clearTimeout(entry.timer);
+  entry.timer = null;
+}
+
+function mergeQueuedStorageUsageRequest(entry, telemetryContext, metadata) {
+  entry.pending = true;
+  entry.count += 1;
+  const requestId = String(telemetryContext?.requestId || "").trim();
+  const collection = String(telemetryContext?.collection || "").trim();
+  const source = String(telemetryContext?.source || "").trim();
+  if (requestId) entry.lastRequestId = requestId;
+  if (collection) {
+    entry.lastCollection = collection;
+    entry.collections.add(collection);
+  }
+  if (source) {
+    entry.lastSource = source;
+    entry.sources.add(source);
+  }
+  entry.lastMetadata = normalizeQueuedStorageSyncMetadata(metadata);
+}
+
+function buildQueuedStorageUsageMetadata(entry) {
+  const metadata = entry.lastMetadata ? { ...entry.lastMetadata } : {};
+  metadata.debounced = true;
+  metadata.debounceCount = entry.count;
+  if (entry.sources.size > 1) {
+    metadata.sources = Array.from(entry.sources).slice(0, 8);
+  }
+  if (entry.collections.size > 1) {
+    metadata.collections = Array.from(entry.collections).slice(0, 8);
+  }
+  return metadata;
+}
+
+function scheduleQueuedStorageUsageFlush(entry, delayMs = STORAGE_USAGE_SYNC_DEBOUNCE_MS) {
+  clearQueuedStorageUsageTimer(entry);
+  entry.timer = setTimeout(() => {
+    flushQueuedStorageUsage(entry.tenantId).catch((err) => {
+      console.warn(`[storage] queued usage sync failed tenant=${entry.tenantId}:`, err.message);
+    });
+  }, Math.max(0, delayMs));
+  if (typeof entry.timer.unref === "function") entry.timer.unref();
+}
+
+async function flushQueuedStorageUsage(tenantId) {
+  const entry = storageUsageSyncQueue.get(String(tenantId || "").trim());
+  if (!entry) return null;
+  clearQueuedStorageUsageTimer(entry);
+  if (entry.running) return null;
+  if (!entry.pending) {
+    storageUsageSyncQueue.delete(entry.tenantId);
+    return null;
+  }
+
+  entry.running = true;
+  const runContext = {
+    requestId: entry.lastRequestId,
+    collection: entry.collections.size === 1 ? entry.lastCollection : null,
+    source: entry.sources.size === 1
+      ? (entry.lastSource || "storage_sync")
+      : "storage_sync_debounce"
+  };
+  const runMetadata = buildQueuedStorageUsageMetadata(entry);
+  entry.pending = false;
+  entry.count = 0;
+  entry.collections = new Set();
+  entry.sources = new Set();
+  entry.lastRequestId = null;
+  entry.lastCollection = null;
+  entry.lastSource = null;
+  entry.lastMetadata = null;
+
+  try {
+    return await syncStorageUsageMeter(entry.tenantId, runContext, runMetadata);
+  } finally {
+    entry.running = false;
+    if (entry.pending) {
+      scheduleQueuedStorageUsageFlush(entry, 0);
+    } else {
+      storageUsageSyncQueue.delete(entry.tenantId);
+    }
+  }
+}
+
+function scheduleStorageUsageMeter(tenantId, telemetryContext, metadata) {
+  if (!tenantId) return null;
+  if (STORAGE_USAGE_SYNC_DEBOUNCE_MS <= 0) {
+    syncStorageUsageMeter(tenantId, telemetryContext, metadata).catch((err) => {
+      console.warn(`[storage] usage sync failed tenant=${tenantId}:`, err.message);
+    });
+    return null;
+  }
+  const entry = getOrCreateQueuedStorageUsageEntry(tenantId);
+  mergeQueuedStorageUsageRequest(entry, telemetryContext, metadata);
+  if (!entry.running) {
+    scheduleQueuedStorageUsageFlush(entry);
+  }
+  return null;
+}
+
 function buildStorageBillingPeriodDetails(period, options = {}) {
   if (!period?.period_start || !period?.period_end) return null;
   const currentBytes = options.closed
@@ -2253,6 +2479,97 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function clampPositiveInt(value, fallback, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return fallback;
+  }
+  const clean = Math.floor(numeric);
+  if (Number.isFinite(max) && max > 0) {
+    return Math.min(clean, max);
+  }
+  return clean;
+}
+
+function splitIntoBatches(items, size) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const batchSize = clampPositiveInt(size, items.length, 1024);
+  const batches = [];
+  for (let offset = 0; offset < items.length; offset += batchSize) {
+    batches.push(items.slice(offset, offset + batchSize));
+  }
+  return batches;
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const concurrency = clampPositiveInt(limit, 1, items.length);
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function runner() {
+    while (true) {
+      const current = cursor;
+      cursor += 1;
+      if (current >= items.length) return;
+      results[current] = await worker(items[current], current);
+    }
+  }
+
+  const runners = [];
+  for (let i = 0; i < concurrency; i += 1) {
+    runners.push(runner());
+  }
+  await Promise.all(runners);
+  return results;
+}
+
+function buildChunkRows(docId, chunks) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return [];
+  return chunks.map((chunk, idx) => ({
+    chunkId: chunk.chunkId,
+    docId,
+    idx,
+    text: chunk.text
+  }));
+}
+
+async function runBatchedCommandSet(commands, options = {}) {
+  const cleanCommands = Array.isArray(commands)
+    ? commands.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+
+  if (!cleanCommands.length) return [];
+
+  const batchSize = clampPositiveInt(options.batchSize, VECTOR_WRITE_BATCH_SIZE, 1024);
+  const concurrency = clampPositiveInt(options.concurrency, 1, 32);
+  const runBatch = typeof options.runBatch === "function" ? options.runBatch : sendCmdBatch;
+  const batches = splitIntoBatches(cleanCommands, batchSize)
+    .map((batch, batchIndex) => ({ batch, offset: batchIndex * batchSize }));
+  const results = new Array(cleanCommands.length);
+
+  await mapWithConcurrency(batches, concurrency, async ({ batch, offset }) => {
+    try {
+      const replies = await runBatch(batch);
+      for (let i = 0; i < batch.length; i += 1) {
+        results[offset + i] = { ok: true, reply: String(replies[i] || "") };
+      }
+    } catch (err) {
+      for (let i = 0; i < batch.length; i += 1) {
+        results[offset + i] = { ok: false, error: err };
+      }
+    }
+  });
+
+  return results;
+}
+
+function countFailedBatchCommands(results) {
+  return Array.isArray(results)
+    ? results.reduce((total, item) => total + (item?.ok ? 0 : 1), 0)
+    : 0;
+}
+
 function normalizeReindexMode(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw || raw === "auto") return "auto";
@@ -2328,11 +2645,14 @@ async function reindexChunkBatch(rows) {
   if (!rows.length) return;
   const texts = rows.map(r => r.text);
   const { vectors } = await embedTexts(texts);
-
-  for (let i = 0; i < rows.length; i += 1) {
-    const chunkId = rows[i].chunk_id;
-    const cmd = buildVset(chunkId, vectors[i]);
-    await sendCmd(cmd);
+  const commands = rows.map((row, index) => buildVset(row.chunk_id, vectors[index]));
+  const results = await runBatchedCommandSet(commands, {
+    batchSize: VECTOR_WRITE_BATCH_SIZE,
+    concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
+  });
+  const failed = countFailedBatchCommands(results);
+  if (failed > 0) {
+    throw new Error(`Failed to reindex ${failed} vector(s)`);
   }
 }
 
@@ -3574,29 +3894,27 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
   if (cleanup.failed > 0) {
     throw new Error(`Failed to replace existing vectors for doc ${docId}`);
   }
+  const chunkRows = buildChunkRows(activeNamespaceId, chunks);
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunkId = chunks[i].chunkId;
-    const chunkTxt = chunks[i].text;
+  await saveChunks(chunkRows, { batchSize: CHUNK_UPSERT_BATCH_SIZE });
 
-    // Save chunk text persistently
-    await saveChunk({
-      chunkId,
-      docId: activeNamespaceId,
-      idx: i,
-      text: chunkTxt
-    });
-
-    // Store embedding in C++ vector DB
-    const cmd = buildVset(chunkId, vectors[i]);
-    const vsetStart = Date.now();
-    await sendCmd(cmd);
-    if (DEBUG_INDEX) {
-      logIndex(`vset ${i + 1}/${chunks.length} chunkId=${chunkId} ms=${Date.now() - vsetStart}`);
+  const vsetStart = Date.now();
+  const vectorResults = await runBatchedCommandSet(
+    chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
+    {
+      batchSize: VECTOR_WRITE_BATCH_SIZE,
+      concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
     }
+  );
+  const failedWrites = countFailedBatchCommands(vectorResults);
+  if (failedWrites > 0) {
+    throw new Error(`Failed to store ${failedWrites} vector(s) for doc ${docId}`);
+  }
+  if (DEBUG_INDEX) {
+    logIndex(`vset ${chunks.length}/${chunks.length} docId=${docId} ms=${Date.now() - vsetStart}`);
   }
 
-  await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+  scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
     tenantId,
     collection,
@@ -4896,23 +5214,23 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   if (cleanup.failed > 0) {
     throw new Error(`Failed to replace existing vectors for memory namespace ${namespaceId}`);
   }
+  const chunkRows = buildChunkRows(namespaceId, chunks);
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunkId = chunks[i].chunkId;
-    const chunkTxt = chunks[i].text;
+  await saveChunks(chunkRows, { batchSize: CHUNK_UPSERT_BATCH_SIZE });
 
-    await saveChunk({
-      chunkId,
-      docId: namespaceId,
-      idx: i,
-      text: chunkTxt
-    });
-
-    const cmd = buildVset(chunkId, vectors[i]);
-    await sendCmd(cmd);
+  const vectorResults = await runBatchedCommandSet(
+    chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
+    {
+      batchSize: VECTOR_WRITE_BATCH_SIZE,
+      concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
+    }
+  );
+  const failedWrites = countFailedBatchCommands(vectorResults);
+  if (failedWrites > 0) {
+    throw new Error(`Failed to store ${failedWrites} vector(s) for memory namespace ${namespaceId}`);
   }
 
-  await syncStorageUsageMeter(parsed?.tenantId, buildTelemetryContext({
+  scheduleStorageUsageMeter(parsed?.tenantId, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
     tenantId: parsed?.tenantId,
     collection: parsed?.collection || null,
@@ -4949,16 +5267,15 @@ function scheduleRedundancyUpdate(item) {
 async function deleteVectorsForDoc(namespaceId, options = {}) {
   const strict = options.strict === true;
   const rows = await getChunksByDocId(namespaceId);
-  let deleted = 0;
-  let failed = 0;
-  for (const row of rows) {
-    try {
-      await sendCmd(buildVdel(row.chunk_id));
-      deleted += 1;
-    } catch {
-      failed += 1;
+  const results = await runBatchedCommandSet(
+    rows.map((row) => buildVdel(row.chunk_id)),
+    {
+      batchSize: VECTOR_DELETE_BATCH_SIZE,
+      concurrency: VECTOR_DELETE_BATCH_CONCURRENCY
     }
-  }
+  );
+  const deleted = results.reduce((total, item) => total + (item?.ok ? 1 : 0), 0);
+  const failed = countFailedBatchCommands(results);
   if (strict && failed > 0) {
     return { deleted, failed, removedDoc: false };
   }
@@ -5692,7 +6009,7 @@ async function runDeleteReconcileJob(jobId, tenantId) {
       await deleteMemoryItemById(memoryId);
       dbDeleted = 1;
     }
-    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
       requestId: `job:${jobId}`,
       tenantId,
       collection: input.collection || memory?.collection || null,
@@ -5760,7 +6077,7 @@ async function deleteMemoryItemFully(item, options = {}) {
     };
   }
   await deleteMemoryItemById(item.id);
-  await syncStorageUsageMeter(item.tenant_id, buildTelemetryContext({
+  scheduleStorageUsageMeter(item.tenant_id, buildTelemetryContext({
     requestId: options.requestId || null,
     tenantId: item.tenant_id,
     collection: item.collection || null,
@@ -8268,7 +8585,7 @@ app.delete("/collections/:collection", requireJwt, requireAdmin, async (req, res
       throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
-    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
       requestId: req.requestId,
       tenantId,
       collection,
@@ -8331,7 +8648,7 @@ app.delete("/v1/collections/:collection", requireJwt, requireAdmin, async (req, 
       throw new Error(`Failed to delete ${failedVectors} vectors while deleting collection ${collection}`);
     }
     const deletedMemoryItems = await deleteMemoryItemsByCollection(tenantId, collection);
-    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
       requestId: req.requestId,
       tenantId,
       collection,
@@ -8447,32 +8764,15 @@ app.post("/docs", requireJwt, requireRole("indexer"), async (req, res) => {
 });
 
 app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
-  const { docId, text } = req.body || {};
-
-  const cleanDocId = String(docId || "").trim();
-
-  if (!cleanDocId || !text) {
-    return res.status(400).json(buildErrorPayload("docId and text required", "INVALID_INPUT", null, null));
-  }
-  if (!isValidDocId(cleanDocId)) {
-    return res.status(400).json(buildErrorPayload("docId must use only letters, numbers, dot, dash, or underscore (no spaces)", "INVALID_DOC_ID", null, null));
-  }
-
   let tenantId = null;
   let collection = null;
   let principalId = null;
-  let agentId = null;
-  let tags = [];
   let embedConfig = null;
-  let sourceInput = null;
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
     embedConfig = await getRequestEmbeddingConfig(req, tenantId);
-    agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
-    tags = parseTagsInput(req.body?.tags);
-    sourceInput = parseDocumentSourceInput(req.body, { defaultType: "text" });
   } catch (e) {
     return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
   }
@@ -8486,41 +8786,90 @@ app.post("/v1/docs", requireJwt, requireRole("indexer"), async (req, res) => {
     endpoint: "v1/docs",
     handler: async () => {
       try {
-        const expiresAt = resolveExpiresAt(req.body);
-        const { chunksIndexed, truncated } = await indexDocument(
+        const indexed = await indexDocumentRequestBody({
           tenantId,
           collection,
-          cleanDocId,
-          text,
-          {
-            type: sourceInput.sourceType,
-            title: sourceInput.title,
-            metadata: sourceInput.metadata,
-            url: sourceInput.sourceUrl,
-            expiresAt,
-            principalId,
-            agentId,
-            tags,
-            visibility: req.body?.visibility,
-            acl: req.body?.acl
-          },
-          {
-            apiKey: embedConfig.apiKey,
-            embedProvider: embedConfig.embedProvider,
-            embedModel: embedConfig.embedModel,
-            telemetry: buildTelemetryContext({ requestId: req.requestId, tenantId, collection, source: "docs_index_v1" })
-          }
-        );
+          principalId,
+          embedConfig,
+          body: req.body,
+          telemetrySource: "docs_index_v1",
+          requestId: req.requestId
+        });
         return {
           status: 200,
-          payload: buildOkPayload({ docId: cleanDocId, chunksIndexed, truncated }, tenantId, collection)
+          payload: buildOkPayload(indexed, tenantId, collection)
         };
       } catch (e) {
         return {
           status: 400,
-          payload: buildErrorPayload(e, "INDEX_FAILED", tenantId, collection)
+          payload: buildErrorPayload(e, e?.code || "INDEX_FAILED", tenantId, collection)
         };
       }
+    }
+  });
+});
+
+app.post("/v1/docs/bulk", requireJwt, requireRole("indexer"), async (req, res) => {
+  let tenantId = null;
+  let collection = null;
+  let principalId = null;
+  let embedConfig = null;
+  let documents = null;
+  try {
+    tenantId = resolveTenantId(req);
+    collection = resolveCollection(req);
+    principalId = resolvePrincipalId(req);
+    embedConfig = await getRequestEmbeddingConfig(req, tenantId);
+    documents = parseBulkDocumentsInput(req.body);
+  } catch (e) {
+    return res.status(400).json(buildErrorPayload(String(e.message || e), "INVALID_INPUT", null, null));
+  }
+
+  return handleIdempotentRequest({
+    req,
+    res,
+    tenantId,
+    collection,
+    principalId,
+    endpoint: "v1/docs/bulk",
+    handler: async () => {
+      const results = [];
+      let succeeded = 0;
+      let failed = 0;
+      for (let index = 0; index < documents.length; index += 1) {
+        const document = documents[index];
+        try {
+          const indexed = await indexDocumentRequestBody({
+            tenantId,
+            collection,
+            principalId,
+            embedConfig,
+            body: document,
+            telemetrySource: "docs_bulk_index_v1",
+            requestId: req.requestId ? `${req.requestId}:${index}` : null
+          });
+          results.push({
+            index,
+            ok: true,
+            ...indexed
+          });
+          succeeded += 1;
+        } catch (err) {
+          results.push(buildBulkDocumentFailure(index, document, err, tenantId, collection));
+          failed += 1;
+        }
+      }
+      return {
+        status: 200,
+        payload: buildOkPayload({
+          results,
+          summary: {
+            total: documents.length,
+            succeeded,
+            failed
+          }
+        }, tenantId, collection)
+      };
     }
   });
 });
@@ -9123,7 +9472,7 @@ app.delete("/docs/:docId", requireJwt, requireRole("indexer"), async (req, res) 
       await deleteMemoryItemByNamespaceId(legacy);
     }
   }
-  await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+  scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
     requestId: req.requestId,
     tenantId,
     collection,
@@ -9189,7 +9538,7 @@ app.delete("/v1/docs/:docId", requireJwt, requireRole("indexer"), async (req, re
         await deleteMemoryItemByNamespaceId(legacy);
       }
     }
-    await syncStorageUsageMeter(tenantId, buildTelemetryContext({
+    scheduleStorageUsageMeter(tenantId, buildTelemetryContext({
       requestId: req.requestId,
       tenantId,
       collection,
@@ -10223,6 +10572,8 @@ module.exports = {
     resolveMemoryPolicyConfig,
     resolveChunkingOptionsForSource,
     shouldReindexStoredVectors,
+    splitIntoBatches,
+    runBatchedCommandSet,
     normalizeTier,
     resolveTierThresholds,
     resolveTierForValue,

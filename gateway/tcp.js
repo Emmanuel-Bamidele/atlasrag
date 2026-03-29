@@ -16,6 +16,25 @@ const TCP_HOST = process.env.TCP_HOST || "redis";
 const TCP_PORT = parseInt(process.env.TCP_PORT || "6379", 10);
 const TCP_TIMEOUT_MS = parseInt(process.env.TCP_TIMEOUT_MS || "8000", 10);
 
+function extractReplyLines(buffer) {
+  let remaining = String(buffer || "");
+  const lines = [];
+
+  while (true) {
+    const newlineIndex = remaining.indexOf("\n");
+    if (newlineIndex === -1) break;
+    let line = remaining.slice(0, newlineIndex);
+    remaining = remaining.slice(newlineIndex + 1);
+    if (line.endsWith("\r")) {
+      line = line.slice(0, -1);
+    }
+    if (!line) continue;
+    lines.push(line.trim());
+  }
+
+  return { lines, remainder: remaining };
+}
+
 // sendCmd sends ONE command and returns ONE line reply
 function sendCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -34,6 +53,7 @@ function sendCmd(cmd) {
     let data = "";
 
     client.connect(TCP_PORT, TCP_HOST, () => {
+      client.setNoDelay(true);
       client.write(cmd.trim() + "\n");
     });
 
@@ -63,6 +83,75 @@ function sendCmd(cmd) {
       client.destroy();
       reject(new Error(`TCP command timeout (${label})`));
     });
+    client.setTimeout(timeoutMs);
+  });
+}
+
+function sendCmdBatch(commands) {
+  const cleanCommands = Array.isArray(commands)
+    ? commands.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+
+  if (!cleanCommands.length) return Promise.resolve([]);
+
+  return new Promise((resolve, reject) => {
+    const client = new net.Socket();
+    let settled = false;
+    let pending = "";
+    const replies = [];
+    const timeoutMs = Number.isFinite(TCP_TIMEOUT_MS) && TCP_TIMEOUT_MS > 0 ? TCP_TIMEOUT_MS : 8000;
+    const label = `batch ${cleanCommands.length}`;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      client.destroy();
+      reject(new Error(`TCP command timeout (${label})`));
+    }, timeoutMs);
+
+    client.connect(TCP_PORT, TCP_HOST, () => {
+      client.setNoDelay(true);
+      client.write(cleanCommands.join("\n") + "\n");
+    });
+
+    client.on("data", (chunk) => {
+      pending += chunk.toString();
+      const parsed = extractReplyLines(pending);
+      pending = parsed.remainder;
+      for (const line of parsed.lines) {
+        replies.push(line);
+        if (replies.length >= cleanCommands.length) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          client.destroy();
+          resolve(replies.slice(0, cleanCommands.length));
+          return;
+        }
+      }
+    });
+
+    client.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    client.on("timeout", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      client.destroy();
+      reject(new Error(`TCP command timeout (${label})`));
+    });
+
+    client.on("close", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`TCP connection closed before all replies were received (${replies.length}/${cleanCommands.length})`));
+    });
+
     client.setTimeout(timeoutMs);
   });
 }
@@ -138,10 +227,14 @@ function parseVsearchReply(line) {
 
 module.exports = {
   sendCmd,
+  sendCmdBatch,
   buildVset,
   buildVsearch,
   buildVsearchIn,
   buildVdel,
   buildVclear,
-  parseVsearchReply
+  parseVsearchReply,
+  __testHooks: {
+    extractReplyLines
+  }
 };

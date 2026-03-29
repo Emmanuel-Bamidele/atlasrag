@@ -78,6 +78,34 @@ async function saveChunk({ chunkId, docId, idx, text }) {
   );
 }
 
+async function saveChunks(chunks, options = {}) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return;
+  const requestedBatchSize = Number(options?.batchSize);
+  const batchSize = Number.isFinite(requestedBatchSize) && requestedBatchSize > 0
+    ? Math.min(Math.floor(requestedBatchSize), 512)
+    : 128;
+
+  for (let offset = 0; offset < chunks.length; offset += batchSize) {
+    const batch = chunks.slice(offset, offset + batchSize);
+    await pool.query(
+      `INSERT INTO chunks(chunk_id, doc_id, idx, text)
+       SELECT *
+       FROM UNNEST($1::text[], $2::text[], $3::int[], $4::text[])
+         AS t(chunk_id, doc_id, idx, text)
+       ON CONFLICT (chunk_id) DO UPDATE
+       SET doc_id = EXCLUDED.doc_id,
+           idx    = EXCLUDED.idx,
+           text   = EXCLUDED.text`,
+      [
+        batch.map((item) => item.chunkId),
+        batch.map((item) => item.docId),
+        batch.map((item) => item.idx),
+        batch.map((item) => item.text)
+      ]
+    );
+  }
+}
+
 // Get many chunks by ids (returns a Map)
 async function getChunksByIds(ids) {
   if (!ids || ids.length === 0) return new Map();
@@ -2845,6 +2873,7 @@ async function runMigrations() {
 
 module.exports = {
   saveChunk,
+  saveChunks,
   getChunksByIds,
   searchChunksLexical,
   getChunksByDocId,
