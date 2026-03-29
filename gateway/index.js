@@ -985,6 +985,195 @@ function normalizeDocumentSourceType(raw, fallback = "text") {
   return clean.toLowerCase();
 }
 
+function pushUniqueCodeValue(target, raw, maxItems = 24, maxLength = 120) {
+  if (!Array.isArray(target) || target.length >= maxItems) return;
+  const clean = String(raw || "").trim();
+  if (!clean || clean.length > maxLength) return;
+  const key = clean.toLowerCase();
+  if (target.some((value) => String(value || "").trim().toLowerCase() === key)) return;
+  target.push(clean);
+}
+
+function normalizeCodeMetadataList(values, { maxItems = 24, maxItemLength = 120 } = {}) {
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    pushUniqueCodeValue(out, value, maxItems, maxItemLength);
+  }
+  return out;
+}
+
+function inferCodeLanguageFromMetadata(metadata = {}, fallbackPath = "") {
+  const explicit = parseOptionalString(metadata?.language ?? metadata?.lang, {
+    label: "metadata.language",
+    max: 80
+  });
+  if (explicit) return explicit.toLowerCase();
+  const pathname = String((metadata?.path ?? metadata?.filePath ?? metadata?.file_path ?? fallbackPath) || "").trim().toLowerCase();
+  if (!pathname.includes(".")) return null;
+  const ext = pathname.split(".").pop();
+  const map = {
+    c: "c",
+    cc: "cpp",
+    cpp: "cpp",
+    cxx: "cpp",
+    cs: "csharp",
+    css: "css",
+    go: "go",
+    h: "c",
+    hpp: "cpp",
+    html: "html",
+    java: "java",
+    js: "javascript",
+    jsx: "jsx",
+    kt: "kotlin",
+    mjs: "javascript",
+    cjs: "javascript",
+    php: "php",
+    py: "python",
+    rb: "ruby",
+    rs: "rust",
+    sh: "shell",
+    bash: "shell",
+    zsh: "shell",
+    sql: "sql",
+    swift: "swift",
+    ts: "typescript",
+    tsx: "tsx",
+    xml: "xml",
+    yaml: "yaml",
+    yml: "yaml"
+  };
+  return map[ext] || ext || null;
+}
+
+function extractCodeStructureMetadata(text, options = {}) {
+  const source = String(text || "");
+  const functions = [];
+  const classes = [];
+  const exportsList = [];
+  const imports = [];
+  const modules = [];
+  const calls = [];
+  const routes = [];
+
+  const pushModule = (value) => {
+    pushUniqueCodeValue(modules, value, 20, 160);
+  };
+
+  for (const match of source.matchAll(/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)) {
+    pushUniqueCodeValue(functions, match[1], 28, 120);
+  }
+  for (const match of source.matchAll(/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) {
+    pushUniqueCodeValue(functions, match[1], 28, 120);
+  }
+  for (const match of source.matchAll(/^\s*(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/gm)) {
+    pushUniqueCodeValue(functions, match[1], 28, 120);
+  }
+  for (const match of source.matchAll(/^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][\w]*)\s*\(/gm)) {
+    pushUniqueCodeValue(functions, match[1], 28, 120);
+  }
+
+  for (const match of source.matchAll(/^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/gm)) {
+    pushUniqueCodeValue(classes, match[1], 20, 120);
+  }
+  for (const match of source.matchAll(/^\s*(?:export\s+)?(?:interface|type|enum)\s+([A-Za-z_$][\w$]*)\b/gm)) {
+    pushUniqueCodeValue(classes, match[1], 20, 120);
+  }
+
+  for (const match of source.matchAll(/^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)) {
+    pushUniqueCodeValue(exportsList, match[1], 20, 120);
+  }
+  for (const match of source.matchAll(/^\s*export\s+(?:const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)\b/gm)) {
+    pushUniqueCodeValue(exportsList, match[1], 20, 120);
+  }
+  for (const match of source.matchAll(/^\s*module\.exports\.([A-Za-z_$][\w$]*)\s*=/gm)) {
+    pushUniqueCodeValue(exportsList, match[1], 20, 120);
+  }
+  for (const match of source.matchAll(/^\s*exports\.([A-Za-z_$][\w$]*)\s*=/gm)) {
+    pushUniqueCodeValue(exportsList, match[1], 20, 120);
+  }
+  for (const match of source.matchAll(/^\s*export\s*\{\s*([^}]+)\s*\}/gm)) {
+    const names = String(match[1] || "").split(",");
+    for (const name of names) {
+      const clean = String(name || "").split(/\s+as\s+/i)[0].trim();
+      pushUniqueCodeValue(exportsList, clean, 20, 120);
+    }
+  }
+  if (/^\s*export\s+default\b/m.test(source)) {
+    pushUniqueCodeValue(exportsList, "default", 20, 120);
+  }
+
+  for (const match of source.matchAll(/^\s*import\s+.+?\s+from\s+['"]([^'"]+)['"]/gm)) {
+    pushUniqueCodeValue(imports, match[1], 20, 160);
+    pushModule(match[1]);
+  }
+  for (const match of source.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)) {
+    pushUniqueCodeValue(imports, match[1], 20, 160);
+    pushModule(match[1]);
+  }
+  for (const match of source.matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    pushUniqueCodeValue(imports, match[1], 20, 160);
+    pushModule(match[1]);
+  }
+  for (const match of source.matchAll(/^\s*from\s+([A-Za-z0-9_.$/:-]+)\s+import\b/gm)) {
+    pushUniqueCodeValue(imports, match[1], 20, 160);
+    pushModule(match[1]);
+  }
+  for (const match of source.matchAll(/^\s*import\s+([A-Za-z0-9_.$/:-]+)\s*$/gm)) {
+    pushUniqueCodeValue(imports, match[1], 20, 160);
+    pushModule(match[1]);
+  }
+
+  for (const match of source.matchAll(/\b(?:app|router)\.(get|post|put|patch|delete|use)\s*\(\s*['"`]([^'"`]+)['"`]/g)) {
+    pushUniqueCodeValue(routes, `${match[1].toUpperCase()} ${match[2]}`, 16, 200);
+  }
+
+  const callStopwords = new Set([
+    "if", "for", "while", "switch", "catch", "return", "throw", "new", "typeof",
+    "console", "require", "import", "function", "class", "await", "super"
+  ]);
+  for (const match of source.matchAll(/\b([A-Za-z_$][\w$]{2,})\s*\(/g)) {
+    const name = String(match[1] || "");
+    if (callStopwords.has(name)) continue;
+    pushUniqueCodeValue(calls, name, 28, 120);
+  }
+
+  return {
+    language: options?.language || null,
+    functions,
+    classes,
+    exports: exportsList,
+    imports,
+    modules,
+    calls,
+    routes
+  };
+}
+
+function enrichCodeSourceMetadata(source = {}, text, docId) {
+  const base = source?.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+    ? { ...source.metadata }
+    : {};
+  const title = String(source?.title || docId || "").trim();
+  const inferredLanguage = inferCodeLanguageFromMetadata(base, base.path || title || source?.url || "");
+  const structure = extractCodeStructureMetadata(text, {
+    language: inferredLanguage
+  });
+  if (inferredLanguage && !base.language && !base.lang) {
+    base.language = inferredLanguage;
+  }
+  return {
+    ...base,
+    functions: normalizeCodeMetadataList(structure.functions, { maxItems: 28 }),
+    classes: normalizeCodeMetadataList(structure.classes, { maxItems: 20 }),
+    exports: normalizeCodeMetadataList(structure.exports, { maxItems: 20 }),
+    imports: normalizeCodeMetadataList(structure.imports, { maxItems: 20, maxItemLength: 160 }),
+    modules: normalizeCodeMetadataList(structure.modules, { maxItems: 20, maxItemLength: 160 }),
+    calls: normalizeCodeMetadataList(structure.calls, { maxItems: 28 }),
+    routes: normalizeCodeMetadataList(structure.routes, { maxItems: 16, maxItemLength: 200 })
+  };
+}
+
 function parseDocumentSourceInput(body = {}, { defaultType = "text", defaultUrl = null } = {}) {
   const metadata = parseTenantMetadataInput(body?.metadata);
   const sourceUrl = parseOptionalString(body?.sourceUrl ?? body?.source_url ?? defaultUrl, {
@@ -3842,6 +4031,9 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
 
   const namespacedDocId = namespaceDocId(tenantId, collection, docId);
   const sourceType = normalizeDocumentSourceType(source?.type, "text");
+  const sourceMetadata = sourceType === "code"
+    ? enrichCodeSourceMetadata(source, cleanText, docId)
+    : (source?.metadata || null);
   const principalId = source?.principalId || null;
   const resolvedVisibility = normalizeVisibility(source?.visibility);
   const aclList = resolvedVisibility === "acl" ? normalizeAclList(source?.acl, principalId) : [];
@@ -3857,7 +4049,7 @@ async function indexDocument(tenantId, collection, docId, text, source, options 
     title: source?.title || docId,
     sourceType,
     sourceUrl: source?.url || null,
-    metadata: source?.metadata || null,
+    metadata: sourceMetadata,
     expiresAt: source?.expiresAt || null,
     principalId,
     agentId: source?.agentId || null,
@@ -4387,6 +4579,13 @@ function extractCodeMemoryMetadata(memory) {
     language: normalizeCodeMetadataString(metadata.language ?? metadata.lang, 80)?.toLowerCase() || null,
     sourceUrl: normalizeCodeMetadataString(memory?.source_url ?? metadata.sourceUrl ?? metadata.source_url, 4000),
     title: normalizeCodeMetadataString(memory?.title, 240),
+    functions: normalizeCodeMetadataList(metadata.functions, { maxItems: 28 }),
+    classes: normalizeCodeMetadataList(metadata.classes, { maxItems: 20 }),
+    exports: normalizeCodeMetadataList(metadata.exports, { maxItems: 20 }),
+    imports: normalizeCodeMetadataList(metadata.imports, { maxItems: 20, maxItemLength: 160 }),
+    modules: normalizeCodeMetadataList(metadata.modules, { maxItems: 20, maxItemLength: 160 }),
+    calls: normalizeCodeMetadataList(metadata.calls, { maxItems: 28 }),
+    routes: normalizeCodeMetadataList(metadata.routes, { maxItems: 16, maxItemLength: 200 }),
     metadata
   };
 }
@@ -4398,6 +4597,22 @@ function buildCodeRetrievalQuery(question, input = {}) {
   if (input?.deployment) parts.push(`deployment ${input.deployment}`);
   if (input?.repository?.name) parts.push(`repository ${input.repository.name}`);
   if (Array.isArray(input?.paths) && input.paths.length) parts.push(`paths ${input.paths.join(" ")}`);
+  const hintPaths = extractCodePathHints([
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(input?.paths) ? input.paths.join(" ") : ""
+  ]);
+  if (hintPaths.length) parts.push(`file hints ${hintPaths.join(" ")}`);
+  const identifierHints = buildCodeIdentifierHints([
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(input?.paths) ? input.paths.join(" ") : "",
+    Array.isArray(input?.constraints) ? input.constraints.join(" ") : "",
+    input?.context && typeof input.context === "object" ? JSON.stringify(input.context) : ""
+  ]);
+  if (identifierHints.length) parts.push(`identifiers ${identifierHints.join(" ")}`);
   if (input?.errorMessage) parts.push(`error ${input.errorMessage}`);
   if (input?.stackTrace) parts.push(String(input.stackTrace).slice(0, 1200));
   // For debug: extract file/function identifiers from stack trace for better retrieval
@@ -4421,11 +4636,90 @@ function buildCodeRetrievalQuery(question, input = {}) {
   return parts.filter(Boolean).join("\n");
 }
 
+function extractCodePathHints(values) {
+  const seen = new Set();
+  const hints = [];
+  const pattern = /(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.(?:[A-Za-z0-9_.-]{1,12})/g;
+  for (const value of Array.isArray(values) ? values : [values]) {
+    const text = String(value || "");
+    for (const match of text.matchAll(pattern)) {
+      const raw = String(match[0] || "").trim();
+      if (!raw || raw.length < 3) continue;
+      if (!/[A-Za-z]/.test(raw)) continue;
+      const clean = raw.replace(/^["'`(]+|[)"'`,:;]+$/g, "");
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      hints.push(clean);
+      if (hints.length >= 6) return hints;
+    }
+  }
+  return hints;
+}
+
 function includesLower(haystack, needle) {
   const left = String(haystack || "").trim().toLowerCase();
   const right = String(needle || "").trim().toLowerCase();
   if (!left || !right) return false;
   return left.includes(right);
+}
+
+function buildCodeIdentifierHints(values) {
+  const seen = new Set();
+  const hints = [];
+  const stopwords = new Set([
+    "what", "where", "which", "when", "with", "does", "that", "this", "from", "into", "about", "through",
+    "function", "functions", "class", "classes", "module", "modules", "file", "files", "repo", "repository",
+    "debug", "write", "review", "improve", "structure", "connect", "connected", "connection", "calls", "called",
+    "route", "routes", "handler", "handlers", "service", "services", "code", "stack", "trace", "error"
+  ]);
+
+  function pushHint(raw) {
+    const clean = String(raw || "").trim().replace(/^["'`(]+|[)"'`,.:;]+$/g, "");
+    if (!clean || clean.length < 3 || clean.length > 120) return;
+    const lower = clean.toLowerCase();
+    if (stopwords.has(lower) || seen.has(lower)) return;
+    if (!/[A-Za-z]/.test(clean) || /^\d+$/.test(clean)) return;
+    seen.add(lower);
+    hints.push(clean);
+  }
+
+  for (const value of Array.isArray(values) ? values : [values]) {
+    const text = String(value || "");
+    for (const match of text.matchAll(/\b[A-Za-z_$][A-Za-z0-9_$]{2,}\b/g)) {
+      const token = match[0];
+      if (/[A-Z]/.test(token.slice(1)) || /_/.test(token) || /^[A-Z][A-Za-z0-9_$]+$/.test(token)) {
+        pushHint(token);
+      }
+    }
+    for (const match of text.matchAll(/at\s+([\w$.<>]+)\s+\(/g)) {
+      const token = String(match[1] || "").split(".").pop();
+      pushHint(token);
+    }
+  }
+
+  return hints.slice(0, 10);
+}
+
+function metadataListIncludesHint(values, hint) {
+  const cleanHint = String(hint || "").trim().toLowerCase();
+  if (!cleanHint) return false;
+  return normalizeCodeMetadataList(values, { maxItems: 40, maxItemLength: 200 })
+    .some((value) => {
+      const clean = String(value || "").trim().toLowerCase();
+      return clean === cleanHint || clean.endsWith(`.${cleanHint}`) || clean.includes(cleanHint);
+    });
+}
+
+function isConnectionFocusedCodeQuestion(question, input = {}) {
+  const combined = [
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(input?.paths) ? input.paths.join(" ") : ""
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (!combined) return false;
+  return /\b(connect|connection|connected|flow|call graph|caller|callee|calls|called by|invoke|invoked|wired|wiring|route|routes|endpoint|handler|dependency|dependencies|import|imports|export|exports|module graph|what uses|where is|how does .* reach)\b/.test(combined);
 }
 
 function buildCodeScoreBoost(question, metadata, input = {}) {
@@ -4437,6 +4731,13 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
   const requestedLanguage = String(input?.language || "").trim().toLowerCase();
   const requestedRepo = String(input?.repository?.name || "").trim().toLowerCase();
   const requestedPaths = Array.isArray(input?.paths) ? input.paths : [];
+  const symbolHints = buildCodeIdentifierHints([
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(requestedPaths) ? requestedPaths.join(" ") : ""
+  ]);
+  const connectionFocused = isConnectionFocusedCodeQuestion(question, input);
 
   if (metadata?.sourceType === "code") boost += 0.32;
   if (requestedLanguage && lowerLanguage && requestedLanguage === lowerLanguage) boost += 0.14;
@@ -4468,6 +4769,28 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
     if (repoName && lowerQuestion.includes(repoName)) boost += 0.06;
   }
 
+  for (const hint of symbolHints) {
+    if (metadataListIncludesHint(metadata?.functions, hint)) boost += 0.18;
+    if (metadataListIncludesHint(metadata?.classes, hint)) boost += 0.16;
+    if (metadataListIncludesHint(metadata?.exports, hint)) boost += 0.16;
+    if (metadataListIncludesHint(metadata?.calls, hint)) boost += 0.1;
+    if (metadataListIncludesHint(metadata?.imports, hint) || metadataListIncludesHint(metadata?.modules, hint)) boost += 0.08;
+  }
+
+  if (/\b(route|router|endpoint|handler|middleware)\b/.test(lowerQuestion) && Array.isArray(metadata?.routes) && metadata.routes.length) {
+    boost += 0.08;
+  }
+  if (/\b(connect|flow|call|invoke|used by|wired|wiring|dependency|import)\b/.test(lowerQuestion)) {
+    if ((metadata?.imports?.length || 0) > 0) boost += 0.06;
+    if ((metadata?.calls?.length || 0) > 0) boost += 0.06;
+  }
+  if (connectionFocused) {
+    if ((metadata?.imports?.length || 0) > 0) boost += 0.08;
+    if ((metadata?.exports?.length || 0) > 0) boost += 0.05;
+    if ((metadata?.calls?.length || 0) > 0) boost += 0.08;
+    if ((metadata?.routes?.length || 0) > 0) boost += 0.06;
+  }
+
   return boost;
 }
 
@@ -4494,11 +4817,83 @@ function buildCodeFilesFromRanked(ranked, limit = 8) {
       sourceType: file.sourceType || null,
       title: file.title || null,
       sourceUrl: file.sourceUrl || null,
+      functions: Array.isArray(file.functions) ? file.functions.slice(0, 6) : [],
+      classes: Array.isArray(file.classes) ? file.classes.slice(0, 4) : [],
+      exports: Array.isArray(file.exports) ? file.exports.slice(0, 6) : [],
+      imports: Array.isArray(file.imports) ? file.imports.slice(0, 4) : [],
+      routes: Array.isArray(file.routes) ? file.routes.slice(0, 4) : [],
       score: Number(candidate?.score ?? 0)
     });
     if (files.length >= limit) break;
   }
   return files;
+}
+
+function buildCodeCandidateFileKey(candidate) {
+  const file = candidate?.file || {};
+  return [
+    file.repo || "",
+    file.path || "",
+    file.docId || "",
+    file.language || ""
+  ].join("::");
+}
+
+function resolveCodeSelectionSize(topK, task) {
+  const base = Number.isFinite(topK) && topK > 0 ? Math.floor(topK) : 5;
+  const mode = normalizeCodeTask(task, "general");
+  if (mode === "structure") return Math.max(base, 10);
+  if (mode === "debug" || mode === "write" || mode === "review" || mode === "improve") return Math.max(base, 8);
+  if (mode === "understand") return Math.max(base, 6);
+  return Math.max(base, 5);
+}
+
+function selectCodeCandidatesForPrompt(ranked, limit, options = {}) {
+  const candidates = Array.isArray(ranked) ? ranked : [];
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+  const mode = normalizeCodeTask(options?.task, "general");
+  const selected = [];
+  const selectedChunkIds = new Set();
+  const fileCounts = new Map();
+  const uniqueFirstTarget = mode === "structure"
+    ? Math.min(cleanLimit, 6)
+    : (mode === "debug" || mode === "write" || mode === "review" || mode === "improve")
+      ? Math.min(cleanLimit, 4)
+      : Math.min(cleanLimit, 3);
+  const maxPerFile = mode === "structure" ? 2 : (mode === "debug" || mode === "write" ? 3 : 2);
+
+  function addCandidate(candidate) {
+    const chunkId = candidate?.result?.chunkId || candidate?.result?.chunk_id || candidate?.result?._row?.chunk_id || null;
+    if (!chunkId || selectedChunkIds.has(chunkId)) return false;
+    const fileKey = buildCodeCandidateFileKey(candidate);
+    const fileCount = fileCounts.get(fileKey) || 0;
+    selected.push(candidate);
+    selectedChunkIds.add(chunkId);
+    fileCounts.set(fileKey, fileCount + 1);
+    return true;
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= uniqueFirstTarget) break;
+    const fileKey = buildCodeCandidateFileKey(candidate);
+    if (!fileKey.replace(/:+/g, "").trim()) continue;
+    if ((fileCounts.get(fileKey) || 0) > 0) continue;
+    addCandidate(candidate);
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= cleanLimit) break;
+    const fileKey = buildCodeCandidateFileKey(candidate);
+    if (fileKey.replace(/:+/g, "").trim() && (fileCounts.get(fileKey) || 0) >= maxPerFile) continue;
+    addCandidate(candidate);
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= cleanLimit) break;
+    addCandidate(candidate);
+  }
+
+  return selected;
 }
 
 function buildCodeSourceSummary(files = []) {
@@ -4525,6 +4920,112 @@ function buildCodeSourceSummary(files = []) {
     nonCodeHits,
     repositories,
     languages
+  };
+}
+
+function buildCodeRelationshipSummary(files = [], options = {}) {
+  const fileList = Array.isArray(files) ? files.filter(Boolean) : [];
+  const focusHints = buildCodeIdentifierHints([
+    options?.question,
+    Array.isArray(options?.paths) ? options.paths.join(" ") : "",
+    options?.errorMessage,
+    options?.stackTrace
+  ]);
+  const focusSet = new Set(focusHints.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
+  const fileByPath = new Map();
+  const symbolOwners = new Map();
+  const relationships = [];
+  const relationshipKeys = new Set();
+  const entryPoints = [];
+
+  function addRelationship(kind, line, score = 0) {
+    const cleanLine = String(line || "").trim();
+    if (!cleanLine) return;
+    const key = `${kind}::${cleanLine.toLowerCase()}`;
+    if (relationshipKeys.has(key)) return;
+    relationshipKeys.add(key);
+    relationships.push({ kind, line: cleanLine, score });
+  }
+
+  function normalizePathLike(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/\.(jsx?|tsx?|py|go|java|rb|php|rs|swift|c|cc|cpp|cxx|kt|mjs|cjs)$/i, "")
+      .replace(/\/index$/i, "");
+  }
+
+  function scoreLine(line) {
+    const lower = String(line || "").toLowerCase();
+    let score = 0;
+    for (const hint of focusSet) {
+      if (lower.includes(hint)) score += 2;
+    }
+    return score;
+  }
+
+  for (const file of fileList) {
+    const cleanPath = String(file?.path || file?.docId || "").trim();
+    if (cleanPath) {
+      fileByPath.set(cleanPath, file);
+      fileByPath.set(normalizePathLike(cleanPath), file);
+      fileByPath.set(path.basename(cleanPath), file);
+      fileByPath.set(normalizePathLike(path.basename(cleanPath)), file);
+    }
+    for (const symbol of [
+      ...(Array.isArray(file?.exports) ? file.exports : []),
+      ...(Array.isArray(file?.functions) ? file.functions : []),
+      ...(Array.isArray(file?.classes) ? file.classes : [])
+    ]) {
+      const clean = String(symbol || "").trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (!symbolOwners.has(key)) symbolOwners.set(key, []);
+      symbolOwners.get(key).push(file);
+    }
+    for (const route of Array.isArray(file?.routes) ? file.routes : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} exposes ${route}`;
+      entryPoints.push(line);
+      addRelationship("route", line, scoreLine(line) + 1);
+    }
+  }
+
+  for (const file of fileList) {
+    const fromPath = String(file?.path || file?.docId || "").trim() || "unknown file";
+    const imports = [
+      ...(Array.isArray(file?.imports) ? file.imports : []),
+      ...(Array.isArray(file?.modules) ? file.modules : [])
+    ];
+    for (const importRef of imports) {
+      const cleanImport = String(importRef || "").trim();
+      if (!cleanImport) continue;
+      const target = fileByPath.get(cleanImport)
+        || fileByPath.get(normalizePathLike(cleanImport))
+        || fileByPath.get(path.basename(cleanImport))
+        || fileByPath.get(normalizePathLike(path.basename(cleanImport)));
+      const targetPath = String(target?.path || cleanImport).trim();
+      const line = `${fromPath} imports ${targetPath}`;
+      addRelationship("import", line, scoreLine(line) + (target ? 2 : 0));
+    }
+    for (const call of Array.isArray(file?.calls) ? file.calls : []) {
+      const owners = symbolOwners.get(String(call || "").trim().toLowerCase()) || [];
+      for (const owner of owners) {
+        const ownerPath = String(owner?.path || owner?.docId || "").trim();
+        if (!ownerPath || ownerPath === fromPath) continue;
+        const line = `${fromPath} calls ${call} from ${ownerPath}`;
+        addRelationship("call", line, scoreLine(line) + 3);
+      }
+    }
+  }
+
+  relationships.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.line.localeCompare(b.line);
+  });
+
+  return {
+    entryPoints: entryPoints.slice(0, 8),
+    connections: relationships.slice(0, 12).map((item) => item.line)
   };
 }
 
@@ -4663,6 +5164,15 @@ async function buildCodeAnswerContext({
     source: telemetry?.source || operation
   });
   const topK = Number.isFinite(k) && k > 0 ? k : 5;
+  const connectionFocused = isConnectionFocusedCodeQuestion(question, {
+    errorMessage,
+    stackTrace,
+    paths
+  });
+  const selectionK = resolveCodeSelectionSize(
+    topK,
+    connectionFocused && (!task || task === "general") ? "structure" : task
+  );
   const retrievalQuery = buildCodeRetrievalQuery(question, {
     task,
     language,
@@ -4675,7 +5185,9 @@ async function buildCodeAnswerContext({
     context
   });
   const complexTask = task === "debug" || task === "write";
-  const retrievalK = Math.max(topK * (complexTask ? 5 : 3), complexTask ? 20 : 12);
+  const retrievalMultiplier = complexTask ? 6 : (connectionFocused ? 5 : 4);
+  const retrievalFloor = complexTask ? 24 : (connectionFocused ? 20 : 16);
+  const retrievalK = Math.max(selectionK * retrievalMultiplier, retrievalFloor);
   const results = await searchChunks({
     tenantId,
     collection,
@@ -4741,7 +5253,12 @@ async function buildCodeAnswerContext({
         language: metadata.language,
         sourceType: metadata.sourceType,
         title: metadata.title,
-        sourceUrl: metadata.sourceUrl
+        sourceUrl: metadata.sourceUrl,
+        functions: metadata.functions,
+        classes: metadata.classes,
+        exports: metadata.exports,
+        imports: metadata.imports,
+        routes: metadata.routes
       },
       score: Number(result.score || 0) + boost
     };
@@ -4757,7 +5274,7 @@ async function buildCodeAnswerContext({
       return (b.result?.score || 0) - (a.result?.score || 0);
     });
 
-  const selected = reranked.slice(0, topK);
+  const selected = selectCodeCandidatesForPrompt(reranked, selectionK, { task });
   const seen = new Set();
   const retrieved = [];
   for (const candidate of selected) {
@@ -4801,14 +5318,21 @@ async function buildCodeAnswerContext({
       ? candidate.memory.metadata
       : {}
   })).filter(Boolean);
-  const files = buildCodeFilesFromRanked(selected);
+  const files = buildCodeFilesFromRanked(selected, Math.max(8, selectionK));
+  const relationshipSummary = buildCodeRelationshipSummary(files, {
+    question,
+    paths,
+    errorMessage,
+    stackTrace
+  });
 
   return {
     telemetryContext,
     usedItems,
     chunks,
     files,
-    sourceSummary: buildCodeSourceSummary(files)
+    sourceSummary: buildCodeSourceSummary(files),
+    relationshipSummary
   };
 }
 
@@ -5032,7 +5556,8 @@ async function answerCodeQuestion({
     usedItems,
     chunks,
     files,
-    sourceSummary
+    sourceSummary,
+    relationshipSummary
   } = await buildCodeAnswerContext({
     tenantId,
     collection,
@@ -5065,6 +5590,9 @@ async function answerCodeQuestion({
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     answerLength,
+    files,
+    sourceSummary,
+    relationshipSummary,
     task,
     language,
     deployment,
@@ -5134,11 +5662,13 @@ async function answerCodeQuestion({
     answer,
     citations: mapAnswerCitations(citations),
     chunksUsed: chunks.length,
+    supportingChunks: mapSupportingChunks(chunks),
     answerLength: resolvedAnswerLength || answerLength || "auto",
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     files,
     sourceSummary,
+    relationshipSummary,
     answerConfidence: answerConfidence || "high"
   };
 }
@@ -9282,6 +9812,8 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       sources: result.citations,
       files: result.files,
       sourceSummary: result.sourceSummary,
+      relationshipSummary: result.relationshipSummary,
+      supportingChunks: result.supportingChunks,
       answerLength: result.answerLength,
       task: input.task,
       provider: result.provider,
@@ -9354,6 +9886,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       answer: result.answer,
       citations: result.citations,
       chunksUsed: result.chunksUsed,
+      supportingChunks: result.supportingChunks,
       answerLength: result.answerLength,
       task: input.task,
       language: input.language,
@@ -9361,6 +9894,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       repository: input.repository,
       files: result.files,
       sourceSummary: result.sourceSummary,
+      relationshipSummary: result.relationshipSummary,
       provider: result.provider,
       model: result.model,
       k: input.k,
@@ -10634,6 +11168,12 @@ module.exports = {
     normalizeTenantIdentifier,
     parseTenantMetadataInput,
     parseDocumentSourceInput,
+    buildCodeRetrievalQuery,
+    extractCodeStructureMetadata,
+    buildCodeRelationshipSummary,
+    buildCodeScoreBoost,
+    resolveCodeSelectionSize,
+    selectCodeCandidatesForPrompt,
     formatTenantRecord,
     normalizeMemoryPolicy,
     getMemoryPolicy,
