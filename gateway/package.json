@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "npm run test:unit",
-    "test:unit": "node tests/compute_value_score.test.js && node tests/lifecycle_min_age.test.js && node tests/chunking_strategy.test.js && node tests/answer_guard.test.js && node tests/model_config.test.js && node tests/reindex_guard.test.js && node tests/billing_usage.test.js && node tests/storage_billing_periods.test.js && node tests/enterprise_auth.test.js && node tests/enterprise_control_plane.test.js",
+    "test:unit": "node tests/compute_value_score.test.js && node tests/lifecycle_min_age.test.js && node tests/chunking_strategy.test.js && node tests/answer_guard.test.js && node tests/search_preview.test.js && node tests/model_config.test.js && node tests/reindex_guard.test.js && node tests/billing_usage.test.js && node tests/storage_billing_periods.test.js && node tests/enterprise_auth.test.js && node tests/enterprise_control_plane.test.js",
     "test:integration": "node tests/mcp_public_endpoints.test.js",
     "test:e2e": "node tests/api_e2e.test.js",
+    "test:e2e:diagnostic": "node tests/diagnostic_e2e.test.js",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "ci:ensure-user": "node scripts/ensure_user.js",
     "bootstrap:instance": "node scripts/bootstrap_instance.js"

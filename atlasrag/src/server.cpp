@@ -487,10 +487,12 @@ static void client_thread(
     VectorDB& vdb)   // NEW: vector db shared by all clients
 {
   try {
+    // Keep one buffer per connection so read_until() can preserve any bytes
+    // it read past the first newline. Recreating the buffer each loop drops
+    // pipelined commands and breaks batched TCP writes.
+    asio::streambuf buffer;
 
     while (true) {
-
-      asio::streambuf buffer;
 
       // Wait until client sends newline
       asio::read_until(socket, buffer, "\n");

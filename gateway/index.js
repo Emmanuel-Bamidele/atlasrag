@@ -4350,7 +4350,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     score: candidate.fusedScore,
     docId: candidate.parsed.docId,
     collection: candidate.parsed.collection,
-    preview: candidate.row.text.slice(0, 180),
+    preview: buildSearchPreview(candidate.row.text, query, 180),
     _row: candidate.row
   }));
 
@@ -4840,6 +4840,42 @@ function mapAnswerCitations(citations) {
       collection: parsed.collection
     };
   });
+}
+
+function buildSearchPreview(text, query, maxChars = 180) {
+  const cleanText = normalizeWhitespace(String(text || ""));
+  if (!cleanText) return "";
+
+  const cap = Number.isFinite(maxChars) && maxChars >= 40 ? Math.floor(maxChars) : 180;
+  const cleanQuery = normalizeWhitespace(String(query || "")).trim().toLowerCase();
+  const lowerText = cleanText.toLowerCase();
+
+  let matchIndex = cleanQuery ? lowerText.indexOf(cleanQuery) : -1;
+  if (matchIndex < 0 && cleanQuery) {
+    const tokens = cleanQuery.split(/[^a-z0-9]+/i).filter((token) => token.length >= 4);
+    for (const token of tokens) {
+      const idx = lowerText.indexOf(token);
+      if (idx >= 0 && (matchIndex < 0 || idx < matchIndex)) {
+        matchIndex = idx;
+      }
+    }
+  }
+
+  if (matchIndex < 0 || cleanText.length <= cap) {
+    return cleanText.length <= cap ? cleanText : `${cleanText.slice(0, cap).trim()}…`;
+  }
+
+  const lead = Math.max(0, Math.floor(cap * 0.35));
+  let start = Math.max(0, matchIndex - lead);
+  let end = Math.min(cleanText.length, start + cap);
+  if ((end - start) < cap) {
+    start = Math.max(0, end - cap);
+  }
+
+  let preview = cleanText.slice(start, end).trim();
+  if (start > 0) preview = `…${preview}`;
+  if (end < cleanText.length) preview = `${preview}…`;
+  return preview;
 }
 
 function mapSupportingChunks(chunks) {
@@ -10607,6 +10643,7 @@ module.exports = {
     splitIntoBatches,
     isVectorCommandReplyOk,
     runBatchedCommandSet,
+    buildSearchPreview,
     normalizeTier,
     resolveTierThresholds,
     resolveTierForValue,
