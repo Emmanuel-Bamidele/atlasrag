@@ -169,6 +169,9 @@ body.light-theme .bg-orb.orb-b{
   width: 32px;
   height: 32px;
   flex-shrink: 0;
+  display: block;
+  box-sizing: border-box;
+  padding: 2px;
 }
 
 .brand-name{
