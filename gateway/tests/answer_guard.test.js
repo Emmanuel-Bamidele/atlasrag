@@ -82,6 +82,21 @@ function testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText() {
   assert.match(fallback.answer, /SupaVector stores memory for agents/);
 }
 
+function testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms() {
+  const fallback = __testHooks.fallbackFromChunks(
+    "Who is the primary contact in the indexed e2e document?",
+    [
+      {
+        chunk_id: "default::cli-smoke::welcome#0",
+        text: "SupaVector e2e ingestion test document. Primary contact: Maris Quill. Escalation path: support."
+      }
+    ]
+  );
+
+  assert.match(fallback.answer, /Maris Quill/);
+  assert.deepEqual(fallback.citations, ["default::cli-smoke::welcome#0"]);
+}
+
 function testCanonicalUnknownDetectionMatchesExpectedForms() {
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I don't know based on the provided sources."), true);
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I dont know based on the provided sources."), true);
@@ -96,6 +111,7 @@ function main() {
   testAskPromptRemainsSingleStringPrompt();
   testBooleanAskPromptRemainsSingleStringPrompt();
   testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
+  testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms();
   testCanonicalUnknownDetectionMatchesExpectedForms();
   console.log("answer guard tests passed");
 }

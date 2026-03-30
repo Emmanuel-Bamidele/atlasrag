@@ -8,7 +8,7 @@
 
 .card{
   border:1px solid var(--line);
-  background: rgba(19,42,47,0.65);
+  background: rgba(20,20,24,0.65);
   border-radius: 16px;
   padding: 14px;
   position: relative;
@@ -21,7 +21,7 @@
   inset:auto -40px -40px auto;
   width:140px;
   height:140px;
-  background: radial-gradient(circle, rgba(61,213,200,0.25), transparent 70%);
+  background: radial-gradient(circle, rgba(200,160,32,0.25), transparent 70%);
   opacity:0.5;
 }
 
@@ -40,7 +40,7 @@
   padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(10,22,24,0.5);
+  background: rgba(12,12,16,0.5);
   color: rgba(232,242,242,0.9);
   font-size: 12px;
 }

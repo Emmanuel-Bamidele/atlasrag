@@ -10898,6 +10898,7 @@ const memoryCompactLegacy = async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/memory/compact");
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);
@@ -10944,6 +10945,7 @@ const memoryCompactV1 = async (req, res) => {
   let tenantId = null;
   let collection = null;
   try {
+    assertNoOpenAiApiKeyOverride(req, "/v1/memory/compact");
     tenantId = resolveTenantId(req);
     const principalId = resolvePrincipalId(req);
     collection = resolveCollection(req);

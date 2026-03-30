@@ -22,6 +22,11 @@ const MIN_SOURCE_CHARS = 40;
 const ANSWER_LENGTHS = new Set(["auto", "short", "medium", "long"]);
 const BOOLEAN_ASK_ANSWERS = new Set(["true", "false", "invalid"]);
 const CODE_TASKS = new Set(["general", "understand", "debug", "review", "write", "improve", "structure"]);
+const FALLBACK_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from",
+  "how", "i", "in", "is", "it", "of", "on", "or", "the", "this", "to", "was",
+  "what", "when", "where", "which", "who", "why", "with"
+]);
 let fallbackWarned = false;
 
 function resolveAnswerProvider(options = {}) {
@@ -153,7 +158,41 @@ function deduplicateChunks(chunks) {
   return out;
 }
 
-function fallbackFromChunks(chunks) {
+function tokenizeFallbackQuestion(question) {
+  return String(question || "")
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)?.filter((token) => token.length > 1 && !FALLBACK_STOP_WORDS.has(token)) || [];
+}
+
+function splitFallbackSentences(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function scoreFallbackSentence(sentence, questionTerms) {
+  const haystack = String(sentence || "").toLowerCase();
+  if (!haystack) return 0;
+  const uniqueTerms = new Set(questionTerms);
+  let score = 0;
+  for (const term of uniqueTerms) {
+    if (haystack.includes(term)) score += 1;
+  }
+  if (uniqueTerms.size >= 2) {
+    const phraseTerms = Array.from(uniqueTerms);
+    for (let i = 0; i < phraseTerms.length - 1; i += 1) {
+      const phrase = `${phraseTerms[i]} ${phraseTerms[i + 1]}`;
+      if (haystack.includes(phrase)) score += 2;
+    }
+  }
+  return score;
+}
+
+function fallbackFromChunks(questionOrChunks, maybeChunks) {
+  const question = Array.isArray(questionOrChunks) ? null : questionOrChunks;
+  const chunks = Array.isArray(questionOrChunks) ? questionOrChunks : maybeChunks;
   const top = (chunks || []).slice(0, 3);
   if (!top.length) {
     return {
@@ -161,6 +200,44 @@ function fallbackFromChunks(chunks) {
       citations: [],
       usage: null
     };
+  }
+
+  const questionTerms = tokenizeFallbackQuestion(question);
+  if (questionTerms.length) {
+    const candidates = [];
+    for (const chunk of top) {
+      const raw = sanitizeChunkText(chunk.text);
+      if (!raw) continue;
+      const sentences = splitFallbackSentences(raw);
+      for (let index = 0; index < sentences.length; index += 1) {
+        const sentence = sentences[index];
+        const score = scoreFallbackSentence(sentence, questionTerms);
+        if (score <= 0) continue;
+        candidates.push({
+          score,
+          sentence,
+          chunkId: chunk.chunk_id || null,
+          chunkOrder: top.indexOf(chunk),
+          sentenceOrder: index
+        });
+      }
+    }
+    candidates.sort((a, b) => (
+      b.score - a.score
+      || a.chunkOrder - b.chunkOrder
+      || a.sentenceOrder - b.sentenceOrder
+    ));
+    if (candidates.length) {
+      const best = candidates[0];
+      const citations = [best.chunkId, ...top.map((c) => c.chunk_id || null)]
+        .filter(Boolean)
+        .filter((value, index, list) => list.indexOf(value) === index);
+      return {
+        answer: best.sentence,
+        citations,
+        usage: null
+      };
+    }
   }
 
   const parts = [];
@@ -532,7 +609,7 @@ async function generateAnswer(question, chunks, options = {}) {
       fallbackWarned = true;
       console.warn(`[answer] ${resolved.provider} generation unavailable, using extractive fallback (${String(err?.message || err)})`);
     }
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     return {
       ...fallback,
       usage: buildEstimatedUsage(input, fallback.answer),
@@ -550,7 +627,7 @@ async function generateAnswer(question, chunks, options = {}) {
     citations = safeChunks.slice(0, 3).map((c) => c.chunk_id).filter(Boolean);
   }
   if (isCanonicalUnknownAnswer(answer) && safeChunks.length) {
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     if (!isCanonicalUnknownAnswer(fallback.answer)) {
       return {
         ...fallback,
@@ -562,7 +639,7 @@ async function generateAnswer(question, chunks, options = {}) {
     }
   }
   if (!answer) {
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     return {
       ...fallback,
       answerLength: effectiveAnswerLength,
@@ -762,7 +839,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
       fallbackWarned = true;
       console.warn(`[answer] ${resolved.provider} generation unavailable for code answer, using extractive fallback (${String(err?.message || err)})`);
     }
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     return {
       ...fallback,
       usage: buildEstimatedUsage(input.system + input.user, fallback.answer),
@@ -780,7 +857,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
     citations = safeChunks.slice(0, 4).map((c) => c.chunk_id).filter(Boolean);
   }
   if (isCanonicalUnknownAnswer(answer) && safeChunks.length) {
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     if (!isCanonicalUnknownAnswer(fallback.answer)) {
       return {
         ...fallback,
@@ -793,7 +870,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
     }
   }
   if (!answer) {
-    const fallback = fallbackFromChunks(safeChunks);
+    const fallback = fallbackFromChunks(question, safeChunks);
     return {
       ...fallback,
       answerLength: effectiveAnswerLength,

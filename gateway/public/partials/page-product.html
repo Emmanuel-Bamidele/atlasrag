@@ -163,65 +163,65 @@
               </div>
             </section>
 
-            <section class="product-agents" aria-label="Build and use hosted Agent Brains">
+            <section class="product-agents" aria-label="Build and use hosted Agent Memory">
               <div class="product-agents-copy">
-                <p class="product-card-eyebrow">Hosted Agent Brain</p>
-                <h3>Build an Agent Brain once, then use it in your app or in Supavector Agents Library.</h3>
+                <p class="product-card-eyebrow">Hosted Agent Memory</p>
+                <h3>Build Agent Memory once, then use it in your app or in Supavector Agents Memory.</h3>
                 <p>
-                  Agent Brain is the hosted layer for connecting sources, syncing knowledge, testing grounded behavior,
-                  and shipping the same Brain through your own application or through our hosted UI.
+                  Agent Memory is the hosted layer for connecting sources, syncing knowledge, testing grounded behavior,
+                  and shipping the same Memory through your own application or through our hosted UI.
                 </p>
-                <div class="product-agents-pills" aria-label="Agent Brain highlights">
+                <div class="product-agents-pills" aria-label="Agent Memory highlights">
                   <span class="product-agents-pill">Hosted only</span>
                   <span class="product-agents-pill">Use in your app</span>
                   <span class="product-agents-pill">Use in our UI</span>
                   <span class="product-agents-pill">Chat, Boolean Ask, Code</span>
                 </div>
                 <div class="product-agents-actions">
-                  <a class="btn product-agents-cta" href="/brains">Open Agents Library</a>
-                  <a class="btn secondary" href="/brains/docs">Agent Brain Docs</a>
+                  <a class="btn product-agents-cta" href="/memory">Open Agents Memory</a>
+                  <a class="btn secondary" href="/docs">Agent Memory Docs</a>
                 </div>
                 <p class="product-agents-note">
-                  Opening Agents Library takes you to <span class="mono">/brains</span>. If you're not signed in,
-                  you'll be taken through login first and then into the hosted Brain workspace.
+                  Opening Agents Memory takes you to <span class="mono">/memory</span>. If you're not signed in,
+                  you'll be taken through login first and then into the hosted Memory workspace.
                 </p>
               </div>
 
               <div class="product-agents-stage" aria-hidden="true">
                 <div class="product-agents-shell">
                   <div class="product-agents-shell-head">
-                    <span class="product-agents-kicker">Same Brain, two entrypoints</span>
-                    <h4>One hosted Brain object, two ways to work with it.</h4>
-                    <p>The sources, sync state, memory, and runtime stay aligned whether you call the Brain from code or operate it in the hosted studio.</p>
+                    <span class="product-agents-kicker">Same Memory, two entrypoints</span>
+                    <h4>One hosted Memory object, two ways to work with it.</h4>
+                    <p>The sources, sync state, memory, and runtime stay aligned whether you call Memory from code or operate it in the hosted studio.</p>
                   </div>
 
                   <div class="product-agents-grid">
                     <article class="product-agents-card product-agents-card--app">
                       <span class="product-agents-card-label">In your application</span>
-                      <h5>Call the Brain API from your backend.</h5>
-                      <p>Use your project service token and Brain ID to wire the same hosted Brain into your own product.</p>
+                      <h5>Call the Memory API from your backend.</h5>
+                      <p>Use your project service token and Memory ID to wire the same hosted Memory into your own product.</p>
                       <div class="product-agents-code">
-                        <pre class="doc-code">POST /v1/brains/:brainId/chat
-POST /v1/brains/:brainId/code
-POST /v1/brains/:brainId/ask</pre>
+                        <pre class="doc-code">POST /v1/memories/:memoryId/chat
+POST /v1/memories/:memoryId/code
+POST /v1/memories/:memoryId/ask</pre>
                       </div>
                     </article>
 
                     <article class="product-agents-card product-agents-card--ui">
-                      <span class="product-agents-card-label">In Supavector Agents Library</span>
+                      <span class="product-agents-card-label">In Supavector Agents Memory</span>
                       <h5>Create, connect, sync, and test it in the hosted UI.</h5>
-                      <p>Use the same Brain through a guided library with source management, Playground, and copy-ready integration snippets.</p>
+                      <p>Use the same Memory through a guided library with source management, Playground, and copy-ready integration snippets.</p>
                       <div class="product-agents-routes">
-                        <span class="product-agents-route">/brains</span>
-                        <span class="product-agents-route">/brains/new</span>
-                        <span class="product-agents-route">/brains/:id</span>
-                        <span class="product-agents-route">/brains/:id/playground</span>
+                        <span class="product-agents-route">/memory</span>
+                        <span class="product-agents-route">/memory/new</span>
+                        <span class="product-agents-route">/memory/:id</span>
+                        <span class="product-agents-route">/memory/:id/playground</span>
                       </div>
                     </article>
                   </div>
 
                   <div class="product-agents-footer">
-                    <span>Same Brain object</span>
+                    <span>Same Memory object</span>
                     <span>Same hosted runtime</span>
                     <span>Same grounded answers and sources</span>
                   </div>
@@ -237,7 +237,8 @@ POST /v1/brains/:brainId/ask</pre>
                 <p>
                   Supavector is fully open source. Every line — the C++ vector core, Node.js gateway,
                   installer scripts, and Docker Compose files — is available to inspect, fork, and self-host.
-                  There is no hosted service, no vendor lock-in, and no black-box dependencies.
+                  Agent Memory is also available as a hosted product, but the self-hosted runtime remains fully inspectable,
+                  forkable, and free from vendor lock-in or black-box dependencies.
                 </p>
                 <div class="product-opensource-badges">
                   <span class="product-os-badge">MIT License</span>
@@ -492,25 +493,24 @@ console.log(data.answer);</pre>
               <div class="product-quickstart-head">
                 <p class="product-card-eyebrow">Self-Host And Build On Top</p>
                 <h3>Up and running in minutes.</h3>
-                <p>Install the CLI, start the stack, and write your first memory in under five minutes. Full control — your infra, your data.</p>
+                <p>Install the CLI, onboard the stack, and write your first memory in under five minutes. Full control — your infra, your data.</p>
               </div>
               <div class="product-quickstart-steps">
                 <div class="product-qs-step">
                   <span class="product-flow-number">01</span>
-                  <h4>Clone and install the CLI</h4>
-                  <p>Clone the repo, then run the installer. Works on macOS, Linux, and Windows.</p>
+                  <h4>Install the CLI</h4>
+                  <p>Use the one-line installer to get started fast. If you prefer working from a checkout, you can also clone the repo and run <span class="mono">./scripts/install.sh</span>.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">git clone https://github.com/Emmanuel-Bamidele/supavector.git
-cd supavector && ./scripts/install.sh</pre>
+                    <pre class="doc-code">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
                   </div>
                   <p>Need a machine-wide install? <a href="#product-installer" class="product-hosted-nudge-link">Click here</a>.</p>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">02</span>
-                  <h4>Start the stack</h4>
-                  <p>One command brings up the vector core, gateway, and Postgres locally.</p>
+                  <h4>Onboard the stack</h4>
+                  <p>If you used the one-line installer, onboarding brings up the vector core, gateway, and Postgres locally. If you cloned the repo instead, run the install script first, then onboard.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">supavector start</pre>
+                    <pre class="doc-code">supavector onboard</pre>
                   </div>
                 </div>
                 <div class="product-qs-step">

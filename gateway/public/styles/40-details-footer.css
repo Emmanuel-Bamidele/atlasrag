@@ -12,7 +12,7 @@
   padding: 4px 8px;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: rgba(10,22,24,0.6);
+  background: rgba(12,12,16,0.6);
 }
 
 .btn.tiny{
@@ -23,7 +23,7 @@
 
 .stat{
   border:1px solid var(--line);
-  background: rgba(10,22,24,0.6);
+  background: rgba(12,12,16,0.6);
   border-radius: 14px;
   padding: 12px;
 }
@@ -90,7 +90,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
-  background: rgba(6,14,16,0.4);
+  background: rgba(8,8,12,0.4);
 }
 
 .details summary{
@@ -101,7 +101,7 @@
 
 .details.section{
   padding: 0;
-  background: rgba(6,14,16,0.55);
+  background: rgba(8,8,12,0.55);
 }
 
 .details.section summary{
@@ -121,7 +121,7 @@
 
 .details pre{
   margin: 10px 0 0;
-  background: rgba(6,14,16,0.6);
+  background: rgba(8,8,12,0.6);
   border: 1px solid rgba(226,232,240,0.12);
   border-radius: 12px;
   padding: 12px;
