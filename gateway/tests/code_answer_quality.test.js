@@ -192,6 +192,37 @@ router.get("/health", healthHandler);
   assert.ok(metadata.calls.includes("validateSession"));
 }
 
+function testExtractCodeStructureMetadataCapturesRepoSignals() {
+  const packageMetadata = indexHooks.extractCodeStructureMetadata(`
+{
+  "name": "@acme/api",
+  "scripts": {
+    "dev": "node server.js",
+    "test": "vitest run"
+  },
+  "workspaces": ["packages/*", "apps/*"]
+}
+`, { language: "json", path: "package.json" });
+
+  assert.equal(packageMetadata.packageName, "@acme/api");
+  assert.deepEqual(packageMetadata.scripts, ["dev", "test"]);
+  assert.deepEqual(packageMetadata.workspacePackages, ["packages/*", "apps/*"]);
+  assert.equal(packageMetadata.isConfigFile, true);
+  assert.ok(packageMetadata.configKinds.includes("package"));
+
+  const composeMetadata = indexHooks.extractCodeStructureMetadata(`
+services:
+  gateway:
+    image: supavector
+  worker:
+    image: supavector-worker
+`, { path: "docker-compose.yml" });
+
+  assert.deepEqual(composeMetadata.services, ["gateway", "worker"]);
+  assert.equal(composeMetadata.isConfigFile, true);
+  assert.ok(composeMetadata.configKinds.includes("docker"));
+}
+
 function testBuildCodeRelationshipSummaryTracesImportsAndCalls() {
   const summary = indexHooks.buildCodeRelationshipSummary([
     {
@@ -221,6 +252,109 @@ function testBuildCodeRelationshipSummaryTracesImportsAndCalls() {
   assert.ok(summary.entryPoints.some((line) => /src\/server\.ts exposes GET \/health/.test(line)));
   assert.ok(summary.connections.some((line) => /src\/server\.ts imports src\/auth\/session\.ts/.test(line)));
   assert.ok(summary.connections.some((line) => /src\/server\.ts calls validateSession from src\/auth\/session\.ts/.test(line)));
+}
+
+function testBuildCodeRelationshipSummaryIncludesRuntimeAndTests() {
+  const summary = indexHooks.buildCodeRelationshipSummary([
+    {
+      path: "package.json",
+      exports: [],
+      functions: [],
+      classes: [],
+      imports: [],
+      modules: [],
+      calls: [],
+      routes: [],
+      packageName: "@acme/api",
+      scripts: ["dev", "test"],
+      workspacePackages: ["packages/*"],
+      isConfigFile: true
+    },
+    {
+      path: "docker-compose.yml",
+      exports: [],
+      functions: [],
+      classes: [],
+      imports: [],
+      modules: [],
+      calls: [],
+      routes: [],
+      services: ["gateway"],
+      envVars: ["OPENAI_API_KEY"],
+      isConfigFile: true
+    },
+    {
+      path: "src/auth/session.ts",
+      exports: ["validateSession"],
+      functions: ["validateSession"],
+      classes: [],
+      imports: [],
+      modules: [],
+      calls: [],
+      routes: []
+    },
+    {
+      path: "tests/auth/session.test.ts",
+      exports: [],
+      functions: ["shouldValidateSession"],
+      classes: [],
+      imports: ["../src/auth/session"],
+      modules: ["../src/auth/session"],
+      calls: ["validateSession"],
+      routes: [],
+      testTargets: ["../src/auth/session"],
+      isTestFile: true
+    }
+  ], {
+    question: "Which package defines the runtime service and what test covers validateSession?"
+  });
+
+  assert.ok(summary.packageBoundaries.some((line) => /package\.json defines package @acme\/api/.test(line)));
+  assert.ok(summary.runtimeSignals.some((line) => /docker-compose\.yml defines service gateway/.test(line)));
+  assert.ok(summary.testLinks.some((line) => /tests\/auth\/session\.test\.ts tests src\/auth\/session\.ts/.test(line)));
+}
+
+function testBuildCodeScoreBoostPrefersRepoSignalsForFocusedQuestions() {
+  const testBoost = indexHooks.buildCodeScoreBoost(
+    "Which test covers validateSession?",
+    {
+      path: "tests/auth/session.test.ts",
+      isTestFile: true,
+      testTargets: ["../src/auth/session"],
+      functions: ["shouldValidateSession"]
+    },
+    {}
+  );
+  const codeBoost = indexHooks.buildCodeScoreBoost(
+    "Which test covers validateSession?",
+    {
+      path: "src/auth/session.ts",
+      functions: ["validateSession"]
+    },
+    {}
+  );
+  assert.ok(testBoost > codeBoost);
+
+  const configBoost = indexHooks.buildCodeScoreBoost(
+    "Where is OPENAI_API_KEY configured for the docker stack?",
+    {
+      path: "docker-compose.yml",
+      isConfigFile: true,
+      configKinds: ["docker"],
+      services: ["gateway"],
+      envVars: ["OPENAI_API_KEY"]
+    },
+    {}
+  );
+  const genericBoost = indexHooks.buildCodeScoreBoost(
+    "Where is OPENAI_API_KEY configured for the docker stack?",
+    {
+      path: "src/server.ts",
+      functions: ["startServer"]
+    },
+    {}
+  );
+  assert.ok(configBoost > genericBoost);
 }
 
 function testBuildCodeWorkingSetMergesSessionAndRetrievedFiles() {
@@ -259,7 +393,10 @@ function main() {
   testBuildCodePromptIncludesRetrievedFileSummary();
   testBuildCodePromptIncludesWorkingSetAndRecentTurns();
   testExtractCodeStructureMetadataCapturesConnections();
+  testExtractCodeStructureMetadataCapturesRepoSignals();
   testBuildCodeRelationshipSummaryTracesImportsAndCalls();
+  testBuildCodeRelationshipSummaryIncludesRuntimeAndTests();
+  testBuildCodeScoreBoostPrefersRepoSignalsForFocusedQuestions();
   testBuildCodeWorkingSetMergesSessionAndRetrievedFiles();
   console.log("code answer quality tests passed");
 }

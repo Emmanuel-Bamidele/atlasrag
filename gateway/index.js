@@ -1046,8 +1046,98 @@ function inferCodeLanguageFromMetadata(metadata = {}, fallbackPath = "") {
   return map[ext] || ext || null;
 }
 
+function inferCodeConfigKinds(fallbackPath = "") {
+  const lowerPath = String(fallbackPath || "").trim().toLowerCase();
+  if (!lowerPath) return [];
+  const kinds = [];
+  const pushKind = (value) => {
+    if (!value || kinds.includes(value)) return;
+    kinds.push(value);
+  };
+  if (/package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|requirements\.txt$|poetry\.lock$|pyproject\.toml$|pom\.xml$|build\.gradle(?:\.kts)?$|cargo\.toml$|composer\.json$|gemfile$|go\.mod$/.test(lowerPath)) {
+    pushKind("package");
+  }
+  if (/pnpm-workspace\.yaml$|lerna\.json$|turbo\.json$|nx\.json$|workspace\.json$/.test(lowerPath)) {
+    pushKind("workspace");
+  }
+  if (/docker-compose(?:\.[^.]+)?\.ya?ml$|compose\.ya?ml$|dockerfile$/.test(lowerPath)) {
+    pushKind("docker");
+  }
+  if (/\.github\/workflows\/.+\.ya?ml$/.test(lowerPath)) {
+    pushKind("workflow");
+  }
+  if (/(^|\/)\.env(?:\.[^/]+)?$|env\.(?:example|sample|template)/.test(lowerPath)) {
+    pushKind("env");
+  }
+  if (/tsconfig(?:\.[^.]+)?\.json$|jsconfig\.json$|vite\.config\.[^.]+$|webpack(?:\.[^.]+)*\.[^.]+$|rollup\.config\.[^.]+$|next\.config\.[^.]+$|nuxt\.config\.[^.]+$|jest\.config\.[^.]+$|pytest\.ini$|tox\.ini$|mypy\.ini$|babel\.config\.[^.]+$|eslint\.config\.[^.]+$|eslint(?:\.|$)|prettier(?:\.|$)/.test(lowerPath)) {
+    pushKind("tooling");
+  }
+  return kinds;
+}
+
+function extractYamlSectionKeys(source, sectionName, { maxItems = 10 } = {}) {
+  const lines = String(source || "").split(/\r?\n/);
+  const keys = [];
+  let inSection = false;
+  let sectionIndent = 0;
+  for (const rawLine of lines) {
+    const line = String(rawLine || "").replace(/\t/g, "  ");
+    const sectionMatch = line.match(/^(\s*)([A-Za-z0-9_.-]+):\s*(?:#.*)?$/);
+    if (!inSection) {
+      if (sectionMatch && sectionMatch[2] === sectionName) {
+        inSection = true;
+        sectionIndent = sectionMatch[1].length;
+      }
+      continue;
+    }
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const indent = line.match(/^\s*/)?.[0]?.length || 0;
+    if (indent <= sectionIndent && /^[A-Za-z0-9_.-]+:\s*/.test(line.trim())) break;
+    if (indent <= sectionIndent) continue;
+    const keyMatch = line.match(/^\s+([A-Za-z0-9_.-]+):\s*(?:#.*)?$/);
+    if (!keyMatch) continue;
+    pushUniqueCodeValue(keys, keyMatch[1], maxItems, 120);
+  }
+  return keys;
+}
+
+function extractPackageJsonSignals(source) {
+  const parsedSignals = {
+    packageName: null,
+    scripts: [],
+    workspacePackages: []
+  };
+  try {
+    const parsed = JSON.parse(String(source || ""));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.name === "string" && parsed.name.trim()) {
+        parsedSignals.packageName = parsed.name.trim().slice(0, 160);
+      }
+      if (parsed.scripts && typeof parsed.scripts === "object" && !Array.isArray(parsed.scripts)) {
+        for (const scriptName of Object.keys(parsed.scripts)) {
+          pushUniqueCodeValue(parsedSignals.scripts, scriptName, 12, 120);
+        }
+      }
+      const workspaces = Array.isArray(parsed.workspaces)
+        ? parsed.workspaces
+        : (parsed.workspaces && typeof parsed.workspaces === "object" && Array.isArray(parsed.workspaces.packages)
+          ? parsed.workspaces.packages
+          : []);
+      for (const workspacePattern of workspaces) {
+        pushUniqueCodeValue(parsedSignals.workspacePackages, workspacePattern, 10, 200);
+      }
+    }
+  } catch {
+    // Ignore package manifest parsing failures; heuristics still work.
+  }
+  return parsedSignals;
+}
+
 function extractCodeStructureMetadata(text, options = {}) {
   const source = String(text || "");
+  const fallbackPath = String(options?.path || "").trim();
+  const lowerPath = fallbackPath.toLowerCase();
+  const baseName = path.basename(lowerPath);
   const functions = [];
   const classes = [];
   const exportsList = [];
@@ -1055,6 +1145,14 @@ function extractCodeStructureMetadata(text, options = {}) {
   const modules = [];
   const calls = [];
   const routes = [];
+  const envVars = [];
+  const testTargets = [];
+  const scripts = [];
+  const services = [];
+  const workflowJobs = [];
+  const workspacePackages = [];
+  const configKinds = inferCodeConfigKinds(fallbackPath);
+  let packageName = null;
 
   const pushModule = (value) => {
     pushUniqueCodeValue(modules, value, 20, 160);
@@ -1138,6 +1236,69 @@ function extractCodeStructureMetadata(text, options = {}) {
     pushUniqueCodeValue(calls, name, 28, 120);
   }
 
+  const isTestFile = /(?:^|\/)(?:__tests__|__specs__|tests?|specs?)\//.test(lowerPath)
+    || /\.(?:test|spec)\.[^.]+$/.test(baseName);
+  const isConfigFile = configKinds.length > 0;
+  const isEntrypoint = Boolean(
+    routes.length
+    || /(?:^|\/)(?:index|main|app|server|cli|worker|wsgi|asgi)\.[^.]+$/.test(lowerPath)
+    || /(?:^|\/)(?:cmd|bin|scripts?)\//.test(lowerPath)
+    || (/^\s*if\s+__name__\s*==\s*['"]__main__['"]/m.test(source))
+    || (/\bapp\.listen\s*\(|\bserve\s*\(|\bhttp\.createServer\s*\(/.test(source))
+  );
+
+  if (lowerPath.endsWith("package.json")) {
+    const packageSignals = extractPackageJsonSignals(source);
+    packageName = packageSignals.packageName;
+    for (const scriptName of packageSignals.scripts) {
+      pushUniqueCodeValue(scripts, scriptName, 12, 120);
+    }
+    for (const workspacePattern of packageSignals.workspacePackages) {
+      pushUniqueCodeValue(workspacePackages, workspacePattern, 10, 200);
+    }
+  } else if (lowerPath.endsWith("pnpm-workspace.yaml")) {
+    for (const workspacePattern of String(source || "").matchAll(/^\s*-\s+["']?([^"'#\n]+)["']?\s*$/gm)) {
+      pushUniqueCodeValue(workspacePackages, workspacePattern[1], 10, 200);
+    }
+  }
+
+  if (configKinds.includes("docker")) {
+    for (const service of extractYamlSectionKeys(source, "services", { maxItems: 10 })) {
+      pushUniqueCodeValue(services, service, 10, 120);
+    }
+  }
+  if (configKinds.includes("workflow")) {
+    for (const jobName of extractYamlSectionKeys(source, "jobs", { maxItems: 10 })) {
+      pushUniqueCodeValue(workflowJobs, jobName, 10, 120);
+    }
+  }
+
+  const envPatterns = [
+    /\bprocess\.env\.([A-Z][A-Z0-9_]{2,})\b/g,
+    /\bos\.getenv\(\s*['"]([A-Z][A-Z0-9_]{2,})['"]\s*\)/g,
+    /\bos\.environ\[\s*['"]([A-Z][A-Z0-9_]{2,})['"]\s*\]/g,
+    /\bSystem\.getenv\(\s*['"]([A-Z][A-Z0-9_]{2,})['"]\s*\)/g,
+    /\$\{?([A-Z][A-Z0-9_]{2,})\}?/g
+  ];
+  for (const pattern of envPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      pushUniqueCodeValue(envVars, match[1], 12, 120);
+    }
+  }
+  if (configKinds.includes("env")) {
+    for (const match of source.matchAll(/^\s*([A-Z][A-Z0-9_]{2,})\s*=/gm)) {
+      pushUniqueCodeValue(envVars, match[1], 12, 120);
+    }
+  }
+
+  if (isTestFile) {
+    for (const importRef of [...imports, ...modules]) {
+      if (/^(?:\.{1,2}\/|\/)/.test(String(importRef || "").trim())) {
+        pushUniqueCodeValue(testTargets, importRef, 10, 200);
+      }
+    }
+  }
+
   return {
     language: options?.language || null,
     functions,
@@ -1146,7 +1307,18 @@ function extractCodeStructureMetadata(text, options = {}) {
     imports,
     modules,
     calls,
-    routes
+    routes,
+    envVars,
+    testTargets,
+    scripts,
+    services,
+    workflowJobs,
+    workspacePackages,
+    packageName,
+    configKinds,
+    isTestFile,
+    isConfigFile,
+    isEntrypoint
   };
 }
 
@@ -1157,7 +1329,8 @@ function enrichCodeSourceMetadata(source = {}, text, docId) {
   const title = String(source?.title || docId || "").trim();
   const inferredLanguage = inferCodeLanguageFromMetadata(base, base.path || title || source?.url || "");
   const structure = extractCodeStructureMetadata(text, {
-    language: inferredLanguage
+    language: inferredLanguage,
+    path: base.path || title || source?.url || ""
   });
   if (inferredLanguage && !base.language && !base.lang) {
     base.language = inferredLanguage;
@@ -1170,7 +1343,18 @@ function enrichCodeSourceMetadata(source = {}, text, docId) {
     imports: normalizeCodeMetadataList(structure.imports, { maxItems: 20, maxItemLength: 160 }),
     modules: normalizeCodeMetadataList(structure.modules, { maxItems: 20, maxItemLength: 160 }),
     calls: normalizeCodeMetadataList(structure.calls, { maxItems: 28 }),
-    routes: normalizeCodeMetadataList(structure.routes, { maxItems: 16, maxItemLength: 200 })
+    routes: normalizeCodeMetadataList(structure.routes, { maxItems: 16, maxItemLength: 200 }),
+    envVars: normalizeCodeMetadataList(structure.envVars, { maxItems: 12, maxItemLength: 120 }),
+    testTargets: normalizeCodeMetadataList(structure.testTargets, { maxItems: 10, maxItemLength: 200 }),
+    scripts: normalizeCodeMetadataList(structure.scripts, { maxItems: 12, maxItemLength: 120 }),
+    services: normalizeCodeMetadataList(structure.services, { maxItems: 10, maxItemLength: 120 }),
+    workflowJobs: normalizeCodeMetadataList(structure.workflowJobs, { maxItems: 10, maxItemLength: 120 }),
+    workspacePackages: normalizeCodeMetadataList(structure.workspacePackages, { maxItems: 10, maxItemLength: 200 }),
+    packageName: normalizeCodeMetadataString(structure.packageName, 160),
+    configKinds: normalizeCodeMetadataList(structure.configKinds, { maxItems: 8, maxItemLength: 80 }),
+    isTestFile: Boolean(structure.isTestFile),
+    isConfigFile: Boolean(structure.isConfigFile),
+    isEntrypoint: Boolean(structure.isEntrypoint)
   };
 }
 
@@ -4586,6 +4770,17 @@ function extractCodeMemoryMetadata(memory) {
     modules: normalizeCodeMetadataList(metadata.modules, { maxItems: 20, maxItemLength: 160 }),
     calls: normalizeCodeMetadataList(metadata.calls, { maxItems: 28 }),
     routes: normalizeCodeMetadataList(metadata.routes, { maxItems: 16, maxItemLength: 200 }),
+    envVars: normalizeCodeMetadataList(metadata.envVars ?? metadata.env_vars, { maxItems: 12, maxItemLength: 120 }),
+    testTargets: normalizeCodeMetadataList(metadata.testTargets ?? metadata.test_targets, { maxItems: 10, maxItemLength: 200 }),
+    scripts: normalizeCodeMetadataList(metadata.scripts, { maxItems: 12, maxItemLength: 120 }),
+    services: normalizeCodeMetadataList(metadata.services, { maxItems: 10, maxItemLength: 120 }),
+    workflowJobs: normalizeCodeMetadataList(metadata.workflowJobs ?? metadata.workflow_jobs, { maxItems: 10, maxItemLength: 120 }),
+    workspacePackages: normalizeCodeMetadataList(metadata.workspacePackages ?? metadata.workspace_packages, { maxItems: 10, maxItemLength: 200 }),
+    packageName: normalizeCodeMetadataString(metadata.packageName ?? metadata.package_name, 160),
+    configKinds: normalizeCodeMetadataList(metadata.configKinds ?? metadata.config_kinds, { maxItems: 8, maxItemLength: 80 }),
+    isTestFile: Boolean(metadata.isTestFile ?? metadata.is_test_file),
+    isConfigFile: Boolean(metadata.isConfigFile ?? metadata.is_config_file),
+    isEntrypoint: Boolean(metadata.isEntrypoint ?? metadata.is_entrypoint),
     metadata
   };
 }
@@ -4593,6 +4788,12 @@ function extractCodeMemoryMetadata(memory) {
 function buildCodeRetrievalQuery(question, input = {}) {
   const parts = [String(question || "").trim()];
   const sessionFocus = buildCodeSessionFocus(input);
+  const lowerQuestion = [
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(input?.constraints) ? input.constraints.join(" ") : ""
+  ].filter(Boolean).join(" ").toLowerCase();
   if (input?.task && input.task !== "general") parts.push(`task ${input.task}`);
   if (input?.language) parts.push(`language ${input.language}`);
   if (input?.deployment) parts.push(`deployment ${input.deployment}`);
@@ -4621,6 +4822,18 @@ function buildCodeRetrievalQuery(question, input = {}) {
     input?.context && typeof input.context === "object" ? JSON.stringify(input.context) : ""
   ]);
   if (identifierHints.length) parts.push(`identifiers ${identifierHints.join(" ")}`);
+  if (/\b(test|tests|spec|specs|coverage|fixture|mock|integration test|unit test|e2e)\b/.test(lowerQuestion)) {
+    parts.push("focus tests specs coverage fixtures mocks");
+  }
+  if (/\b(config|configuration|env|environment|secret|secrets|deploy|deployment|docker|compose|workflow|ci|github actions|runtime|startup|bootstrap|build)\b/.test(lowerQuestion)) {
+    parts.push("focus config runtime env docker workflow build");
+  }
+  if (/\b(package|packages|workspace|workspaces|monorepo|dependency|dependencies|module boundary|package boundary|turbo|lerna|pnpm|nx)\b/.test(lowerQuestion)) {
+    parts.push("focus packages workspaces dependencies monorepo");
+  }
+  if (/\b(entry ?point|startup|boot|bootstrap|server start|app start|worker|cli)\b/.test(lowerQuestion)) {
+    parts.push("focus entrypoints startup worker cli");
+  }
   if (input?.errorMessage) parts.push(`error ${input.errorMessage}`);
   if (input?.stackTrace) parts.push(String(input.stackTrace).slice(0, 1200));
   // For debug: extract file/function identifiers from stack trace for better retrieval
@@ -4803,6 +5016,13 @@ function isConnectionFocusedCodeQuestion(question, input = {}) {
 function buildCodeScoreBoost(question, metadata, input = {}) {
   let boost = 0;
   const lowerQuestion = String(question || "").trim().toLowerCase();
+  const combinedQuestion = [
+    question,
+    input?.errorMessage,
+    input?.stackTrace,
+    Array.isArray(input?.constraints) ? input.constraints.join(" ") : "",
+    Array.isArray(input?.paths) ? input.paths.join(" ") : ""
+  ].filter(Boolean).join(" ").toLowerCase();
   const lowerPath = String(metadata?.path || "").trim().toLowerCase();
   const lowerRepo = String(metadata?.repo || "").trim().toLowerCase();
   const lowerLanguage = String(metadata?.language || "").trim().toLowerCase();
@@ -4819,6 +5039,10 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
     sessionFocus.symbols.join(" ")
   ]);
   const connectionFocused = isConnectionFocusedCodeQuestion(question, input);
+  const asksAboutTests = /\b(test|tests|spec|specs|coverage|fixture|fixtures|mock|mocks|integration test|unit test|e2e)\b/.test(combinedQuestion);
+  const asksAboutConfig = /\b(config|configuration|env|environment|secret|secrets|deploy|deployment|docker|compose|workflow|ci|github actions|runtime|startup|bootstrap|build)\b/.test(combinedQuestion);
+  const asksAboutPackages = /\b(package|packages|workspace|workspaces|monorepo|dependency|dependencies|module boundary|package boundary|turbo|lerna|pnpm|nx)\b/.test(combinedQuestion);
+  const asksAboutEntrypoints = /\b(entry ?point|startup|boot|bootstrap|server start|app start|worker|cli|where .* start)\b/.test(combinedQuestion);
 
   if (metadata?.sourceType === "code") boost += 0.32;
   if (requestedLanguage && lowerLanguage && requestedLanguage === lowerLanguage) boost += 0.14;
@@ -4858,6 +5082,11 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
     if (metadataListIncludesHint(metadata?.exports, hint)) boost += 0.16;
     if (metadataListIncludesHint(metadata?.calls, hint)) boost += 0.1;
     if (metadataListIncludesHint(metadata?.imports, hint) || metadataListIncludesHint(metadata?.modules, hint)) boost += 0.08;
+    if (metadataListIncludesHint(metadata?.envVars, hint)) boost += 0.1;
+    if (metadataListIncludesHint(metadata?.scripts, hint)) boost += 0.08;
+    if (metadataListIncludesHint(metadata?.services, hint) || metadataListIncludesHint(metadata?.workflowJobs, hint)) boost += 0.08;
+    if (metadataListIncludesHint(metadata?.workspacePackages, hint)) boost += 0.08;
+    if (String(metadata?.packageName || "").toLowerCase() === String(hint || "").trim().toLowerCase()) boost += 0.1;
   }
 
   if (/\b(route|router|endpoint|handler|middleware)\b/.test(lowerQuestion) && Array.isArray(metadata?.routes) && metadata.routes.length) {
@@ -4872,6 +5101,27 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
     if ((metadata?.exports?.length || 0) > 0) boost += 0.05;
     if ((metadata?.calls?.length || 0) > 0) boost += 0.08;
     if ((metadata?.routes?.length || 0) > 0) boost += 0.06;
+  }
+  if (asksAboutTests) {
+    if (metadata?.isTestFile) boost += 0.18;
+    if ((metadata?.testTargets?.length || 0) > 0) boost += 0.08;
+  }
+  if (asksAboutConfig) {
+    if (metadata?.isConfigFile) boost += 0.18;
+    if ((metadata?.envVars?.length || 0) > 0) boost += 0.08;
+    if ((metadata?.services?.length || 0) > 0) boost += 0.08;
+    if ((metadata?.workflowJobs?.length || 0) > 0) boost += 0.08;
+    if ((metadata?.scripts?.length || 0) > 0) boost += 0.06;
+  }
+  if (asksAboutPackages) {
+    if (String(metadata?.packageName || "").trim()) boost += 0.12;
+    if ((metadata?.workspacePackages?.length || 0) > 0) boost += 0.12;
+    if (Array.isArray(metadata?.configKinds) && metadata.configKinds.some((kind) => kind === "package" || kind === "workspace")) {
+      boost += 0.08;
+    }
+  }
+  if (asksAboutEntrypoints && metadata?.isEntrypoint) {
+    boost += 0.18;
   }
 
   return boost;
@@ -4904,7 +5154,20 @@ function buildCodeFilesFromRanked(ranked, limit = 8) {
       classes: Array.isArray(file.classes) ? file.classes.slice(0, 4) : [],
       exports: Array.isArray(file.exports) ? file.exports.slice(0, 6) : [],
       imports: Array.isArray(file.imports) ? file.imports.slice(0, 4) : [],
+      modules: Array.isArray(file.modules) ? file.modules.slice(0, 6) : [],
+      calls: Array.isArray(file.calls) ? file.calls.slice(0, 8) : [],
       routes: Array.isArray(file.routes) ? file.routes.slice(0, 4) : [],
+      envVars: Array.isArray(file.envVars) ? file.envVars.slice(0, 6) : [],
+      testTargets: Array.isArray(file.testTargets) ? file.testTargets.slice(0, 6) : [],
+      scripts: Array.isArray(file.scripts) ? file.scripts.slice(0, 6) : [],
+      services: Array.isArray(file.services) ? file.services.slice(0, 6) : [],
+      workflowJobs: Array.isArray(file.workflowJobs) ? file.workflowJobs.slice(0, 6) : [],
+      workspacePackages: Array.isArray(file.workspacePackages) ? file.workspacePackages.slice(0, 6) : [],
+      packageName: file.packageName || null,
+      configKinds: Array.isArray(file.configKinds) ? file.configKinds.slice(0, 6) : [],
+      isTestFile: Boolean(file.isTestFile),
+      isConfigFile: Boolean(file.isConfigFile),
+      isEntrypoint: Boolean(file.isEntrypoint),
       score: Number(candidate?.score ?? 0)
     });
     if (files.length >= limit) break;
@@ -4986,9 +5249,19 @@ function buildCodeSourceSummary(files = []) {
   const langSeen = new Set();
   let codeHits = 0;
   let nonCodeHits = 0;
+  let testFiles = 0;
+  let configFiles = 0;
+  let entryPoints = 0;
+  const packageNames = [];
+  const packageSeen = new Set();
+  const configKinds = [];
+  const configKindSeen = new Set();
   for (const file of files) {
     if (file?.sourceType === "code") codeHits += 1;
     else nonCodeHits += 1;
+    if (file?.isTestFile) testFiles += 1;
+    if (file?.isConfigFile) configFiles += 1;
+    if (file?.isEntrypoint) entryPoints += 1;
     if (file?.repo && !repoSeen.has(file.repo)) {
       repoSeen.add(file.repo);
       repositories.push(file.repo);
@@ -4997,12 +5270,27 @@ function buildCodeSourceSummary(files = []) {
       langSeen.add(file.language);
       languages.push(file.language);
     }
+    if (file?.packageName && !packageSeen.has(file.packageName)) {
+      packageSeen.add(file.packageName);
+      packageNames.push(file.packageName);
+    }
+    for (const kind of Array.isArray(file?.configKinds) ? file.configKinds : []) {
+      const clean = String(kind || "").trim();
+      if (!clean || configKindSeen.has(clean)) continue;
+      configKindSeen.add(clean);
+      configKinds.push(clean);
+    }
   }
   return {
     codeHits,
     nonCodeHits,
+    testFiles,
+    configFiles,
+    entryPoints,
     repositories,
-    languages
+    languages,
+    packageNames,
+    configKinds
   };
 }
 
@@ -5043,6 +5331,9 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
   const relationships = [];
   const relationshipKeys = new Set();
   const entryPoints = [];
+  const packageBoundaries = [];
+  const runtimeSignals = [];
+  const testLinks = [];
 
   function addRelationship(kind, line, score = 0) {
     const cleanLine = String(line || "").trim();
@@ -5094,6 +5385,41 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
       entryPoints.push(line);
       addRelationship("route", line, scoreLine(line) + 1);
     }
+    if (file?.isEntrypoint && cleanPath) {
+      const line = `${cleanPath} acts as an entrypoint`;
+      entryPoints.push(line);
+      addRelationship("entrypoint", line, scoreLine(line) + 1);
+    }
+    if (file?.packageName && cleanPath) {
+      const line = `${cleanPath} defines package ${file.packageName}`;
+      packageBoundaries.push(line);
+      addRelationship("package", line, scoreLine(line) + 1);
+    }
+    for (const workspacePattern of Array.isArray(file?.workspacePackages) ? file.workspacePackages : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} declares workspace ${workspacePattern}`;
+      packageBoundaries.push(line);
+      addRelationship("workspace", line, scoreLine(line) + 1);
+    }
+    for (const scriptName of Array.isArray(file?.scripts) ? file.scripts : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} exposes script ${scriptName}`;
+      runtimeSignals.push(line);
+      addRelationship("script", line, scoreLine(line));
+    }
+    for (const serviceName of Array.isArray(file?.services) ? file.services : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} defines service ${serviceName}`;
+      runtimeSignals.push(line);
+      addRelationship("service", line, scoreLine(line) + 1);
+    }
+    for (const jobName of Array.isArray(file?.workflowJobs) ? file.workflowJobs : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} defines workflow job ${jobName}`;
+      runtimeSignals.push(line);
+      addRelationship("workflow", line, scoreLine(line) + 1);
+    }
+    for (const envVar of Array.isArray(file?.envVars) ? file.envVars.slice(0, 6) : []) {
+      const line = `${cleanPath || file?.docId || "unknown file"} references env ${envVar}`;
+      runtimeSignals.push(line);
+      addRelationship("env", line, scoreLine(line));
+    }
   }
 
   for (const file of fileList) {
@@ -5122,6 +5448,18 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
         addRelationship("call", line, scoreLine(line) + 3);
       }
     }
+    for (const testTarget of Array.isArray(file?.testTargets) ? file.testTargets : []) {
+      const cleanTarget = String(testTarget || "").trim();
+      if (!cleanTarget) continue;
+      const target = fileByPath.get(cleanTarget)
+        || fileByPath.get(normalizePathLike(cleanTarget))
+        || fileByPath.get(path.basename(cleanTarget))
+        || fileByPath.get(normalizePathLike(path.basename(cleanTarget)));
+      const targetPath = String(target?.path || cleanTarget).trim();
+      const line = `${fromPath} tests ${targetPath}`;
+      testLinks.push(line);
+      addRelationship("test", line, scoreLine(line) + (target ? 2 : 0));
+    }
   }
 
   relationships.sort((a, b) => {
@@ -5131,7 +5469,10 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
 
   return {
     entryPoints: entryPoints.slice(0, 8),
-    connections: relationships.slice(0, 12).map((item) => item.line)
+    connections: relationships.slice(0, 12).map((item) => item.line),
+    packageBoundaries: packageBoundaries.slice(0, 8),
+    runtimeSignals: runtimeSignals.slice(0, 8),
+    testLinks: testLinks.slice(0, 8)
   };
 }
 
@@ -5364,7 +5705,20 @@ async function buildCodeAnswerContext({
         classes: metadata.classes,
         exports: metadata.exports,
         imports: metadata.imports,
-        routes: metadata.routes
+        modules: metadata.modules,
+        calls: metadata.calls,
+        routes: metadata.routes,
+        envVars: metadata.envVars,
+        testTargets: metadata.testTargets,
+        scripts: metadata.scripts,
+        services: metadata.services,
+        workflowJobs: metadata.workflowJobs,
+        workspacePackages: metadata.workspacePackages,
+        packageName: metadata.packageName,
+        configKinds: metadata.configKinds,
+        isTestFile: metadata.isTestFile,
+        isConfigFile: metadata.isConfigFile,
+        isEntrypoint: metadata.isEntrypoint
       },
       score: Number(result.score || 0) + boost
     };
