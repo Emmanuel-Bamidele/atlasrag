@@ -20,6 +20,36 @@ function testBuildCodeRetrievalQueryIncludesPathHints() {
   assert.match(query, /identifiers .*validateSession.*authMiddleware/i);
 }
 
+function testBuildCodeRetrievalQueryIncludesWorkingSetContext() {
+  const query = indexHooks.buildCodeRetrievalQuery(
+    "Where should I continue the auth redirect fix?",
+    {
+      task: "debug",
+      context: {
+        codeSession: {
+          workingSet: {
+            files: ["src/auth/session.ts", "src/middleware.ts"],
+            repositories: ["acme/web"],
+            symbols: ["validateSession", "authMiddleware"]
+          },
+          recentTurns: [
+            {
+              question: "Why is validateSession redirecting twice?",
+              task: "debug",
+              files: ["src/auth/session.ts"]
+            }
+          ]
+        }
+      }
+    }
+  );
+
+  assert.match(query, /working set files .*src\/auth\/session\.ts.*src\/middleware\.ts/i);
+  assert.match(query, /working set repositories .*acme\/web/i);
+  assert.match(query, /working set symbols .*validateSession.*authMiddleware/i);
+  assert.match(query, /recent code questions .*redirecting twice/i);
+}
+
 function testSelectCodeCandidatesForPromptPrefersFileDiversity() {
   const ranked = [
     { result: { chunkId: "a#0" }, file: { repo: "acme/app", path: "src/a.ts", docId: "a", language: "ts" }, score: 9 },
@@ -92,6 +122,57 @@ function testBuildCodePromptIncludesRetrievedFileSummary() {
   assert.match(prompt.system, /trace imports, exports, routes, handlers, and likely call edges explicitly/);
 }
 
+function testBuildCodePromptIncludesWorkingSetAndRecentTurns() {
+  const prompt = answerHooks.buildCodePrompt(
+    "Where should I keep digging for the auth bug?",
+    [
+      {
+        chunk_id: "default::repo::auth#0",
+        source_type: "code",
+        title: "src/auth/session.ts",
+        metadata: {
+          repo: "acme/app",
+          branch: "main",
+          path: "src/auth/session.ts",
+          language: "typescript"
+        },
+        text: "export function validateSession(token) { return token.startsWith('sess_'); }"
+      }
+    ],
+    "medium",
+    {
+      task: "debug",
+      workingSet: {
+        files: ["src/auth/session.ts", "src/middleware.ts"],
+        repositories: ["acme/app"],
+        symbols: ["validateSession", "authMiddleware"]
+      },
+      context: {
+        codeSession: {
+          currentTask: "debug",
+          recentTurns: [
+            {
+              question: "Why is validateSession redirecting twice?",
+              task: "debug",
+              files: ["src/auth/session.ts"],
+              symbols: ["validateSession"],
+              answerSummary: "The redirect likely starts in validateSession before middleware runs."
+            }
+          ]
+        }
+      }
+    }
+  );
+
+  assert.match(prompt.user, /Active working set:/);
+  assert.match(prompt.user, /src\/auth\/session\.ts/);
+  assert.match(prompt.user, /src\/middleware\.ts/);
+  assert.match(prompt.user, /Recent code session turns:/);
+  assert.match(prompt.user, /Why is validateSession redirecting twice\?/);
+  assert.match(prompt.user, /The redirect likely starts in validateSession before middleware runs\./);
+  assert.match(prompt.system, /continue from that working set/i);
+}
+
 function testExtractCodeStructureMetadataCapturesConnections() {
   const metadata = indexHooks.extractCodeStructureMetadata(`
 import { validateSession } from "./auth/session";
@@ -142,12 +223,44 @@ function testBuildCodeRelationshipSummaryTracesImportsAndCalls() {
   assert.ok(summary.connections.some((line) => /src\/server\.ts calls validateSession from src\/auth\/session\.ts/.test(line)));
 }
 
+function testBuildCodeWorkingSetMergesSessionAndRetrievedFiles() {
+  const workingSet = indexHooks.buildCodeWorkingSet([
+    {
+      path: "src/server.ts",
+      repo: "acme/app",
+      language: "typescript",
+      exports: [],
+      functions: ["startServer"],
+      classes: []
+    }
+  ], {
+    context: {
+      codeSession: {
+        workingSet: {
+          files: ["src/auth/session.ts"],
+          repositories: ["acme/app"],
+          symbols: ["validateSession"]
+        }
+      }
+    }
+  });
+
+  assert.ok(workingSet.files.includes("src/auth/session.ts"));
+  assert.ok(workingSet.files.includes("src/server.ts"));
+  assert.ok(workingSet.repositories.includes("acme/app"));
+  assert.ok(workingSet.symbols.includes("validateSession"));
+  assert.ok(workingSet.symbols.includes("startServer"));
+}
+
 function main() {
   testBuildCodeRetrievalQueryIncludesPathHints();
+  testBuildCodeRetrievalQueryIncludesWorkingSetContext();
   testSelectCodeCandidatesForPromptPrefersFileDiversity();
   testBuildCodePromptIncludesRetrievedFileSummary();
+  testBuildCodePromptIncludesWorkingSetAndRecentTurns();
   testExtractCodeStructureMetadataCapturesConnections();
   testBuildCodeRelationshipSummaryTracesImportsAndCalls();
+  testBuildCodeWorkingSetMergesSessionAndRetrievedFiles();
   console.log("code answer quality tests passed");
 }
 

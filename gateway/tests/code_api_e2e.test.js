@@ -138,10 +138,12 @@ async function deleteDoc(adminJwt, docId) {
     assert(typeof codedData.answer === "string" && codedData.answer.length > 0, "code should return answer text");
     assert(Array.isArray(codedData.citations), "code should return citations");
     assert(Array.isArray(codedData.files), "code should return files");
+    assert(Array.isArray(codedData.workingSet?.files), "code should return working set files");
     assert(Array.isArray(codedData.supportingChunks), "code should return supporting chunks");
     assert(Array.isArray(codedData.relationshipSummary?.connections), "code should return relationship summary");
     assert(codedData.files.some((file) => file.path === "src/server.ts"), "code should include src/server.ts");
     assert(codedData.files.some((file) => file.path === "src/auth/session.ts"), "code should include src/auth/session.ts");
+    assert(codedData.workingSet.files.some((filePath) => filePath === "src/server.ts"), "working set should include src/server.ts");
     assert(
       codedData.relationshipSummary.connections.some((line) => /src\/server\.ts imports src\/auth\/session\.ts/.test(line))
       || codedData.relationshipSummary.connections.some((line) => /src\/server\.ts calls validateSession from src\/auth\/session\.ts/.test(line)),

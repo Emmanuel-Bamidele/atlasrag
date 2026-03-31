@@ -369,6 +369,84 @@ function buildCodeTaskInstruction(task) {
   return "Answer as a practical software engineer grounded in the retrieved code and repository context.";
 }
 
+function normalizeCodeSessionPromptContext(context = null) {
+  const session = context && typeof context === "object" && !Array.isArray(context)
+    ? context.codeSession
+    : null;
+  if (!session || typeof session !== "object" || Array.isArray(session)) {
+    return {
+      currentTask: null,
+      workingSet: {
+        files: [],
+        repositories: [],
+        languages: [],
+        symbols: []
+      },
+      recentTurns: []
+    };
+  }
+  const workingSet = session.workingSet && typeof session.workingSet === "object" && !Array.isArray(session.workingSet)
+    ? session.workingSet
+    : {};
+  const normalizeList = (values, maxItems, maxChars) => {
+    const out = [];
+    for (const raw of Array.isArray(values) ? values : []) {
+      const clean = String(raw || "").trim();
+      if (!clean || clean.length > maxChars) continue;
+      const key = clean.toLowerCase();
+      if (out.some((value) => value.toLowerCase() === key)) continue;
+      out.push(clean);
+      if (out.length >= maxItems) break;
+    }
+    return out;
+  };
+  return {
+    currentTask: session.currentTask ? String(session.currentTask).trim().slice(0, 80) : null,
+    workingSet: {
+      files: normalizeList(workingSet.files, 8, 320),
+      repositories: normalizeList(workingSet.repositories, 4, 240),
+      languages: normalizeList(workingSet.languages, 4, 80),
+      symbols: normalizeList(workingSet.symbols, 12, 120)
+    },
+    recentTurns: (Array.isArray(session.recentTurns) ? session.recentTurns : []).map((turn) => {
+      const clean = turn && typeof turn === "object" && !Array.isArray(turn) ? turn : {};
+      const question = clean.question ? String(clean.question).trim().slice(0, 240) : "";
+      const answerSummary = clean.answerSummary ? String(clean.answerSummary).trim().slice(0, 320) : "";
+      return {
+        question,
+        task: normalizeCodeTask(clean.task, "general"),
+        files: normalizeList(clean.files, 6, 320),
+        paths: normalizeList(clean.paths, 6, 320),
+        symbols: normalizeList(clean.symbols, 8, 120),
+        answerSummary
+      };
+    }).filter((turn) => turn.question || turn.answerSummary).slice(-4)
+  };
+}
+
+function buildCodeSessionContextSection(context = null) {
+  const session = normalizeCodeSessionPromptContext(context);
+  const sections = [];
+  if (session.currentTask) sections.push(`Code session task: ${session.currentTask}`);
+  const workingSetLines = [];
+  if (session.workingSet.files.length) workingSetLines.push(`- Files: ${session.workingSet.files.join(", ")}`);
+  if (session.workingSet.repositories.length) workingSetLines.push(`- Repositories: ${session.workingSet.repositories.join(", ")}`);
+  if (session.workingSet.languages.length) workingSetLines.push(`- Languages: ${session.workingSet.languages.join(", ")}`);
+  if (session.workingSet.symbols.length) workingSetLines.push(`- Symbols: ${session.workingSet.symbols.join(", ")}`);
+  if (workingSetLines.length) sections.push(`Recent code working set:\n${workingSetLines.join("\n")}`);
+  if (session.recentTurns.length) {
+    sections.push(`Recent code session turns:\n${session.recentTurns.map((turn) => {
+      const lines = [];
+      if (turn.question) lines.push(`- User asked (${turn.task}): ${turn.question}`);
+      if (turn.answerSummary) lines.push(`- Prior answer summary: ${turn.answerSummary}`);
+      if (turn.files.length || turn.paths.length) lines.push(`- Files in focus: ${[...turn.files, ...turn.paths].slice(0, 6).join(", ")}`);
+      if (turn.symbols.length) lines.push(`- Symbols in focus: ${turn.symbols.join(", ")}`);
+      return lines.join("\n");
+    }).join("\n")}`);
+  }
+  return sections.join("\n");
+}
+
 function buildCodeContextSection(options = {}) {
   const lines = [];
   const task = normalizeCodeTask(options?.task, "general");
@@ -384,8 +462,11 @@ function buildCodeContextSection(options = {}) {
   if (constraints) lines.push(`Constraints: ${constraints}`);
   if (options?.errorMessage) lines.push(`Error message: ${String(options.errorMessage).trim()}`);
   if (options?.stackTrace) lines.push(`Stack trace:\n${String(options.stackTrace).trim()}`);
+  const codeSessionSection = buildCodeSessionContextSection(options?.context);
+  if (codeSessionSection) lines.push(codeSessionSection);
   if (options?.context && typeof options.context === "object" && !Array.isArray(options.context)) {
     const notes = Object.entries(options.context)
+      .filter(([key]) => key !== "codeSession")
       .map(([key, value]) => {
         if (value === undefined || value === null) return "";
         if (typeof value === "object") return `${key}: ${JSON.stringify(value)}`;
@@ -492,6 +573,19 @@ function buildCodePrompt(question, chunks, answerLength, options = {}) {
   if (Number.isFinite(sourceSummary?.nonCodeHits) && sourceSummary.nonCodeHits > 0) {
     summaryLines.push(`Non-code hits: ${sourceSummary.nonCodeHits}`);
   }
+  const workingSetLines = [];
+  if (Array.isArray(options?.workingSet?.files) && options.workingSet.files.length) {
+    workingSetLines.push(`- Files: ${options.workingSet.files.slice(0, 8).join(", ")}`);
+  }
+  if (Array.isArray(options?.workingSet?.repositories) && options.workingSet.repositories.length) {
+    workingSetLines.push(`- Repositories: ${options.workingSet.repositories.slice(0, 4).join(", ")}`);
+  }
+  if (Array.isArray(options?.workingSet?.languages) && options.workingSet.languages.length) {
+    workingSetLines.push(`- Languages: ${options.workingSet.languages.slice(0, 4).join(", ")}`);
+  }
+  if (Array.isArray(options?.workingSet?.symbols) && options.workingSet.symbols.length) {
+    workingSetLines.push(`- Symbols: ${options.workingSet.symbols.slice(0, 10).join(", ")}`);
+  }
   const relationshipLines = [];
   if (Array.isArray(options?.relationshipSummary?.entryPoints) && options.relationshipSummary.entryPoints.length) {
     relationshipLines.push(...options.relationshipSummary.entryPoints.slice(0, 5).map((line) => `- ${line}`));
@@ -510,6 +604,7 @@ Priorities:
 - Prefer concrete explanations over generic advice.
 - Call out relevant files, folders, modules, dependencies, and execution flow when the evidence supports it.
 - Synthesize across multiple retrieved files when the question spans more than one module.
+- When recent code session context is provided, continue from that working set unless the retrieved evidence clearly points elsewhere.
 - When the user asks what connects to what, trace imports, exports, routes, handlers, and likely call edges explicitly.
 - Prefer direct file-to-file or symbol-to-file relationships over vague architecture summaries.
 - For debugging, distinguish observed evidence from inference.
@@ -521,10 +616,12 @@ Output format:
 1) Answer.
 2) Final line: "Citations: <comma-separated SOURCE ids>"`.trim();
   const retrievedFilesSection = fileLines.length ? `Retrieved files:\n${fileLines.join("\n")}` : "";
+  const workingSetSection = workingSetLines.length ? `Active working set:\n${workingSetLines.join("\n")}` : "";
   const sourceSummarySection = summaryLines.length ? `Retrieved source summary:\n${summaryLines.join("\n")}` : "";
   const relationshipSection = relationshipLines.length ? `Retrieved relationships:\n${relationshipLines.join("\n")}` : "";
   const user = [
     `Request context:\n${buildCodeContextSection(options)}`,
+    workingSetSection,
     sourceSummarySection,
     relationshipSection,
     retrievedFilesSection,

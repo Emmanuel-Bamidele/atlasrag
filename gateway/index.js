@@ -4592,16 +4592,23 @@ function extractCodeMemoryMetadata(memory) {
 
 function buildCodeRetrievalQuery(question, input = {}) {
   const parts = [String(question || "").trim()];
+  const sessionFocus = buildCodeSessionFocus(input);
   if (input?.task && input.task !== "general") parts.push(`task ${input.task}`);
   if (input?.language) parts.push(`language ${input.language}`);
   if (input?.deployment) parts.push(`deployment ${input.deployment}`);
   if (input?.repository?.name) parts.push(`repository ${input.repository.name}`);
   if (Array.isArray(input?.paths) && input.paths.length) parts.push(`paths ${input.paths.join(" ")}`);
+  if (sessionFocus.repositories.length) parts.push(`working set repositories ${sessionFocus.repositories.join(" ")}`);
+  if (sessionFocus.files.length) parts.push(`working set files ${sessionFocus.files.join(" ")}`);
+  if (sessionFocus.languages.length) parts.push(`working set languages ${sessionFocus.languages.join(" ")}`);
+  if (sessionFocus.symbols.length) parts.push(`working set symbols ${sessionFocus.symbols.join(" ")}`);
+  if (sessionFocus.recentQuestions.length) parts.push(`recent code questions ${sessionFocus.recentQuestions.join(" || ")}`);
   const hintPaths = extractCodePathHints([
     question,
     input?.errorMessage,
     input?.stackTrace,
-    Array.isArray(input?.paths) ? input.paths.join(" ") : ""
+    Array.isArray(input?.paths) ? input.paths.join(" ") : "",
+    sessionFocus.files.join(" ")
   ]);
   if (hintPaths.length) parts.push(`file hints ${hintPaths.join(" ")}`);
   const identifierHints = buildCodeIdentifierHints([
@@ -4610,6 +4617,7 @@ function buildCodeRetrievalQuery(question, input = {}) {
     input?.stackTrace,
     Array.isArray(input?.paths) ? input.paths.join(" ") : "",
     Array.isArray(input?.constraints) ? input.constraints.join(" ") : "",
+    sessionFocus.symbols.join(" "),
     input?.context && typeof input.context === "object" ? JSON.stringify(input.context) : ""
   ]);
   if (identifierHints.length) parts.push(`identifiers ${identifierHints.join(" ")}`);
@@ -4701,6 +4709,76 @@ function buildCodeIdentifierHints(values) {
   return hints.slice(0, 10);
 }
 
+function normalizeCodeSessionContext(context = null) {
+  const session = context && typeof context === "object" && !Array.isArray(context)
+    ? context.codeSession
+    : null;
+  if (!session || typeof session !== "object" || Array.isArray(session)) {
+    return {
+      currentTask: null,
+      workingSet: {
+        files: [],
+        repositories: [],
+        languages: [],
+        symbols: []
+      },
+      recentTurns: []
+    };
+  }
+  const workingSet = session.workingSet && typeof session.workingSet === "object" && !Array.isArray(session.workingSet)
+    ? session.workingSet
+    : {};
+  const recentTurns = Array.isArray(session.recentTurns) ? session.recentTurns : [];
+  return {
+    currentTask: parseOptionalString(session.currentTask, { label: "context.codeSession.currentTask", max: 80 }),
+    workingSet: {
+      files: normalizeCodeMetadataList(workingSet.files, { maxItems: 8, maxItemLength: 320 }),
+      repositories: normalizeCodeMetadataList(workingSet.repositories, { maxItems: 4, maxItemLength: 240 }),
+      languages: normalizeCodeMetadataList(workingSet.languages, { maxItems: 4, maxItemLength: 80 }),
+      symbols: normalizeCodeMetadataList(workingSet.symbols, { maxItems: 12, maxItemLength: 120 })
+    },
+    recentTurns: recentTurns.map((turn) => {
+      const clean = turn && typeof turn === "object" && !Array.isArray(turn) ? turn : {};
+      return {
+        question: parseOptionalString(clean.question, { label: "context.codeSession.recentTurns.question", max: 240 }),
+        task: normalizeCodeTask(clean.task, "general"),
+        paths: normalizeCodeMetadataList(clean.paths, { maxItems: 8, maxItemLength: 320 }),
+        files: normalizeCodeMetadataList(clean.files, { maxItems: 8, maxItemLength: 320 }),
+        repositories: normalizeCodeMetadataList(clean.repositories, { maxItems: 4, maxItemLength: 240 }),
+        languages: normalizeCodeMetadataList(clean.languages, { maxItems: 4, maxItemLength: 80 }),
+        symbols: normalizeCodeMetadataList(clean.symbols, { maxItems: 12, maxItemLength: 120 }),
+        answerSummary: parseOptionalString(clean.answerSummary, { label: "context.codeSession.recentTurns.answerSummary", max: 320 })
+      };
+    }).filter((turn) => turn.question || turn.answerSummary).slice(-4)
+  };
+}
+
+function buildCodeSessionFocus(input = {}) {
+  const session = normalizeCodeSessionContext(input?.context);
+  const files = [...session.workingSet.files];
+  const repositories = [...session.workingSet.repositories];
+  const languages = [...session.workingSet.languages];
+  const symbols = [...session.workingSet.symbols];
+  const recentQuestions = [];
+  for (const turn of session.recentTurns) {
+    for (const filePath of turn.paths) pushUniqueCodeValue(files, filePath, 8, 320);
+    for (const filePath of turn.files) pushUniqueCodeValue(files, filePath, 8, 320);
+    for (const repo of turn.repositories) pushUniqueCodeValue(repositories, repo, 4, 240);
+    for (const language of turn.languages) pushUniqueCodeValue(languages, language, 4, 80);
+    for (const symbol of turn.symbols) pushUniqueCodeValue(symbols, symbol, 12, 120);
+    if (turn.question) pushUniqueCodeValue(recentQuestions, turn.question, 3, 240);
+  }
+  return {
+    currentTask: session.currentTask,
+    files,
+    repositories,
+    languages,
+    symbols,
+    recentQuestions,
+    recentTurns: session.recentTurns
+  };
+}
+
 function metadataListIncludesHint(values, hint) {
   const cleanHint = String(hint || "").trim().toLowerCase();
   if (!cleanHint) return false;
@@ -4728,30 +4806,35 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
   const lowerPath = String(metadata?.path || "").trim().toLowerCase();
   const lowerRepo = String(metadata?.repo || "").trim().toLowerCase();
   const lowerLanguage = String(metadata?.language || "").trim().toLowerCase();
+  const sessionFocus = buildCodeSessionFocus(input);
   const requestedLanguage = String(input?.language || "").trim().toLowerCase();
   const requestedRepo = String(input?.repository?.name || "").trim().toLowerCase();
   const requestedPaths = Array.isArray(input?.paths) ? input.paths : [];
+  const preferredPaths = [...requestedPaths, ...sessionFocus.files];
   const symbolHints = buildCodeIdentifierHints([
     question,
     input?.errorMessage,
     input?.stackTrace,
-    Array.isArray(requestedPaths) ? requestedPaths.join(" ") : ""
+    Array.isArray(preferredPaths) ? preferredPaths.join(" ") : "",
+    sessionFocus.symbols.join(" ")
   ]);
   const connectionFocused = isConnectionFocusedCodeQuestion(question, input);
 
   if (metadata?.sourceType === "code") boost += 0.32;
   if (requestedLanguage && lowerLanguage && requestedLanguage === lowerLanguage) boost += 0.14;
   if (requestedRepo && lowerRepo && includesLower(lowerRepo, requestedRepo)) boost += 0.18;
+  if (!requestedRepo && lowerRepo && sessionFocus.repositories.some((repo) => includesLower(lowerRepo, repo))) boost += 0.12;
+  if (!requestedLanguage && lowerLanguage && sessionFocus.languages.some((language) => lowerLanguage === String(language || "").trim().toLowerCase())) boost += 0.06;
 
-  for (const requestedPath of requestedPaths) {
+  for (const requestedPath of preferredPaths) {
     const cleanRequested = String(requestedPath || "").trim().toLowerCase();
     if (!cleanRequested || !lowerPath) continue;
     if (lowerPath === cleanRequested) {
-      boost += 0.28;
+      boost += requestedPaths.includes(requestedPath) ? 0.28 : 0.24;
       continue;
     }
     if (lowerPath.endsWith(cleanRequested) || cleanRequested.endsWith(lowerPath) || lowerPath.includes(cleanRequested)) {
-      boost += 0.18;
+      boost += requestedPaths.includes(requestedPath) ? 0.18 : 0.14;
     }
   }
 
@@ -4921,6 +5004,29 @@ function buildCodeSourceSummary(files = []) {
     repositories,
     languages
   };
+}
+
+function buildCodeWorkingSet(files = [], options = {}) {
+  const sessionFocus = buildCodeSessionFocus({ context: options?.context });
+  const workingSet = {
+    files: [...sessionFocus.files],
+    repositories: [...sessionFocus.repositories],
+    languages: [...sessionFocus.languages],
+    symbols: [...sessionFocus.symbols]
+  };
+  for (const file of Array.isArray(files) ? files : []) {
+    pushUniqueCodeValue(workingSet.files, file?.path, 8, 320);
+    pushUniqueCodeValue(workingSet.repositories, file?.repo, 4, 240);
+    pushUniqueCodeValue(workingSet.languages, file?.language, 4, 80);
+    for (const symbol of [
+      ...(Array.isArray(file?.exports) ? file.exports : []),
+      ...(Array.isArray(file?.functions) ? file.functions : []),
+      ...(Array.isArray(file?.classes) ? file.classes : [])
+    ]) {
+      pushUniqueCodeValue(workingSet.symbols, symbol, 12, 120);
+    }
+  }
+  return workingSet;
 }
 
 function buildCodeRelationshipSummary(files = [], options = {}) {
@@ -5319,6 +5425,7 @@ async function buildCodeAnswerContext({
       : {}
   })).filter(Boolean);
   const files = buildCodeFilesFromRanked(selected, Math.max(8, selectionK));
+  const workingSet = buildCodeWorkingSet(files, { context });
   const relationshipSummary = buildCodeRelationshipSummary(files, {
     question,
     paths,
@@ -5331,6 +5438,7 @@ async function buildCodeAnswerContext({
     usedItems,
     chunks,
     files,
+    workingSet,
     sourceSummary: buildCodeSourceSummary(files),
     relationshipSummary
   };
@@ -5556,6 +5664,7 @@ async function answerCodeQuestion({
     usedItems,
     chunks,
     files,
+    workingSet,
     sourceSummary,
     relationshipSummary
   } = await buildCodeAnswerContext({
@@ -5591,6 +5700,7 @@ async function answerCodeQuestion({
     model: requestedAnswerConfig.model,
     answerLength,
     files,
+    workingSet,
     sourceSummary,
     relationshipSummary,
     task,
@@ -5667,6 +5777,7 @@ async function answerCodeQuestion({
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     files,
+    workingSet,
     sourceSummary,
     relationshipSummary,
     answerConfidence: answerConfidence || "high"
@@ -9811,6 +9922,7 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       citations: citationIds,
       sources: result.citations,
       files: result.files,
+      workingSet: result.workingSet,
       sourceSummary: result.sourceSummary,
       relationshipSummary: result.relationshipSummary,
       supportingChunks: result.supportingChunks,
@@ -9893,6 +10005,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       deployment: input.deployment,
       repository: input.repository,
       files: result.files,
+      workingSet: result.workingSet,
       sourceSummary: result.sourceSummary,
       relationshipSummary: result.relationshipSummary,
       provider: result.provider,
@@ -11171,7 +11284,10 @@ module.exports = {
     parseTenantMetadataInput,
     parseDocumentSourceInput,
     buildCodeRetrievalQuery,
+    normalizeCodeSessionContext,
+    buildCodeSessionFocus,
     extractCodeStructureMetadata,
+    buildCodeWorkingSet,
     buildCodeRelationshipSummary,
     buildCodeScoreBoost,
     resolveCodeSelectionSize,
