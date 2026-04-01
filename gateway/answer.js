@@ -238,6 +238,12 @@ function fallbackFromChunks(questionOrChunks, maybeChunks) {
         usage: null
       };
     }
+
+    return {
+      answer: "I don't know based on the provided sources.",
+      citations: top.map((c) => c.chunk_id).filter(Boolean),
+      usage: null
+    };
   }
 
   const parts = [];
@@ -773,18 +779,6 @@ async function generateAnswer(question, chunks, options = {}) {
   if (!citations.length) {
     citations = safeChunks.slice(0, 3).map((c) => c.chunk_id).filter(Boolean);
   }
-  if (isCanonicalUnknownAnswer(answer) && safeChunks.length) {
-    const fallback = fallbackFromChunks(question, safeChunks);
-    if (!isCanonicalUnknownAnswer(fallback.answer)) {
-      return {
-        ...fallback,
-        usage,
-        answerLength: effectiveAnswerLength,
-        provider: resolved.provider,
-        model: resolved.model
-      };
-    }
-  }
   if (!answer) {
     const fallback = fallbackFromChunks(question, safeChunks);
     return {
@@ -1002,19 +996,6 @@ async function generateCodeAnswer(question, chunks, options = {}) {
   let citations = parsedCitations;
   if (!citations.length) {
     citations = safeChunks.slice(0, 4).map((c) => c.chunk_id).filter(Boolean);
-  }
-  if (isCanonicalUnknownAnswer(answer) && safeChunks.length) {
-    const fallback = fallbackFromChunks(question, safeChunks);
-    if (!isCanonicalUnknownAnswer(fallback.answer)) {
-      return {
-        ...fallback,
-        usage,
-        answerLength: effectiveAnswerLength,
-        provider: resolved.provider,
-        model: resolved.model,
-        answerConfidence: "low"
-      };
-    }
   }
   if (!answer) {
     const fallback = fallbackFromChunks(question, safeChunks);

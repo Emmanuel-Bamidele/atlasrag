@@ -97,6 +97,21 @@ function testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms() {
   assert.deepEqual(fallback.citations, ["default::cli-smoke::welcome#0"]);
 }
 
+function testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSources() {
+  const fallback = __testHooks.fallbackFromChunks(
+    "How do I configure SSO for this tenant?",
+    [
+      {
+        chunk_id: "default::cli-smoke::welcome#0",
+        text: "SupaVector stores memory for agents. It can also retrieve grounded context."
+      }
+    ]
+  );
+
+  assert.equal(fallback.answer, "I don't know based on the provided sources.");
+  assert.deepEqual(fallback.citations, ["default::cli-smoke::welcome#0"]);
+}
+
 function testCanonicalUnknownDetectionMatchesExpectedForms() {
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I don't know based on the provided sources."), true);
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I dont know based on the provided sources."), true);
@@ -112,6 +127,7 @@ function main() {
   testBooleanAskPromptRemainsSingleStringPrompt();
   testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
   testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms();
+  testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSources();
   testCanonicalUnknownDetectionMatchesExpectedForms();
   console.log("answer guard tests passed");
 }
