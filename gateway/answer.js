@@ -339,6 +339,10 @@ function formatCodeFileSignals(file = {}) {
   const classes = formatCodeContextList(file?.classes);
   const routes = formatCodeContextList(file?.routes);
   const imports = formatCodeContextList(file?.imports);
+  const importedSymbols = formatCodeContextList(file?.importedSymbols);
+  const definedSymbols = formatCodeContextList(file?.definedSymbols);
+  const referencedSymbols = formatCodeContextList(file?.referencedSymbols);
+  const reexports = formatCodeContextList(file?.reexports);
   const scripts = formatCodeContextList(file?.scripts);
   const services = formatCodeContextList(file?.services);
   const workflowJobs = formatCodeContextList(file?.workflowJobs);
@@ -350,6 +354,10 @@ function formatCodeFileSignals(file = {}) {
   if (classes) segments.push(`types: ${classes}`);
   if (routes) segments.push(`routes: ${routes}`);
   if (imports) segments.push(`imports: ${imports}`);
+  if (importedSymbols) segments.push(`imported symbols: ${importedSymbols}`);
+  if (definedSymbols) segments.push(`defined symbols: ${definedSymbols}`);
+  if (referencedSymbols) segments.push(`referenced symbols: ${referencedSymbols}`);
+  if (reexports) segments.push(`reexports: ${reexports}`);
   if (packageName) segments.push(`package: ${packageName}`);
   if (scripts) segments.push(`scripts: ${scripts}`);
   if (services) segments.push(`services: ${services}`);
@@ -417,24 +425,24 @@ function normalizeCodeSessionPromptContext(context = null) {
   return {
     currentTask: session.currentTask ? String(session.currentTask).trim().slice(0, 80) : null,
     workingSet: {
-      files: normalizeList(workingSet.files, 8, 320),
-      repositories: normalizeList(workingSet.repositories, 4, 240),
-      languages: normalizeList(workingSet.languages, 4, 80),
-      symbols: normalizeList(workingSet.symbols, 12, 120)
+      files: normalizeList(workingSet.files, 14, 320),
+      repositories: normalizeList(workingSet.repositories, 6, 240),
+      languages: normalizeList(workingSet.languages, 6, 80),
+      symbols: normalizeList(workingSet.symbols, 24, 120)
     },
     recentTurns: (Array.isArray(session.recentTurns) ? session.recentTurns : []).map((turn) => {
       const clean = turn && typeof turn === "object" && !Array.isArray(turn) ? turn : {};
-      const question = clean.question ? String(clean.question).trim().slice(0, 240) : "";
-      const answerSummary = clean.answerSummary ? String(clean.answerSummary).trim().slice(0, 320) : "";
+      const question = clean.question ? String(clean.question).trim().slice(0, 280) : "";
+      const answerSummary = clean.answerSummary ? String(clean.answerSummary).trim().slice(0, 420) : "";
       return {
         question,
         task: normalizeCodeTask(clean.task, "general"),
-        files: normalizeList(clean.files, 6, 320),
-        paths: normalizeList(clean.paths, 6, 320),
-        symbols: normalizeList(clean.symbols, 8, 120),
+        files: normalizeList(clean.files, 10, 320),
+        paths: normalizeList(clean.paths, 10, 320),
+        symbols: normalizeList(clean.symbols, 16, 120),
         answerSummary
       };
-    }).filter((turn) => turn.question || turn.answerSummary).slice(-4)
+    }).filter((turn) => turn.question || turn.answerSummary).slice(-6)
   };
 }
 
@@ -453,7 +461,7 @@ function buildCodeSessionContextSection(context = null) {
       const lines = [];
       if (turn.question) lines.push(`- User asked (${turn.task}): ${turn.question}`);
       if (turn.answerSummary) lines.push(`- Prior answer summary: ${turn.answerSummary}`);
-      if (turn.files.length || turn.paths.length) lines.push(`- Files in focus: ${[...turn.files, ...turn.paths].slice(0, 6).join(", ")}`);
+      if (turn.files.length || turn.paths.length) lines.push(`- Files in focus: ${[...turn.files, ...turn.paths].slice(0, 10).join(", ")}`);
       if (turn.symbols.length) lines.push(`- Symbols in focus: ${turn.symbols.join(", ")}`);
       return lines.join("\n");
     }).join("\n")}`);
@@ -596,6 +604,9 @@ function buildCodePrompt(question, chunks, answerLength, options = {}) {
   if (Number.isFinite(sourceSummary?.entryPoints) && sourceSummary.entryPoints > 0) {
     summaryLines.push(`Entrypoints: ${sourceSummary.entryPoints}`);
   }
+  if (Number.isFinite(sourceSummary?.symbolDenseFiles) && sourceSummary.symbolDenseFiles > 0) {
+    summaryLines.push(`Files with symbol graph signals: ${sourceSummary.symbolDenseFiles}`);
+  }
   if (Array.isArray(sourceSummary?.packageNames) && sourceSummary.packageNames.length) {
     summaryLines.push(`Packages: ${sourceSummary.packageNames.join(", ")}`);
   }
@@ -604,16 +615,16 @@ function buildCodePrompt(question, chunks, answerLength, options = {}) {
   }
   const workingSetLines = [];
   if (Array.isArray(options?.workingSet?.files) && options.workingSet.files.length) {
-    workingSetLines.push(`- Files: ${options.workingSet.files.slice(0, 8).join(", ")}`);
+    workingSetLines.push(`- Files: ${options.workingSet.files.slice(0, 12).join(", ")}`);
   }
   if (Array.isArray(options?.workingSet?.repositories) && options.workingSet.repositories.length) {
-    workingSetLines.push(`- Repositories: ${options.workingSet.repositories.slice(0, 4).join(", ")}`);
+    workingSetLines.push(`- Repositories: ${options.workingSet.repositories.slice(0, 6).join(", ")}`);
   }
   if (Array.isArray(options?.workingSet?.languages) && options.workingSet.languages.length) {
-    workingSetLines.push(`- Languages: ${options.workingSet.languages.slice(0, 4).join(", ")}`);
+    workingSetLines.push(`- Languages: ${options.workingSet.languages.slice(0, 6).join(", ")}`);
   }
   if (Array.isArray(options?.workingSet?.symbols) && options.workingSet.symbols.length) {
-    workingSetLines.push(`- Symbols: ${options.workingSet.symbols.slice(0, 10).join(", ")}`);
+    workingSetLines.push(`- Symbols: ${options.workingSet.symbols.slice(0, 16).join(", ")}`);
   }
   const relationshipLines = [];
   if (Array.isArray(options?.relationshipSummary?.entryPoints) && options.relationshipSummary.entryPoints.length) {
@@ -958,7 +969,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
     fallbackModel: resolveAnswerModel(options)
   });
 
-  const codeAnswerMaxTokens = effectiveAnswerLength === "short" ? 1536 : effectiveAnswerLength === "long" ? 6144 : 3072;
+  const codeAnswerMaxTokens = effectiveAnswerLength === "short" ? 2048 : effectiveAnswerLength === "long" ? 7168 : 4096;
 
   let resp = null;
   try {

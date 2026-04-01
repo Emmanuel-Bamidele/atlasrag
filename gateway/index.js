@@ -1151,31 +1151,47 @@ function extractCodeStructureMetadata(text, options = {}) {
   const services = [];
   const workflowJobs = [];
   const workspacePackages = [];
+  const importedSymbols = [];
+  const reexports = [];
+  const definedSymbols = [];
+  const referencedSymbols = [];
   const configKinds = inferCodeConfigKinds(fallbackPath);
   let packageName = null;
 
   const pushModule = (value) => {
     pushUniqueCodeValue(modules, value, 20, 160);
   };
+  const pushDefinedSymbol = (value) => {
+    pushUniqueCodeValue(definedSymbols, value, 40, 120);
+  };
+  const pushReferencedSymbol = (value) => {
+    pushUniqueCodeValue(referencedSymbols, value, 48, 120);
+  };
 
   for (const match of source.matchAll(/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)) {
     pushUniqueCodeValue(functions, match[1], 28, 120);
+    pushDefinedSymbol(match[1]);
   }
   for (const match of source.matchAll(/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) {
     pushUniqueCodeValue(functions, match[1], 28, 120);
+    pushDefinedSymbol(match[1]);
   }
   for (const match of source.matchAll(/^\s*(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/gm)) {
     pushUniqueCodeValue(functions, match[1], 28, 120);
+    pushDefinedSymbol(match[1]);
   }
   for (const match of source.matchAll(/^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][\w]*)\s*\(/gm)) {
     pushUniqueCodeValue(functions, match[1], 28, 120);
+    pushDefinedSymbol(match[1]);
   }
 
   for (const match of source.matchAll(/^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/gm)) {
     pushUniqueCodeValue(classes, match[1], 20, 120);
+    pushDefinedSymbol(match[1]);
   }
   for (const match of source.matchAll(/^\s*(?:export\s+)?(?:interface|type|enum)\s+([A-Za-z_$][\w$]*)\b/gm)) {
     pushUniqueCodeValue(classes, match[1], 20, 120);
+    pushDefinedSymbol(match[1]);
   }
 
   for (const match of source.matchAll(/^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)) {
@@ -1193,13 +1209,26 @@ function extractCodeStructureMetadata(text, options = {}) {
   for (const match of source.matchAll(/^\s*export\s*\{\s*([^}]+)\s*\}/gm)) {
     const names = String(match[1] || "").split(",");
     for (const name of names) {
-      const clean = String(name || "").split(/\s+as\s+/i)[0].trim();
+      const parts = String(name || "").split(/\s+as\s+/i);
+      const clean = parts[0].trim();
       pushUniqueCodeValue(exportsList, clean, 20, 120);
+      if (parts[1]?.trim()) {
+        pushUniqueCodeValue(reexports, `${clean} as ${parts[1].trim()}`, 20, 160);
+      }
     }
   }
   if (/^\s*export\s+default\b/m.test(source)) {
     pushUniqueCodeValue(exportsList, "default", 20, 120);
   }
+
+  const importSymbolPatterns = [
+    /^\s*import\s+\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"]/gm,
+    /^\s*import\s+([A-Za-z_$][\w$]*)\s*,\s*\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"]/gm,
+    /^\s*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+)['"]/gm,
+    /^\s*const\s+\{\s*([^}]+)\s*\}\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/gm,
+    /^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/gm,
+    /^\s*from\s+([A-Za-z0-9_.$/:-]+)\s+import\s+([A-Za-z0-9_,*\s]+)/gm
+  ];
 
   for (const match of source.matchAll(/^\s*import\s+.+?\s+from\s+['"]([^'"]+)['"]/gm)) {
     pushUniqueCodeValue(imports, match[1], 20, 160);
@@ -1221,6 +1250,26 @@ function extractCodeStructureMetadata(text, options = {}) {
     pushUniqueCodeValue(imports, match[1], 20, 160);
     pushModule(match[1]);
   }
+  for (const pattern of importSymbolPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      const groups = match.slice(1).filter(Boolean);
+      const rawSymbols = groups.slice(0, -1);
+      const last = groups[groups.length - 1];
+      const maybeModule = /[./:@-]/.test(String(last || "")) ? String(last || "") : "";
+      for (const rawPart of rawSymbols) {
+        const pieces = String(rawPart || "").split(",");
+        for (const piece of pieces) {
+          const clean = String(piece || "")
+            .replace(/[{}*]/g, "")
+            .split(/\s+as\s+/i)[0]
+            .trim();
+          if (!clean) continue;
+          if (clean === "type") continue;
+          pushUniqueCodeValue(importedSymbols, maybeModule ? `${clean} from ${maybeModule}` : clean, 28, 200);
+        }
+      }
+    }
+  }
 
   for (const match of source.matchAll(/\b(?:app|router)\.(get|post|put|patch|delete|use)\s*\(\s*['"`]([^'"`]+)['"`]/g)) {
     pushUniqueCodeValue(routes, `${match[1].toUpperCase()} ${match[2]}`, 16, 200);
@@ -1234,6 +1283,21 @@ function extractCodeStructureMetadata(text, options = {}) {
     const name = String(match[1] || "");
     if (callStopwords.has(name)) continue;
     pushUniqueCodeValue(calls, name, 28, 120);
+    pushReferencedSymbol(name);
+  }
+
+  const referenceStopwords = new Set([
+    "const", "let", "var", "function", "class", "interface", "type", "enum", "return",
+    "if", "else", "for", "while", "switch", "case", "break", "continue", "new", "await",
+    "async", "default", "export", "import", "from", "module", "exports", "require", "this",
+    "super", "true", "false", "null", "undefined", "typeof", "instanceof", "extends", "implements",
+    "public", "private", "protected", "static", "yield", "try", "catch", "finally", "throw", "get", "set"
+  ]);
+  for (const match of source.matchAll(/\b([A-Z][A-Za-z0-9_$]{2,}|[a-z][A-Za-z0-9_$]{2,})\b/g)) {
+    const name = String(match[1] || "");
+    if (referenceStopwords.has(name)) continue;
+    if (/^[A-Z0-9_]+$/.test(name)) continue;
+    pushReferencedSymbol(name);
   }
 
   const isTestFile = /(?:^|\/)(?:__tests__|__specs__|tests?|specs?)\//.test(lowerPath)
@@ -1314,6 +1378,10 @@ function extractCodeStructureMetadata(text, options = {}) {
     services,
     workflowJobs,
     workspacePackages,
+    importedSymbols,
+    reexports,
+    definedSymbols,
+    referencedSymbols,
     packageName,
     configKinds,
     isTestFile,
@@ -1350,6 +1418,10 @@ function enrichCodeSourceMetadata(source = {}, text, docId) {
     services: normalizeCodeMetadataList(structure.services, { maxItems: 10, maxItemLength: 120 }),
     workflowJobs: normalizeCodeMetadataList(structure.workflowJobs, { maxItems: 10, maxItemLength: 120 }),
     workspacePackages: normalizeCodeMetadataList(structure.workspacePackages, { maxItems: 10, maxItemLength: 200 }),
+    importedSymbols: normalizeCodeMetadataList(structure.importedSymbols, { maxItems: 28, maxItemLength: 200 }),
+    reexports: normalizeCodeMetadataList(structure.reexports, { maxItems: 20, maxItemLength: 160 }),
+    definedSymbols: normalizeCodeMetadataList(structure.definedSymbols, { maxItems: 40, maxItemLength: 120 }),
+    referencedSymbols: normalizeCodeMetadataList(structure.referencedSymbols, { maxItems: 48, maxItemLength: 120 }),
     packageName: normalizeCodeMetadataString(structure.packageName, 160),
     configKinds: normalizeCodeMetadataList(structure.configKinds, { maxItems: 8, maxItemLength: 80 }),
     isTestFile: Boolean(structure.isTestFile),
@@ -4776,6 +4848,10 @@ function extractCodeMemoryMetadata(memory) {
     services: normalizeCodeMetadataList(metadata.services, { maxItems: 10, maxItemLength: 120 }),
     workflowJobs: normalizeCodeMetadataList(metadata.workflowJobs ?? metadata.workflow_jobs, { maxItems: 10, maxItemLength: 120 }),
     workspacePackages: normalizeCodeMetadataList(metadata.workspacePackages ?? metadata.workspace_packages, { maxItems: 10, maxItemLength: 200 }),
+    importedSymbols: normalizeCodeMetadataList(metadata.importedSymbols ?? metadata.imported_symbols, { maxItems: 28, maxItemLength: 200 }),
+    reexports: normalizeCodeMetadataList(metadata.reexports, { maxItems: 20, maxItemLength: 160 }),
+    definedSymbols: normalizeCodeMetadataList(metadata.definedSymbols ?? metadata.defined_symbols, { maxItems: 40, maxItemLength: 120 }),
+    referencedSymbols: normalizeCodeMetadataList(metadata.referencedSymbols ?? metadata.referenced_symbols, { maxItems: 48, maxItemLength: 120 }),
     packageName: normalizeCodeMetadataString(metadata.packageName ?? metadata.package_name, 160),
     configKinds: normalizeCodeMetadataList(metadata.configKinds ?? metadata.config_kinds, { maxItems: 8, maxItemLength: 80 }),
     isTestFile: Boolean(metadata.isTestFile ?? metadata.is_test_file),
@@ -4945,24 +5021,24 @@ function normalizeCodeSessionContext(context = null) {
   return {
     currentTask: parseOptionalString(session.currentTask, { label: "context.codeSession.currentTask", max: 80 }),
     workingSet: {
-      files: normalizeCodeMetadataList(workingSet.files, { maxItems: 8, maxItemLength: 320 }),
-      repositories: normalizeCodeMetadataList(workingSet.repositories, { maxItems: 4, maxItemLength: 240 }),
-      languages: normalizeCodeMetadataList(workingSet.languages, { maxItems: 4, maxItemLength: 80 }),
-      symbols: normalizeCodeMetadataList(workingSet.symbols, { maxItems: 12, maxItemLength: 120 })
+      files: normalizeCodeMetadataList(workingSet.files, { maxItems: 14, maxItemLength: 320 }),
+      repositories: normalizeCodeMetadataList(workingSet.repositories, { maxItems: 6, maxItemLength: 240 }),
+      languages: normalizeCodeMetadataList(workingSet.languages, { maxItems: 6, maxItemLength: 80 }),
+      symbols: normalizeCodeMetadataList(workingSet.symbols, { maxItems: 24, maxItemLength: 120 })
     },
     recentTurns: recentTurns.map((turn) => {
       const clean = turn && typeof turn === "object" && !Array.isArray(turn) ? turn : {};
       return {
-        question: parseOptionalString(clean.question, { label: "context.codeSession.recentTurns.question", max: 240 }),
+        question: parseOptionalString(clean.question, { label: "context.codeSession.recentTurns.question", max: 280 }),
         task: normalizeCodeTask(clean.task, "general"),
-        paths: normalizeCodeMetadataList(clean.paths, { maxItems: 8, maxItemLength: 320 }),
-        files: normalizeCodeMetadataList(clean.files, { maxItems: 8, maxItemLength: 320 }),
-        repositories: normalizeCodeMetadataList(clean.repositories, { maxItems: 4, maxItemLength: 240 }),
-        languages: normalizeCodeMetadataList(clean.languages, { maxItems: 4, maxItemLength: 80 }),
-        symbols: normalizeCodeMetadataList(clean.symbols, { maxItems: 12, maxItemLength: 120 }),
-        answerSummary: parseOptionalString(clean.answerSummary, { label: "context.codeSession.recentTurns.answerSummary", max: 320 })
+        paths: normalizeCodeMetadataList(clean.paths, { maxItems: 12, maxItemLength: 320 }),
+        files: normalizeCodeMetadataList(clean.files, { maxItems: 12, maxItemLength: 320 }),
+        repositories: normalizeCodeMetadataList(clean.repositories, { maxItems: 6, maxItemLength: 240 }),
+        languages: normalizeCodeMetadataList(clean.languages, { maxItems: 6, maxItemLength: 80 }),
+        symbols: normalizeCodeMetadataList(clean.symbols, { maxItems: 18, maxItemLength: 120 }),
+        answerSummary: parseOptionalString(clean.answerSummary, { label: "context.codeSession.recentTurns.answerSummary", max: 420 })
       };
-    }).filter((turn) => turn.question || turn.answerSummary).slice(-4)
+    }).filter((turn) => turn.question || turn.answerSummary).slice(-6)
   };
 }
 
@@ -4974,12 +5050,12 @@ function buildCodeSessionFocus(input = {}) {
   const symbols = [...session.workingSet.symbols];
   const recentQuestions = [];
   for (const turn of session.recentTurns) {
-    for (const filePath of turn.paths) pushUniqueCodeValue(files, filePath, 8, 320);
-    for (const filePath of turn.files) pushUniqueCodeValue(files, filePath, 8, 320);
-    for (const repo of turn.repositories) pushUniqueCodeValue(repositories, repo, 4, 240);
-    for (const language of turn.languages) pushUniqueCodeValue(languages, language, 4, 80);
-    for (const symbol of turn.symbols) pushUniqueCodeValue(symbols, symbol, 12, 120);
-    if (turn.question) pushUniqueCodeValue(recentQuestions, turn.question, 3, 240);
+    for (const filePath of turn.paths) pushUniqueCodeValue(files, filePath, 14, 320);
+    for (const filePath of turn.files) pushUniqueCodeValue(files, filePath, 14, 320);
+    for (const repo of turn.repositories) pushUniqueCodeValue(repositories, repo, 6, 240);
+    for (const language of turn.languages) pushUniqueCodeValue(languages, language, 6, 80);
+    for (const symbol of turn.symbols) pushUniqueCodeValue(symbols, symbol, 24, 120);
+    if (turn.question) pushUniqueCodeValue(recentQuestions, turn.question, 5, 280);
   }
   return {
     currentTask: session.currentTask,
@@ -5080,8 +5156,12 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
     if (metadataListIncludesHint(metadata?.functions, hint)) boost += 0.18;
     if (metadataListIncludesHint(metadata?.classes, hint)) boost += 0.16;
     if (metadataListIncludesHint(metadata?.exports, hint)) boost += 0.16;
+    if (metadataListIncludesHint(metadata?.definedSymbols, hint)) boost += 0.2;
     if (metadataListIncludesHint(metadata?.calls, hint)) boost += 0.1;
     if (metadataListIncludesHint(metadata?.imports, hint) || metadataListIncludesHint(metadata?.modules, hint)) boost += 0.08;
+    if (metadataListIncludesHint(metadata?.importedSymbols, hint)) boost += 0.1;
+    if (metadataListIncludesHint(metadata?.referencedSymbols, hint)) boost += 0.08;
+    if (metadataListIncludesHint(metadata?.reexports, hint)) boost += 0.08;
     if (metadataListIncludesHint(metadata?.envVars, hint)) boost += 0.1;
     if (metadataListIncludesHint(metadata?.scripts, hint)) boost += 0.08;
     if (metadataListIncludesHint(metadata?.services, hint) || metadataListIncludesHint(metadata?.workflowJobs, hint)) boost += 0.08;
@@ -5127,7 +5207,7 @@ function buildCodeScoreBoost(question, metadata, input = {}) {
   return boost;
 }
 
-function buildCodeFilesFromRanked(ranked, limit = 8) {
+function buildCodeFilesFromRanked(ranked, limit = 12) {
   const seen = new Set();
   const files = [];
   for (const candidate of ranked) {
@@ -5150,19 +5230,23 @@ function buildCodeFilesFromRanked(ranked, limit = 8) {
       sourceType: file.sourceType || null,
       title: file.title || null,
       sourceUrl: file.sourceUrl || null,
-      functions: Array.isArray(file.functions) ? file.functions.slice(0, 6) : [],
-      classes: Array.isArray(file.classes) ? file.classes.slice(0, 4) : [],
-      exports: Array.isArray(file.exports) ? file.exports.slice(0, 6) : [],
-      imports: Array.isArray(file.imports) ? file.imports.slice(0, 4) : [],
-      modules: Array.isArray(file.modules) ? file.modules.slice(0, 6) : [],
-      calls: Array.isArray(file.calls) ? file.calls.slice(0, 8) : [],
-      routes: Array.isArray(file.routes) ? file.routes.slice(0, 4) : [],
-      envVars: Array.isArray(file.envVars) ? file.envVars.slice(0, 6) : [],
-      testTargets: Array.isArray(file.testTargets) ? file.testTargets.slice(0, 6) : [],
-      scripts: Array.isArray(file.scripts) ? file.scripts.slice(0, 6) : [],
-      services: Array.isArray(file.services) ? file.services.slice(0, 6) : [],
-      workflowJobs: Array.isArray(file.workflowJobs) ? file.workflowJobs.slice(0, 6) : [],
-      workspacePackages: Array.isArray(file.workspacePackages) ? file.workspacePackages.slice(0, 6) : [],
+      functions: Array.isArray(file.functions) ? file.functions.slice(0, 8) : [],
+      classes: Array.isArray(file.classes) ? file.classes.slice(0, 6) : [],
+      exports: Array.isArray(file.exports) ? file.exports.slice(0, 8) : [],
+      imports: Array.isArray(file.imports) ? file.imports.slice(0, 6) : [],
+      modules: Array.isArray(file.modules) ? file.modules.slice(0, 8) : [],
+      calls: Array.isArray(file.calls) ? file.calls.slice(0, 12) : [],
+      routes: Array.isArray(file.routes) ? file.routes.slice(0, 6) : [],
+      envVars: Array.isArray(file.envVars) ? file.envVars.slice(0, 8) : [],
+      testTargets: Array.isArray(file.testTargets) ? file.testTargets.slice(0, 8) : [],
+      scripts: Array.isArray(file.scripts) ? file.scripts.slice(0, 8) : [],
+      services: Array.isArray(file.services) ? file.services.slice(0, 8) : [],
+      workflowJobs: Array.isArray(file.workflowJobs) ? file.workflowJobs.slice(0, 8) : [],
+      workspacePackages: Array.isArray(file.workspacePackages) ? file.workspacePackages.slice(0, 8) : [],
+      importedSymbols: Array.isArray(file.importedSymbols) ? file.importedSymbols.slice(0, 10) : [],
+      reexports: Array.isArray(file.reexports) ? file.reexports.slice(0, 8) : [],
+      definedSymbols: Array.isArray(file.definedSymbols) ? file.definedSymbols.slice(0, 14) : [],
+      referencedSymbols: Array.isArray(file.referencedSymbols) ? file.referencedSymbols.slice(0, 16) : [],
       packageName: file.packageName || null,
       configKinds: Array.isArray(file.configKinds) ? file.configKinds.slice(0, 6) : [],
       isTestFile: Boolean(file.isTestFile),
@@ -5188,10 +5272,10 @@ function buildCodeCandidateFileKey(candidate) {
 function resolveCodeSelectionSize(topK, task) {
   const base = Number.isFinite(topK) && topK > 0 ? Math.floor(topK) : 5;
   const mode = normalizeCodeTask(task, "general");
-  if (mode === "structure") return Math.max(base, 10);
-  if (mode === "debug" || mode === "write" || mode === "review" || mode === "improve") return Math.max(base, 8);
-  if (mode === "understand") return Math.max(base, 6);
-  return Math.max(base, 5);
+  if (mode === "structure") return Math.max(base, 12);
+  if (mode === "debug" || mode === "write" || mode === "review" || mode === "improve") return Math.max(base, 10);
+  if (mode === "understand") return Math.max(base, 8);
+  return Math.max(base, 6);
 }
 
 function selectCodeCandidatesForPrompt(ranked, limit, options = {}) {
@@ -5202,11 +5286,11 @@ function selectCodeCandidatesForPrompt(ranked, limit, options = {}) {
   const selectedChunkIds = new Set();
   const fileCounts = new Map();
   const uniqueFirstTarget = mode === "structure"
-    ? Math.min(cleanLimit, 6)
+    ? Math.min(cleanLimit, 8)
     : (mode === "debug" || mode === "write" || mode === "review" || mode === "improve")
-      ? Math.min(cleanLimit, 4)
-      : Math.min(cleanLimit, 3);
-  const maxPerFile = mode === "structure" ? 2 : (mode === "debug" || mode === "write" ? 3 : 2);
+      ? Math.min(cleanLimit, 5)
+      : Math.min(cleanLimit, 4);
+  const maxPerFile = mode === "structure" ? 3 : (mode === "debug" || mode === "write" ? 4 : 3);
 
   function addCandidate(candidate) {
     const chunkId = candidate?.result?.chunkId || candidate?.result?.chunk_id || candidate?.result?._row?.chunk_id || null;
@@ -5256,12 +5340,14 @@ function buildCodeSourceSummary(files = []) {
   const packageSeen = new Set();
   const configKinds = [];
   const configKindSeen = new Set();
+  let symbolDenseFiles = 0;
   for (const file of files) {
     if (file?.sourceType === "code") codeHits += 1;
     else nonCodeHits += 1;
     if (file?.isTestFile) testFiles += 1;
     if (file?.isConfigFile) configFiles += 1;
     if (file?.isEntrypoint) entryPoints += 1;
+    if ((Array.isArray(file?.definedSymbols) ? file.definedSymbols.length : 0) > 0) symbolDenseFiles += 1;
     if (file?.repo && !repoSeen.has(file.repo)) {
       repoSeen.add(file.repo);
       repositories.push(file.repo);
@@ -5287,6 +5373,7 @@ function buildCodeSourceSummary(files = []) {
     testFiles,
     configFiles,
     entryPoints,
+    symbolDenseFiles,
     repositories,
     languages,
     packageNames,
@@ -5303,15 +5390,16 @@ function buildCodeWorkingSet(files = [], options = {}) {
     symbols: [...sessionFocus.symbols]
   };
   for (const file of Array.isArray(files) ? files : []) {
-    pushUniqueCodeValue(workingSet.files, file?.path, 8, 320);
-    pushUniqueCodeValue(workingSet.repositories, file?.repo, 4, 240);
-    pushUniqueCodeValue(workingSet.languages, file?.language, 4, 80);
+    pushUniqueCodeValue(workingSet.files, file?.path, 14, 320);
+    pushUniqueCodeValue(workingSet.repositories, file?.repo, 6, 240);
+    pushUniqueCodeValue(workingSet.languages, file?.language, 6, 80);
     for (const symbol of [
+      ...(Array.isArray(file?.definedSymbols) ? file.definedSymbols : []),
       ...(Array.isArray(file?.exports) ? file.exports : []),
       ...(Array.isArray(file?.functions) ? file.functions : []),
       ...(Array.isArray(file?.classes) ? file.classes : [])
     ]) {
-      pushUniqueCodeValue(workingSet.symbols, symbol, 12, 120);
+      pushUniqueCodeValue(workingSet.symbols, symbol, 24, 120);
     }
   }
   return workingSet;
@@ -5328,6 +5416,8 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
   const focusSet = new Set(focusHints.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
   const fileByPath = new Map();
   const symbolOwners = new Map();
+  const symbolReferences = new Map();
+  const symbolDisplayNames = new Map();
   const relationships = [];
   const relationshipKeys = new Set();
   const entryPoints = [];
@@ -5370,6 +5460,7 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
       fileByPath.set(normalizePathLike(path.basename(cleanPath)), file);
     }
     for (const symbol of [
+      ...(Array.isArray(file?.definedSymbols) ? file.definedSymbols : []),
       ...(Array.isArray(file?.exports) ? file.exports : []),
       ...(Array.isArray(file?.functions) ? file.functions : []),
       ...(Array.isArray(file?.classes) ? file.classes : [])
@@ -5378,7 +5469,19 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
       if (!clean) continue;
       const key = clean.toLowerCase();
       if (!symbolOwners.has(key)) symbolOwners.set(key, []);
+      if (!symbolDisplayNames.has(key)) symbolDisplayNames.set(key, clean);
       symbolOwners.get(key).push(file);
+    }
+    for (const symbol of [
+      ...(Array.isArray(file?.referencedSymbols) ? file.referencedSymbols : []),
+      ...(Array.isArray(file?.calls) ? file.calls : [])
+    ]) {
+      const clean = String(symbol || "").trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (!symbolReferences.has(key)) symbolReferences.set(key, []);
+      if (!symbolDisplayNames.has(key)) symbolDisplayNames.set(key, clean);
+      symbolReferences.get(key).push(file);
     }
     for (const route of Array.isArray(file?.routes) ? file.routes : []) {
       const line = `${cleanPath || file?.docId || "unknown file"} exposes ${route}`;
@@ -5448,6 +5551,18 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
         addRelationship("call", line, scoreLine(line) + 3);
       }
     }
+    for (const imported of Array.isArray(file?.importedSymbols) ? file.importedSymbols : []) {
+      const cleanImported = String(imported || "").trim();
+      if (!cleanImported) continue;
+      const symbolName = cleanImported.split(/\s+from\s+/i)[0].trim();
+      const owners = symbolOwners.get(symbolName.toLowerCase()) || [];
+      for (const owner of owners) {
+        const ownerPath = String(owner?.path || owner?.docId || "").trim();
+        if (!ownerPath || ownerPath === fromPath) continue;
+        const line = `${fromPath} imports symbol ${symbolName} from ${ownerPath}`;
+        addRelationship("symbol-import", line, scoreLine(line) + 3);
+      }
+    }
     for (const testTarget of Array.isArray(file?.testTargets) ? file.testTargets : []) {
       const cleanTarget = String(testTarget || "").trim();
       if (!cleanTarget) continue;
@@ -5459,6 +5574,21 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
       const line = `${fromPath} tests ${targetPath}`;
       testLinks.push(line);
       addRelationship("test", line, scoreLine(line) + (target ? 2 : 0));
+    }
+  }
+
+  for (const [symbolKey, owners] of symbolOwners.entries()) {
+    const refs = symbolReferences.get(symbolKey) || [];
+    const displaySymbol = symbolDisplayNames.get(symbolKey) || symbolKey;
+    const ownerPaths = owners
+      .map((owner) => String(owner?.path || owner?.docId || "").trim())
+      .filter(Boolean);
+    if (!ownerPaths.length) continue;
+    for (const refFile of refs) {
+      const refPath = String(refFile?.path || refFile?.docId || "").trim();
+      if (!refPath || ownerPaths.includes(refPath)) continue;
+      const line = `${refPath} references symbol ${displaySymbol} defined in ${ownerPaths[0]}`;
+      addRelationship("symbol-reference", line, scoreLine(line) + 2);
     }
   }
 
@@ -5632,8 +5762,8 @@ async function buildCodeAnswerContext({
     context
   });
   const complexTask = task === "debug" || task === "write";
-  const retrievalMultiplier = complexTask ? 6 : (connectionFocused ? 5 : 4);
-  const retrievalFloor = complexTask ? 24 : (connectionFocused ? 20 : 16);
+  const retrievalMultiplier = complexTask ? 7 : (connectionFocused ? 6 : 5);
+  const retrievalFloor = complexTask ? 32 : (connectionFocused ? 28 : 20);
   const retrievalK = Math.max(selectionK * retrievalMultiplier, retrievalFloor);
   const results = await searchChunks({
     tenantId,
@@ -5714,6 +5844,10 @@ async function buildCodeAnswerContext({
         services: metadata.services,
         workflowJobs: metadata.workflowJobs,
         workspacePackages: metadata.workspacePackages,
+        importedSymbols: metadata.importedSymbols,
+        reexports: metadata.reexports,
+        definedSymbols: metadata.definedSymbols,
+        referencedSymbols: metadata.referencedSymbols,
         packageName: metadata.packageName,
         configKinds: metadata.configKinds,
         isTestFile: metadata.isTestFile,
@@ -5778,7 +5912,7 @@ async function buildCodeAnswerContext({
       ? candidate.memory.metadata
       : {}
   })).filter(Boolean);
-  const files = buildCodeFilesFromRanked(selected, Math.max(8, selectionK));
+  const files = buildCodeFilesFromRanked(selected, Math.max(12, selectionK + 2));
   const workingSet = buildCodeWorkingSet(files, { context });
   const relationshipSummary = buildCodeRelationshipSummary(files, {
     question,

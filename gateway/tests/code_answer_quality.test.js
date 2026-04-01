@@ -94,14 +94,18 @@ function testBuildCodePromptIncludesRetrievedFileSummary() {
           language: "typescript",
           exports: ["validateSession"],
           functions: ["validateSession"],
-          imports: ["./tokens"]
+          imports: ["./tokens"],
+          definedSymbols: ["validateSession"],
+          referencedSymbols: ["validateSession", "token"],
+          importedSymbols: ["tokenTools from ./tokens"]
         }
       ],
       sourceSummary: {
         repositories: ["acme/app"],
         languages: ["typescript"],
         codeHits: 1,
-        nonCodeHits: 0
+        nonCodeHits: 0,
+        symbolDenseFiles: 1
       },
       relationshipSummary: {
         connections: [
@@ -115,7 +119,10 @@ function testBuildCodePromptIncludesRetrievedFileSummary() {
   assert.match(prompt.user, /Retrieved files:/);
   assert.match(prompt.user, /src\/auth\.ts/);
   assert.match(prompt.user, /exports: validateSession/);
+  assert.match(prompt.user, /defined symbols: validateSession/);
+  assert.match(prompt.user, /referenced symbols: validateSession, token/);
   assert.match(prompt.user, /Retrieved source summary:/);
+  assert.match(prompt.user, /Files with symbol graph signals: 1/);
   assert.match(prompt.user, /Retrieved relationships:/);
   assert.match(prompt.user, /calls validateSession from src\/auth\.ts/);
   assert.match(prompt.system, /Synthesize across multiple retrieved files/);
@@ -187,9 +194,12 @@ router.get("/health", healthHandler);
 
   assert.deepEqual(metadata.exports, ["loginHandler"]);
   assert.deepEqual(metadata.imports, ["./auth/session", "./router"]);
+  assert.deepEqual(metadata.importedSymbols, ["validateSession from ./auth/session", "router from ./router"]);
   assert.deepEqual(metadata.routes, ["GET /health"]);
   assert.ok(metadata.functions.includes("loginHandler"));
   assert.ok(metadata.calls.includes("validateSession"));
+  assert.ok(metadata.definedSymbols.includes("loginHandler"));
+  assert.ok(metadata.referencedSymbols.includes("validateSession"));
 }
 
 function testExtractCodeStructureMetadataCapturesRepoSignals() {
@@ -229,16 +239,20 @@ function testBuildCodeRelationshipSummaryTracesImportsAndCalls() {
       path: "src/server.ts",
       exports: [],
       functions: ["startServer"],
+      definedSymbols: ["startServer"],
       classes: [],
       imports: ["./auth/session"],
+      importedSymbols: ["validateSession from ./auth/session"],
       modules: ["./auth/session"],
       calls: ["validateSession"],
+      referencedSymbols: ["validateSession"],
       routes: ["GET /health"]
     },
     {
       path: "src/auth/session.ts",
       exports: ["validateSession"],
       functions: ["validateSession"],
+      definedSymbols: ["validateSession"],
       classes: [],
       imports: [],
       modules: [],
@@ -252,6 +266,8 @@ function testBuildCodeRelationshipSummaryTracesImportsAndCalls() {
   assert.ok(summary.entryPoints.some((line) => /src\/server\.ts exposes GET \/health/.test(line)));
   assert.ok(summary.connections.some((line) => /src\/server\.ts imports src\/auth\/session\.ts/.test(line)));
   assert.ok(summary.connections.some((line) => /src\/server\.ts calls validateSession from src\/auth\/session\.ts/.test(line)));
+  assert.ok(summary.connections.some((line) => /src\/server\.ts imports symbol validateSession from src\/auth\/session\.ts/.test(line)));
+  assert.ok(summary.connections.some((line) => /src\/server\.ts references symbol validateSession defined in src\/auth\/session\.ts/.test(line)));
 }
 
 function testBuildCodeRelationshipSummaryIncludesRuntimeAndTests() {
