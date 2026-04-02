@@ -209,7 +209,7 @@ Pattern:
 
 On hosted or other portal-enabled shared deployments, this changes AI generation billing responsibility for that request, but it does not change who owns storage. The shared deployment still stores the data and still owns any shared-deployment storage billing.
 
-`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+`POST /v1/ask`, `POST /v1/code`, and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
 Embedding provider selection remains instance-wide today. For docs, search, memory write, and memory recall, request-scoped provider-key headers only override credentials for the embedding provider that the instance is already configured to use.
 
@@ -219,6 +219,7 @@ Supported today:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/code`
 - `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
@@ -295,6 +296,27 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
     "answerLength":"medium"
   }'
 ```
+
+Add `"favorRecency": true` when newer matching evidence should rank ahead of older chunks. This is especially useful for continuously updated facts such as product catalogs, release notes, incident timelines, and conversation-like state. Synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+### Code
+
+```bash
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/code" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question":"Why would recent catalog updates rank above stale records here?",
+    "k":6,
+    "task":"debug",
+    "answerLength":"medium",
+    "policy":"amvl",
+    "favorRecency":true
+  }'
+```
+
+`/v1/code` shares the same retrieval controls as `/v1/ask`, including `favorRecency`, but shapes the answer for debugging, structure, review, and implementation guidance.
 
 ### True/False Only
 
@@ -509,6 +531,8 @@ Affected endpoints:
 
 - `POST /ask`
 - `POST /v1/ask`
+- `POST /code`
+- `POST /v1/code`
 - `POST /boolean_ask`
 - `POST /v1/boolean_ask`
 

@@ -134,7 +134,7 @@
               <li>Run <code>node scripts/bootstrap_instance.js</code> once to create an admin and service token.</li>
               <li>Store <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> in your app or agent env.</li>
               <li>Index content via <code>/v1/docs</code> or <code>/v1/docs/url</code>.</li>
-              <li>Retrieve context with <code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/boolean_ask</code>, and the memory endpoints.</li>
+              <li>Retrieve context with <code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/code</code>, <code>/v1/boolean_ask</code>, and the memory endpoints.</li>
             </ol>
           </article>
           <article class="meta-card">
@@ -157,9 +157,10 @@
               <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
               <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
               <li>AMV-L retrieval is tier-gated: default retrieval uses HOT + sampled WARM; COLD is excluded unless explicitly enabled.</li>
-              <li>Memory, ask, and <code>boolean_ask</code> requests can set <code>policy</code> to <code>amvl</code>, <code>ttl</code>, or <code>lru</code>. The default is <code>amvl</code>.</li>
+              <li>Memory, ask, code, and <code>boolean_ask</code> requests can set <code>policy</code> to <code>amvl</code>, <code>ttl</code>, or <code>lru</code>. The default is <code>amvl</code>.</li>
               <li><code>X-OpenAI-API-Key</code> is request-scoped and is currently rejected by async <code>/v1/memory/reflect</code> and <code>/v1/memory/compact</code>.</li>
               <li><code>/v1/ask</code> supports <code>answerLength</code>: <code>auto</code>, <code>short</code>, <code>medium</code>, <code>long</code>.</li>
+              <li><code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/code</code>, <code>/v1/boolean_ask</code>, and <code>/v1/memory/recall</code> accept <code>favorRecency=true</code> when fresher matches should outrank older evidence.</li>
               <li><code>/v1/boolean_ask</code> returns only <code>true</code>, <code>false</code>, or <code>invalid</code>, plus <code>supportingChunks</code>.</li>
             </ul>
           </article>

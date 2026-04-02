@@ -19,6 +19,8 @@ DOWN_ON_SUCCESS="${DOWN_ON_SUCCESS:-0}"
 DOWN_ON_FAIL="${DOWN_ON_FAIL:-0}"
 RESET_VOLUMES_BEFORE_UP="${RESET_VOLUMES_BEFORE_UP:-1}"
 VECTOR_WAL="${VECTOR_WAL:-0}"
+RUN_CODE_E2E="${RUN_CODE_E2E:-1}"
+RUN_DIAGNOSTIC_E2E="${RUN_DIAGNOSTIC_E2E:-0}"
 
 DOCKER_BIN="$(command -v docker || true)"
 if [ -z "$DOCKER_BIN" ] && [ -x "/usr/local/bin/docker" ]; then
@@ -110,7 +112,13 @@ echo "Ensuring e2e user: $E2E_USERNAME"
   --roles "$E2E_ROLES"
 
 echo "Running gateway test suite..."
-"${COMPOSE_CMD[@]}" exec -T gateway sh -lc \
-  "E2E_USERNAME='$E2E_USERNAME' E2E_PASSWORD='$E2E_PASSWORD' npm run test:all"
+TEST_CMD="E2E_USERNAME='$E2E_USERNAME' E2E_PASSWORD='$E2E_PASSWORD' npm run test:all"
+if [ "$RUN_CODE_E2E" = "1" ]; then
+  TEST_CMD="${TEST_CMD} && npm run test:e2e:code"
+fi
+if [ "$RUN_DIAGNOSTIC_E2E" = "1" ]; then
+  TEST_CMD="${TEST_CMD} && npm run test:e2e:diagnostic"
+fi
+"${COMPOSE_CMD[@]}" exec -T gateway sh -lc "$TEST_CMD"
 
 echo "All tests passed."

@@ -102,15 +102,15 @@ OPENAI_API_KEY=
 GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 ANSWER_PROVIDER=openai
-ANSWER_MODEL=gpt-4o
+ANSWER_MODEL=gpt-5.2
 BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
 EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
 REFLECT_PROVIDER=openai
-REFLECT_MODEL=gpt-4o-mini
+REFLECT_MODEL=gpt-5-mini
 COMPACT_PROVIDER=
-COMPACT_MODEL=gpt-4o-mini
+COMPACT_MODEL=gpt-5-nano
 ```
 
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
@@ -118,10 +118,10 @@ COMPACT_MODEL=gpt-4o-mini
 On startup, SupaVector also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
 `ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because SupaVector still needs a provider-native embedding endpoint for indexing and retrieval.
 Common generation presets include:
-- OpenAI: `gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `o1`, `o3`, `o3-mini`, `o4-mini`
+- OpenAI: `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`
 - Gemini: `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite`, `gemini-2.0-flash`
 - Anthropic: `claude-sonnet-4-20250514`, `claude-opus-4-20250514`, `claude-3-7-sonnet-latest`, `claude-3-5-haiku-latest`
-Reasoning-style OpenAI presets such as `o1`, `o3`, `o4-mini`, and the GPT-5 family are compatible with SupaVector. The gateway omits unsupported `temperature` parameters automatically for those models.
+The GPT-5 family is compatible with SupaVector. The gateway omits unsupported `temperature` parameters automatically for those models.
 You can inspect the live preset catalog and instance defaults at `GET /v1/models`.
 
 Useful optional values:
@@ -212,11 +212,32 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
     "k":3,
     "policy":"amvl",
     "provider":"openai",
-    "model":"gpt-4.1"
+    "model":"gpt-5.2"
   }'
 ```
 
 `provider` and `model` are optional and override the tenant or instance ask provider/model for that single request.
+
+Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is useful for continuously updated facts such as product catalogs, changelogs, incident timelines, and conversation-like state. Synced sources attach `syncedAt` automatically, and direct writes can also provide timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+### 7a. Ask A Code Question
+
+```bash
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/code" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question":"Why would newer synced product records rank above stale ones here?",
+    "k":6,
+    "task":"debug",
+    "answerLength":"medium",
+    "policy":"amvl",
+    "favorRecency":true
+  }'
+```
+
+`/v1/code` accepts the same retrieval controls as `/v1/ask`, including `favorRecency`, but returns code-aware grounded answers for debugging, review, structure, and implementation guidance.
 
 On the CLI, `supavector ask --model ...` and `supavector boolean_ask --model ...` also accept the same numbered shortcuts shown by `supavector changemodel`. The live preset catalog is available from `GET /v1/models`.
 
@@ -250,11 +271,11 @@ curl -sS -X PATCH "${SUPAVECTOR_BASE_URL}/v1/admin/tenant" \
   -d '{
     "models": {
       "answerProvider": "openai",
-      "answerModel": "gpt-4.1",
+      "answerModel": "gpt-5.2",
       "booleanAskProvider": null,
       "booleanAskModel": null,
       "reflectProvider": "openai",
-      "reflectModel": "gpt-4o-mini",
+      "reflectModel": "gpt-5-mini",
       "compactProvider": null,
       "compactModel": null
     }
@@ -309,7 +330,7 @@ supavector tenant update \
   --sso-providers google,okta \
   --sso-config-file ./tenant-sso.json \
   --answer-provider openai \
-  --answer-model gpt-4.1
+  --answer-model gpt-5.2
 ```
 
 For more complex payloads, pass the exact API body through a JSON string or file:
@@ -340,13 +361,14 @@ This works on supported sync request paths such as:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/code`
 - `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
 
 It is intentionally request-scoped. SupaVector does not persist that key for the tenant.
 
-`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+`POST /v1/ask`, `POST /v1/code`, and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
 Embedding provider selection remains instance-wide today. Request-scoped provider headers for docs, search, memory write, and memory recall only override credentials for the embedding provider that the instance is already configured to use.
 

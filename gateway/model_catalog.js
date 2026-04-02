@@ -4,9 +4,9 @@ const DEFAULT_ANSWER_PROVIDER = "openai";
 const DEFAULT_EMBED_PROVIDER = "openai";
 const DEFAULT_REFLECT_PROVIDER = "openai";
 
-const DEFAULT_ANSWER_MODEL = "gpt-4o";
+const DEFAULT_ANSWER_MODEL = "gpt-5.2";
 const DEFAULT_EMBED_MODEL = "text-embedding-3-large";
-const DEFAULT_REFLECT_MODEL = "gpt-4o-mini";
+const DEFAULT_REFLECT_MODEL = "gpt-5-mini";
 
 const DEFAULT_GENERATION_MODEL_BY_PROVIDER = Object.freeze({
   openai: DEFAULT_ANSWER_MODEL,
@@ -61,91 +61,28 @@ const EMBEDDING_PROVIDER_PRESETS = Object.freeze([
 const OPENAI_GENERATION_MODEL_PRESETS = Object.freeze([
   Object.freeze({
     key: "1",
-    model: "gpt-4o",
-    label: "Balanced default",
-    family: "gpt-4o",
-    supportsTemperature: true,
+    model: "gpt-5.2",
+    label: "Latest flagship",
+    family: "gpt-5",
+    supportsTemperature: false,
     recommended: true
   }),
   Object.freeze({
     key: "2",
-    model: "gpt-4.1",
-    label: "Stronger text output",
-    family: "gpt-4.1",
-    supportsTemperature: true
+    model: "gpt-5-mini",
+    label: "Fast lower-cost default",
+    family: "gpt-5",
+    supportsTemperature: false
   }),
   Object.freeze({
     key: "3",
-    model: "gpt-4o-mini",
-    label: "Fastest / lowest cost",
-    family: "gpt-4o",
-    supportsTemperature: true
+    model: "gpt-5-nano",
+    label: "Smallest lowest-cost GPT-5",
+    family: "gpt-5",
+    supportsTemperature: false
   }),
   Object.freeze({
     key: "4",
-    model: "gpt-4.1-mini",
-    label: "Fast GPT-4.1",
-    family: "gpt-4.1",
-    supportsTemperature: true
-  }),
-  Object.freeze({
-    key: "5",
-    model: "gpt-4.1-nano",
-    label: "Lowest-cost GPT-4.1",
-    family: "gpt-4.1",
-    supportsTemperature: true
-  }),
-  Object.freeze({
-    key: "6",
-    model: "gpt-5.2",
-    label: "Recent flagship reasoning",
-    family: "gpt-5",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "7",
-    model: "gpt-5-mini",
-    label: "Recent fast GPT-5",
-    family: "gpt-5",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "8",
-    model: "gpt-5-nano",
-    label: "Recent smallest GPT-5",
-    family: "gpt-5",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "9",
-    model: "o1",
-    label: "Deeper reasoning",
-    family: "o-series",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "10",
-    model: "o3",
-    label: "Stronger reasoning",
-    family: "o-series",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "11",
-    model: "o3-mini",
-    label: "Lower-cost reasoning",
-    family: "o-series",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "12",
-    model: "o4-mini",
-    label: "Recent fast reasoning",
-    family: "o-series",
-    supportsTemperature: false
-  }),
-  Object.freeze({
-    key: "13",
     model: CUSTOM_MODEL_SENTINEL,
     label: "Enter a custom model id",
     family: "custom",

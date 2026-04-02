@@ -32,6 +32,7 @@ If the full stack is running, also run:
 ```bash
 npm run test:integration
 npm run test:e2e
+npm run test:e2e:code
 ```
 
 To verify the public OSS path from a clean checkout without `.git`, run:
@@ -40,7 +41,7 @@ To verify the public OSS path from a clean checkout without `.git`, run:
 npm run test:oss-smoke
 ```
 
-That target creates a temporary copy of the repo, drops git metadata, installs the public root dependencies, runs the CLI tests, and then runs the full Docker-backed end-to-end harness against that isolated copy.
+That target creates a temporary copy of the repo, drops git metadata, installs the public root dependencies, runs the CLI tests, and then runs the full Docker-backed end-to-end harness against that isolated copy, including the code API e2e suite. For the heavier diagnostic retrieval suite, opt in with `RUN_DIAGNOSTIC_E2E=1 ./scripts/test_ci_local.sh`.
 
 To verify the docs-oriented quickstart flow from `.env.example`, run:
 

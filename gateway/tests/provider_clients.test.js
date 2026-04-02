@@ -52,6 +52,8 @@ async function testGeminiGeneration() {
   await withFetchStub(async (url, options) => {
     assert.match(String(url), /generateContent/);
     assert.equal(options.headers["x-goog-api-key"], "gemini-key");
+    const body = JSON.parse(options.body);
+    assert.equal(body.generationConfig.maxOutputTokens, 2048);
     return makeJsonResponse({
       candidates: [{
         content: {
@@ -69,7 +71,8 @@ async function testGeminiGeneration() {
       provider: "gemini",
       model: "gemini-2.5-flash",
       input: "hello",
-      apiKey: "gemini-key"
+      apiKey: "gemini-key",
+      maxTokens: 2048
     });
     assert.equal(result.text, "Gemini answer\nCitations: SOURCE-1");
     assert.equal(result.usage.input_tokens, 10);
@@ -81,6 +84,8 @@ async function testAnthropicGeneration() {
   await withFetchStub(async (url, options) => {
     assert.equal(String(url), "https://api.anthropic.com/v1/messages");
     assert.equal(options.headers["x-api-key"], "anthropic-key");
+    const body = JSON.parse(options.body);
+    assert.equal(body.max_tokens, 8192);
     return makeJsonResponse({
       content: [{ type: "text", text: "Anthropic answer\nCitations: SOURCE-2" }],
       usage: { input_tokens: 9, output_tokens: 5 }
@@ -90,7 +95,8 @@ async function testAnthropicGeneration() {
       provider: "anthropic",
       model: "claude-sonnet-4-20250514",
       input: "hello",
-      apiKey: "anthropic-key"
+      apiKey: "anthropic-key",
+      maxTokens: 8192
     });
     assert.equal(result.text, "Anthropic answer\nCitations: SOURCE-2");
     assert.equal(result.usage.total_tokens, 14);
@@ -134,9 +140,39 @@ function testProviderClientHooks() {
   }), "hi");
 }
 
+function testOpenAiRequestBuilderOmitsUnsupportedTemperature() {
+  for (const model of ["gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-5.2-codex"]) {
+    const body = __testHooks.buildOpenAiTextRequestBody({
+      model,
+      input: { system: "Follow the repo sources.", user: "Explain the auth flow." },
+      temperature: 0.2,
+      maxTokens: 2048
+    });
+    assert.equal(body.model, model);
+    assert.equal(body.max_output_tokens, 2048);
+    assert.equal(Object.prototype.hasOwnProperty.call(body, "temperature"), false);
+    assert.deepEqual(body.input, [
+      { role: "developer", content: "Follow the repo sources." },
+      { role: "user", content: "Explain the auth flow." }
+    ]);
+  }
+
+  const legacyBody = __testHooks.buildOpenAiTextRequestBody({
+    model: "gpt-4.1",
+    input: "hello",
+    temperature: 0.2,
+    jsonMode: true,
+    maxTokens: 1024
+  });
+  assert.equal(legacyBody.temperature, 0.2);
+  assert.equal(legacyBody.max_output_tokens, 1024);
+  assert.deepEqual(legacyBody.text, { format: { type: "json_object" } });
+}
+
 async function main() {
   testResolveProviderApiKeyAliases();
   testProviderClientHooks();
+  testOpenAiRequestBuilderOmitsUnsupportedTemperature();
   await testGeminiGeneration();
   await testAnthropicGeneration();
   await testGeminiEmbeddings();

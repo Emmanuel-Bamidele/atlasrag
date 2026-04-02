@@ -121,11 +121,14 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -d '{
     "question": "What does SupaVector store?",
     "k": 5,
-    "policy": "amvl"
+    "policy": "amvl",
+    "favorRecency": true
   }'
 ```
 
 `/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Memory GitHub repo sync applies that automatically for matched repo files.
+
+Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
 
 The hosted instance supplies the AI provider by default. If you send a matching request-scoped provider key such as `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync routes, the request can use your provider key instead of the hosted default. On hosted deployments, that changes AI generation billing for that request, but it does not move storage out of SupaVector-hosted infrastructure.
 
@@ -133,7 +136,7 @@ The hosted instance supplies the AI provider by default. If you send a matching 
 
 You can keep using your hosted `supav_` token while sending your own provider key on supported sync requests.
 
-- `POST /v1/ask` and `POST /v1/boolean_ask` accept request-scoped provider-key headers plus optional `provider` and `model` overrides in the JSON body.
+- `POST /v1/ask`, `POST /v1/code`, and `POST /v1/boolean_ask` accept request-scoped provider-key headers plus optional `provider` and `model` overrides in the JSON body.
 - When the matching generation-key header is present for the effective provider, hosted AI credit is not deducted for that request.
 - Hosted storage billing still applies because the data remains on SupaVector-hosted infrastructure.
 

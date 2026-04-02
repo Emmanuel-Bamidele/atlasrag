@@ -538,11 +538,11 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
     "ssoProviders": ["google"],
     "models": {
       "answerProvider": "openai",
-      "answerModel": "gpt-4.1",
+      "answerModel": "gpt-5.2",
       "booleanAskProvider": null,
       "booleanAskModel": null,
       "reflectProvider": "openai",
-      "reflectModel": "gpt-4o-mini",
+      "reflectModel": "gpt-5-mini",
       "compactProvider": null,
       "compactModel": null
     }
@@ -707,6 +707,12 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">auto</span> (default), <span class="mono">short</span>, <span class="mono">medium</span>, <span class="mono">long</span>.</td>
                       </tr>
                       <tr>
+                        <td><span class="mono">favorRecency</span></td>
+                        <td>boolean</td>
+                        <td>No</td>
+                        <td>When <span class="mono">true</span>, retrieval adds a freshness bias so newer matching evidence ranks above older chunks.</td>
+                      </tr>
+                      <tr>
                         <td><span class="mono">model</span></td>
                         <td>string</td>
                         <td>No</td>
@@ -714,7 +720,59 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                       </tr>
                     </tbody>
                   </table>
-                  <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used.</p>
+                  <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used. Use <span class="mono">favorRecency</span> for continuously updated facts such as product data, release notes, and incident timelines.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">POST /v1/code request fields</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Required</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="mono">question</span></td>
+                        <td>string</td>
+                        <td>Yes</td>
+                        <td>Code question to answer from retrieved source context.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">k</span></td>
+                        <td>integer</td>
+                        <td>No</td>
+                        <td>Top-K chunks retrieved before generation (default: <span class="mono">5</span>).</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">answerLength</span></td>
+                        <td>enum</td>
+                        <td>No</td>
+                        <td><span class="mono">auto</span> (default), <span class="mono">short</span>, <span class="mono">medium</span>, <span class="mono">long</span>.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">task</span></td>
+                        <td>string</td>
+                        <td>No</td>
+                        <td>Optional code task hint such as <span class="mono">debug</span>, <span class="mono">review</span>, <span class="mono">write</span>, or <span class="mono">structure</span>.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">favorRecency</span></td>
+                        <td>boolean</td>
+                        <td>No</td>
+                        <td>Bias retrieval toward fresher matching context when newer code, incidents, or synced metadata should outrank older matches.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">paths</span></td>
+                        <td>string[]</td>
+                        <td>No</td>
+                        <td>Optional focus paths to narrow retrieval to specific files or directories.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="hint"><span class="mono">/v1/code</span> shares the same recency controls as ask and search, but shapes the answer for debugging, review, structure, and implementation guidance.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">POST /v1/boolean_ask request fields</div>
@@ -757,6 +815,12 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td>enum</td>
                         <td>No</td>
                         <td>Memory/retrieval policy: <span class="mono">amvl</span> (default), <span class="mono">ttl</span>, or <span class="mono">lru</span>.</td>
+                      </tr>
+                      <tr>
+                        <td><span class="mono">favorRecency</span></td>
+                        <td>boolean</td>
+                        <td>No</td>
+                        <td>When <span class="mono">true</span>, retrieval adds a freshness bias so newer matching evidence ranks above older chunks.</td>
                       </tr>
                       <tr>
                         <td><span class="mono">model</span></td>
@@ -1001,7 +1065,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Search</div>
-                  <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default" \
+                  <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default&favorRecency=true" \
   -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
                 </div>
                 <div class="doc-block">
@@ -1009,14 +1073,21 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium", "policy": "amvl" }'</pre>
+  -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Code</div>
+                  <pre class="doc-code">curl -X POST http://localhost:3000/v1/code \
+  -H "X-API-Key: YOUR_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "question": "Why would newer synced product records rank first here?", "k": 6, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Boolean ask</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/boolean_ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Is write-ahead logging enabled?", "k": 5, "policy": "amvl" }'</pre>
+  -d '{ "question": "Is write-ahead logging enabled?", "k": 5, "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
@@ -1034,7 +1105,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
 curl -X POST http://localhost:3000/v1/memory/recall \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "query": "release day", "policy": "amvl", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "k": 5 }'</pre>
+  -d '{ "query": "release day", "policy": "amvl", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "favorRecency": true, "k": 5 }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Memory feedback</div>
@@ -1050,7 +1121,7 @@ curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Content-Type: application/json" \
   -d '{ "memoryId": "mem_123", "eventType": "task_success", "eventValue": 0.9 }'</pre>
                 </div>
-                <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, and <span class="mono">collection</span>.</p>
+                <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, <span class="mono">collection</span>, and optional <span class="mono">favorRecency</span> when fresher matches should rank first.</p>
                 <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
                 <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, Supavector uses <span class="mono">amvl</span>.</p>
                 <div class="doc-block">
@@ -1634,11 +1705,11 @@ supavector changemodel \
   --embed-provider openai \
   --embed-model text-embedding-3-large \
   --reflect-provider openai \
-  --reflect-model gpt-4o-mini \
+  --reflect-model gpt-5-mini \
   --compact-model inherit \
   --restart</pre>
-                  <p class="hint">The CLI now asks for a provider first, then shows the numbered model list for that provider. Generation providers are <span class="mono">1 = openai</span>, <span class="mono">2 = gemini</span>, and <span class="mono">3 = anthropic</span>. Embedding providers are <span class="mono">1 = openai</span> and <span class="mono">2 = gemini</span>. When the provider is OpenAI, the familiar numbered model shortcuts still map to <span class="mono">gpt-4o</span>, <span class="mono">gpt-4.1</span>, <span class="mono">gpt-4o-mini</span>, <span class="mono">gpt-4.1-mini</span>, <span class="mono">gpt-4.1-nano</span>, <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o3-mini</span>, <span class="mono">o4-mini</span>, and <span class="mono">custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">supavector ask --provider ... --model ...</span> and <span class="mono">supavector boolean_ask --provider ... --model ...</span>.</p>
-                  <p class="hint">Reasoning-style presets such as <span class="mono">o1</span>, <span class="mono">o3</span>, <span class="mono">o4-mini</span>, and the GPT-5 family are supported. Supavector omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
+                  <p class="hint">The CLI now asks for a provider first, then shows the numbered model list for that provider. Generation providers are <span class="mono">1 = openai</span>, <span class="mono">2 = gemini</span>, and <span class="mono">3 = anthropic</span>. Embedding providers are <span class="mono">1 = openai</span> and <span class="mono">2 = gemini</span>. When the provider is OpenAI, the numbered model shortcuts now map to <span class="mono">gpt-5.2</span>, <span class="mono">gpt-5-mini</span>, <span class="mono">gpt-5-nano</span>, and <span class="mono">custom</span>. Use <span class="mono">inherit</span> to clear <span class="mono">boolean_ask</span> or compaction back to their fallback behavior. The same numbered shortcuts also work with <span class="mono">supavector ask --provider ... --model ...</span> and <span class="mono">supavector boolean_ask --provider ... --model ...</span>.</p>
+                  <p class="hint">The GPT-5 family is supported. Supavector omits unsupported <span class="mono">temperature</span> parameters automatically for those models.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What you get at the end</div>
@@ -2100,7 +2171,7 @@ supavector ask --question "Summarize the auth model." --collection default --pol
 supavector code --question "Review the auth middleware for redirect loops." --collection default --task review --paths src/middleware.ts,src/auth.ts
 supavector code --question "Write a retry helper for failed webhooks." --collection default --task write --language typescript --constraints "do not add dependencies"
 supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo --k 3
-supavector boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model o1</pre>
+supavector boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model gpt-5.2</pre>
                   <p class="hint"><span class="mono">--model</span> is optional. If you omit it, Supavector uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">supavector changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                 </div>
                 <div class="doc-block">
@@ -2166,15 +2237,15 @@ SUPAVECTOR_COLLECTION</pre>
 GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 ANSWER_PROVIDER=openai
-ANSWER_MODEL=gpt-4o
+ANSWER_MODEL=gpt-5.2
 BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
 EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
 REFLECT_PROVIDER=openai
-REFLECT_MODEL=gpt-4o-mini
+REFLECT_MODEL=gpt-5-mini
 COMPACT_PROVIDER=
-COMPACT_MODEL=gpt-4o-mini</pre>
+COMPACT_MODEL=gpt-5-nano</pre>
                   <p class="hint"><span class="mono">EMBED_PROVIDER</span> and <span class="mono">EMBED_MODEL</span> are instance-wide. Changing either requires a reindex because Supavector stores all vectors in one embedding space. Fresh CLI-managed installs and these example env files pin <span class="mono">text-embedding-3-large</span>; older installs should pin the value explicitly before changing it. On startup, Supavector also rebuilds vectors automatically if it detects a vector-count or vector-dimension mismatch for the current embedding model.</p>
                   <p class="hint">Generation providers can be <span class="mono">openai</span>, <span class="mono">gemini</span>, or <span class="mono">anthropic</span>. Embedding providers can be <span class="mono">openai</span> or <span class="mono">gemini</span>. Anthropic is generation-only today. The live provider-aware preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                   <pre class="doc-code">curl http://localhost:3000/v1/models</pre>

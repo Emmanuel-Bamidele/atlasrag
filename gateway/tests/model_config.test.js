@@ -42,13 +42,13 @@ function testTenantModelInheritance() {
     compact_model: null
   }, {
     ANSWER_PROVIDER: "openai",
-    ANSWER_MODEL: "gpt-4o",
+    ANSWER_MODEL: "gpt-5.2",
     BOOLEAN_ASK_PROVIDER: "",
     BOOLEAN_ASK_MODEL: "",
     EMBED_PROVIDER: "openai",
     EMBED_MODEL: "text-embedding-3-large",
     REFLECT_PROVIDER: "openai",
-    REFLECT_MODEL: "gpt-4o-mini",
+    REFLECT_MODEL: "gpt-5-mini",
     COMPACT_PROVIDER: "",
     COMPACT_MODEL: ""
   });
@@ -119,32 +119,36 @@ function testTenantModelInputParsing() {
 function testAnswerModelResolvers() {
   withEnv({
     ANSWER_PROVIDER: "openai",
-    ANSWER_MODEL: "gpt-4o",
+    ANSWER_MODEL: "gpt-5.2",
     BOOLEAN_ASK_PROVIDER: "",
     BOOLEAN_ASK_MODEL: "",
     EMBED_PROVIDER: "openai",
     EMBED_MODEL: "text-embedding-3-large",
     REFLECT_PROVIDER: "openai",
-    REFLECT_MODEL: "gpt-4o-mini",
+    REFLECT_MODEL: "gpt-5-mini",
     COMPACT_PROVIDER: "",
     COMPACT_MODEL: ""
   }, () => {
     assert.equal(answerHooks.resolveAnswerProvider({ provider: "gemini" }), "gemini");
     assert.equal(answerHooks.resolveAnswerModel({ provider: "gemini", model: "gemini-2.5-pro" }), "gemini-2.5-pro");
-    assert.equal(answerHooks.resolveAnswerModel({}), "gpt-4o");
+    assert.equal(answerHooks.resolveAnswerModel({}), "gpt-5.2");
     assert.equal(answerHooks.resolveBooleanAskProvider({ provider: "anthropic" }), "anthropic");
     assert.equal(answerHooks.resolveBooleanAskModel({ provider: "anthropic", model: "claude-opus-4-20250514" }), "claude-opus-4-20250514");
   });
 }
 
 function testResponsesCompatibility() {
-  const gpt41 = buildResponsesCreateParams({
-    provider: "openai",
-    model: "gpt-4.1",
-    input: "hello",
-    temperature: 0.2
-  });
-  assert.equal(gpt41.temperature, 0.2);
+  for (const model of ["gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-5.1"]) {
+    const params = buildResponsesCreateParams({
+      provider: "openai",
+      model,
+      input: "hello",
+      temperature: 0.2,
+      max_output_tokens: 4096
+    });
+    assert.equal(Object.prototype.hasOwnProperty.call(params, "temperature"), false);
+    assert.equal(params.max_output_tokens, 4096);
+  }
 
   const o1 = buildResponsesCreateParams({
     provider: "openai",

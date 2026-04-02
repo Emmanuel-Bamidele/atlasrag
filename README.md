@@ -280,7 +280,7 @@ supavector changemodel \
   --embed-provider openai \
   --embed-model text-embedding-3-large \
   --reflect-provider openai \
-  --reflect-model gpt-4o-mini \
+  --reflect-model gpt-5-mini \
   --compact-model inherit \
   --restart
 ```
@@ -291,7 +291,7 @@ Provider picker choices are:
 - generation providers: `1 = openai`, `2 = gemini`, `3 = anthropic`
 - embedding providers: `1 = openai`, `2 = gemini`
 
-When the provider is OpenAI, `supavector ask --model ...` and `supavector boolean_ask --model ...` still accept the familiar numbered shortcuts (`1 = gpt-4o`, `2 = gpt-4.1`, `3 = gpt-4o-mini`, `4 = gpt-4.1-mini`, `5 = gpt-4.1-nano`, `6 = gpt-5.2`, `7 = gpt-5-mini`, `8 = gpt-5-nano`, `9 = o1`, `10 = o3`, `11 = o3-mini`, `12 = o4-mini`, `13 = custom`). When you also pass `--provider`, the same numbering becomes provider-specific for that provider's catalog. Explicit model ids still work anywhere.
+When the provider is OpenAI, `supavector ask --model ...` and `supavector boolean_ask --model ...` use the current OpenAI catalog shortcuts (`1 = gpt-5.2`, `2 = gpt-5-mini`, `3 = gpt-5-nano`, `4 = custom`). When you also pass `--provider`, the same numbering becomes provider-specific for that provider's catalog. Explicit model ids still work anywhere.
 
 Model env keys for self-hosted installs:
 
@@ -300,15 +300,15 @@ OPENAI_API_KEY=
 GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 ANSWER_PROVIDER=openai
-ANSWER_MODEL=gpt-4o
+ANSWER_MODEL=gpt-5.2
 BOOLEAN_ASK_PROVIDER=
 BOOLEAN_ASK_MODEL=
 EMBED_PROVIDER=openai
 EMBED_MODEL=text-embedding-3-large
 REFLECT_PROVIDER=openai
-REFLECT_MODEL=gpt-4o-mini
+REFLECT_MODEL=gpt-5-mini
 COMPACT_PROVIDER=
-COMPACT_MODEL=gpt-4o-mini
+COMPACT_MODEL=gpt-5-nano
 ```
 
 `ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because SupaVector still needs a provider-native embedding endpoint for indexing and retrieval.
@@ -325,7 +325,7 @@ The response lists generation providers, embedding providers, provider-specific 
 
 Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default. Existing self-hosted installs should pin `EMBED_MODEL` explicitly before changing it so updates do not silently switch embedding spaces.
 On startup, SupaVector now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
-Reasoning-style models such as `o1`, `o3`, `o4-mini`, and the GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. SupaVector omits unsupported `temperature` parameters automatically for those models.
+The GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. SupaVector omits unsupported `temperature` parameters automatically for those models.
 
 Common maintenance checks:
 
@@ -507,6 +507,7 @@ Supported sync request paths:
 - `POST /v1/docs/url`
 - `GET /v1/search`
 - `POST /v1/ask`
+- `POST /v1/code`
 - `POST /v1/boolean_ask`
 - `POST /v1/memory/write`
 - `POST /v1/memory/recall`
@@ -515,7 +516,7 @@ Current limitation:
 
 - `POST /v1/memory/reflect` and `POST /v1/memory/compact` reject request-scoped provider-key headers because those jobs continue asynchronously after the request ends.
 
-`POST /v1/ask` and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
+`POST /v1/ask`, `POST /v1/code`, and `POST /v1/boolean_ask` also accept a `provider` field in the JSON body when one request should use a different generation provider than the tenant or instance default.
 
 Embedding provider selection remains instance-wide today. Request-scoped provider headers for docs, search, memory write, and memory recall only override credentials for the embedding provider that the instance is already configured to use.
 
@@ -559,11 +560,32 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
     "k":3,
     "policy":"amvl",
     "provider":"openai",
-    "model":"gpt-4.1"
+    "model":"gpt-5.2"
   }'
 ```
 
 `provider` and `model` are optional. Use them when one request should use a different generation provider/model without changing the tenant default.
+
+Set `"favorRecency": true` when fresher matching evidence should outrank older matches. This is useful for continuously updated facts such as product catalogs, release notes, incident timelines, or chat-state-like memory. Synced Memory sources stamp `syncedAt` automatically, and direct writes can also provide timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+### 5a. Ask A Code Question
+
+```bash
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/code" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
+  -H "X-OpenAI-API-Key: ${OPENAI_API_KEY}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "question":"Why would newer product records rank above stale ones in this retrieval flow?",
+    "k":6,
+    "task":"debug",
+    "answerLength":"medium",
+    "policy":"amvl",
+    "favorRecency":true
+  }'
+```
+
+`/v1/code` uses the same retrieval controls as `/v1/ask`, including `policy` and `favorRecency`, but produces code-aware grounded answers for debugging, review, and implementation questions.
 
 ### 6. Ask A Strict True/False Question
 
@@ -647,7 +669,10 @@ With the stack running, you can also run:
 ```bash
 npm run test:integration
 npm run test:e2e
+npm run test:e2e:code
 ```
+
+The Docker-backed CI harness in `./scripts/test_ci_local.sh` runs the standard gateway suite and the code API e2e suite by default. Set `RUN_DIAGNOSTIC_E2E=1` if you also want the heavier diagnostic e2e retrieval checks.
 
 ## Bring Your Own Postgres And Env
 

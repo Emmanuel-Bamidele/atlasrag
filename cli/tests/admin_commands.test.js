@@ -159,7 +159,7 @@ async function testTenantUpdateCommand() {
         }
       },
       answerProvider: "openai",
-      answerModel: "gpt-4o"
+      answerModel: "gpt-5.2"
     });
     return {
       body: {
@@ -178,7 +178,7 @@ async function testTenantUpdateCommand() {
             models: {
               effective: {
                 answerProvider: "openai",
-                answerModel: "gpt-4o"
+                answerModel: "gpt-5.2"
               }
             }
           }
@@ -199,7 +199,7 @@ async function testTenantUpdateCommand() {
       "--answer-provider",
       "openai",
       "--answer-model",
-      "gpt-4o",
+      "gpt-5.2",
       "--json"
     ], {
       SUPAVECTOR_BASE_URL: baseUrl,
@@ -207,7 +207,7 @@ async function testTenantUpdateCommand() {
     });
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.data.tenant.authMode, "sso_only");
-    assert.equal(payload.data.tenant.models.effective.answerModel, "gpt-4o");
+    assert.equal(payload.data.tenant.models.effective.answerModel, "gpt-5.2");
   });
 }
 
@@ -366,7 +366,7 @@ async function testCodeCommand() {
       stackTrace: "Error: redirect loop",
       context: { framework: "nextjs" },
       provider: "openai",
-      model: "gpt-4o"
+      model: "gpt-5.2"
     });
     return {
       body: {
@@ -374,7 +374,7 @@ async function testCodeCommand() {
         data: {
           answer: "The refresh redirect loop starts in middleware.",
           provider: "openai",
-          model: "gpt-4o",
+          model: "gpt-5.2",
           files: [
             { path: "src/middleware.ts", repo: "acme/web", language: "typescript" }
           ],
@@ -421,7 +421,7 @@ async function testCodeCommand() {
       "--provider",
       "openai",
       "--model",
-      "gpt-4o",
+      "gpt-5.2",
       "--json"
     ], {
       SUPAVECTOR_BASE_URL: baseUrl,

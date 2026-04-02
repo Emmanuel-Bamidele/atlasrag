@@ -813,6 +813,10 @@
           "query": {
             "type": "string"
           },
+          "favorRecency": {
+            "type": "boolean",
+            "description": "When true, retrieval applied an additional freshness bias."
+          },
           "results": {
             "type": "array",
             "items": {
@@ -871,6 +875,10 @@
           },
           "policy": {
             "$ref": "#/components/schemas/MemoryPolicy"
+          },
+          "favorRecency": {
+            "type": "boolean",
+            "description": "When true, retrieval adds a freshness bias so newer matching memories rank higher."
           },
           "collection": {
             "type": "string"
@@ -935,6 +943,195 @@
           },
           "k": {
             "type": "integer"
+          },
+          "favorRecency": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CodeRequest": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "k": {
+            "type": "integer"
+          },
+          "docIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answerLength": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "short",
+              "medium",
+              "long"
+            ],
+            "description": "Controls answer depth. auto adapts based on retrieved source detail."
+          },
+          "task": {
+            "type": "string",
+            "description": "Optional code task hint such as debug, review, write, or structure."
+          },
+          "language": {
+            "type": "string"
+          },
+          "deployment": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "stackTrace": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MemoryPolicy"
+          },
+          "favorRecency": {
+            "type": "boolean",
+            "description": "When true, retrieval adds a freshness bias so newer matching memories rank higher."
+          },
+          "collection": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "CodeResponseData": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chunkId": {
+                  "type": "string"
+                },
+                "docId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "collection": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "chunksUsed": {
+            "type": "integer"
+          },
+          "supportingChunks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportingChunk"
+            }
+          },
+          "answerLength": {
+            "type": "string",
+            "enum": [
+              "short",
+              "medium",
+              "long"
+            ]
+          },
+          "task": {
+            "type": "string"
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deployment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workingSet": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sourceSummary": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "relationshipSummary": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/GenerationProviderId"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelId"
+          },
+          "k": {
+            "type": "integer"
+          },
+          "favorRecency": {
+            "type": "boolean"
+          },
+          "answerConfidence": {
+            "type": "string"
           }
         }
       },
@@ -1006,6 +1203,10 @@
           "policy": {
             "$ref": "#/components/schemas/MemoryPolicy"
           },
+          "favorRecency": {
+            "type": "boolean",
+            "description": "When true, retrieval adds a freshness bias so newer matching memories rank higher."
+          },
           "collection": {
             "type": "string"
           },
@@ -1031,6 +1232,9 @@
           },
           "provider": {
             "$ref": "#/components/schemas/GenerationProviderId"
+          },
+          "favorRecency": {
+            "type": "boolean"
           },
           "citations": {
             "type": "array",
@@ -1377,6 +1581,10 @@
               "type": "string"
             }
           },
+          "favorRecency": {
+            "type": "boolean",
+            "description": "When true, recall adds a freshness bias so newer matching memories rank higher."
+          },
           "collection": {
             "type": "string"
           },
@@ -1396,6 +1604,9 @@
           },
           "k": {
             "type": "integer"
+          },
+          "favorRecency": {
+            "type": "boolean"
           },
           "results": {
             "type": "array",
@@ -1831,10 +2042,10 @@
                           {
                             "key": "1",
                             "provider": "openai",
-                            "model": "gpt-4o",
-                            "label": "Balanced default",
-                            "family": "gpt-4o",
-                            "supportsTemperature": true,
+                            "model": "gpt-5.2",
+                            "label": "Latest flagship",
+                            "family": "gpt-5",
+                            "supportsTemperature": false,
                             "recommended": true,
                             "custom": false
                           }
@@ -1892,19 +2103,19 @@
                         {
                           "key": "1",
                           "provider": "openai",
-                          "model": "gpt-4o",
-                          "label": "Balanced default",
-                          "family": "gpt-4o",
-                          "supportsTemperature": true,
+                          "model": "gpt-5.2",
+                          "label": "Latest flagship",
+                          "family": "gpt-5",
+                          "supportsTemperature": false,
                           "recommended": true,
                           "custom": false
                         },
                         {
-                          "key": "9",
+                          "key": "2",
                           "provider": "openai",
-                          "model": "o1",
-                          "label": "Deeper reasoning",
-                          "family": "o-series",
+                          "model": "gpt-5-mini",
+                          "label": "Fast lower-cost default",
+                          "family": "gpt-5",
                           "supportsTemperature": false,
                           "recommended": false,
                           "custom": false
@@ -1941,15 +2152,15 @@
                     "defaults": {
                       "instance": {
                         "answerProvider": "openai",
-                        "answerModel": "gpt-4o",
+                        "answerModel": "gpt-5.2",
                         "booleanAskProvider": "openai",
-                        "booleanAskModel": "gpt-4o",
+                        "booleanAskModel": "gpt-5.2",
                         "embedProvider": "openai",
                         "embedModel": "text-embedding-3-large",
                         "reflectProvider": "openai",
-                        "reflectModel": "gpt-4o-mini",
+                        "reflectModel": "gpt-5-mini",
                         "compactProvider": "openai",
-                        "compactModel": "gpt-4o-mini"
+                        "compactModel": "gpt-5-nano"
                       }
                     }
                   },
@@ -2094,11 +2305,11 @@
                 ],
                 "models": {
                   "answerProvider": "openai",
-                  "answerModel": "gpt-4.1",
+                  "answerModel": "gpt-5.2",
                   "booleanAskProvider": null,
                   "booleanAskModel": null,
                   "reflectProvider": "openai",
-                  "reflectModel": "gpt-4o-mini",
+                  "reflectModel": "gpt-5-mini",
                   "compactProvider": null,
                   "compactModel": null
                 }
@@ -2562,6 +2773,14 @@
           },
           {
             "in": "query",
+            "name": "favorRecency",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Bias retrieval toward fresher matching items. This defaults on for episodic and conversation-heavy recall."
+          },
+          {
+            "in": "query",
             "name": "collection",
             "schema": {
               "type": "string"
@@ -2620,6 +2839,7 @@
                 "question": "What does SupaVector store?",
                 "k": 4,
                 "answerLength": "auto",
+                "favorRecency": true,
                 "policy": "amvl",
                 "collection": "default",
                 "provider": "gemini",
@@ -2654,6 +2874,59 @@
         "description": "Retrieve relevant chunks and generate a grounded answer with citations. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
       }
     },
+    "/v1/code": {
+      "post": {
+        "tags": [
+          "Ask"
+        ],
+        "summary": "Grounded code-aware answer generation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeRequest"
+              },
+              "example": {
+                "question": "Why would newer synced product records rank above stale ones here?",
+                "k": 6,
+                "task": "debug",
+                "answerLength": "medium",
+                "favorRecency": true,
+                "policy": "amvl",
+                "collection": "default",
+                "provider": "openai",
+                "model": "gpt-5.2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/OkResponse"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CodeResponseData"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve relevant chunks and generate a grounded code-aware answer. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
+      }
+    },
     "/v1/boolean_ask": {
       "post": {
         "tags": [
@@ -2670,6 +2943,7 @@
               "example": {
                 "question": "Is SupaVector designed for agent memory retrieval?",
                 "k": 4,
+                "favorRecency": true,
                 "policy": "amvl",
                 "collection": "default",
                 "provider": "anthropic",
@@ -2787,6 +3061,7 @@
                 "query": "How do we avoid duplicate writes?",
                 "policy": "amvl",
                 "k": 3,
+                "favorRecency": true,
                 "types": [
                   "semantic"
                 ],

@@ -108,7 +108,7 @@ const {
   buildTenantSsoConfigPublic
 } = require("./enterprise_auth");
 const { computeStoragePeriodSummary } = require("./storage_billing");
-const { estimateTokensFromText } = require("./memory_value");
+const { estimateTokensFromText, computeRecencyDecay } = require("./memory_value");
 const {
   isBelowMinAgeForLifecycle,
   createDeleteBudget,
@@ -458,6 +458,8 @@ const HYBRID_LEXICAL_MULTIPLIER = parseInt(process.env.HYBRID_LEXICAL_MULTIPLIER
 const HYBRID_LEXICAL_CAP = parseInt(process.env.HYBRID_LEXICAL_CAP || "120", 10);
 const HYBRID_RERANK_OVERLAP_BOOST = parseFloat(process.env.HYBRID_RERANK_OVERLAP_BOOST || "0.12");
 const HYBRID_RERANK_EXACT_BOOST = parseFloat(process.env.HYBRID_RERANK_EXACT_BOOST || "0.08");
+const MEMORY_RETRIEVAL_RECENCY_WEIGHT = parseFloat(process.env.MEMORY_RETRIEVAL_RECENCY_WEIGHT || "0.3");
+const MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS || "14");
 const CHUNK_UPSERT_BATCH_SIZE = 128;
 const VECTOR_WRITE_BATCH_SIZE = 8;
 const VECTOR_WRITE_BATCH_CONCURRENCY = 2;
@@ -3455,6 +3457,27 @@ function parseQuestionInput(input = {}) {
   return String(input?.question ?? input?.query ?? input?.q ?? "").trim();
 }
 
+function parseOptionalBooleanFlag(raw, label = "value") {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (raw === true || raw === false) return raw;
+  const clean = String(raw).trim().toLowerCase();
+  if (!clean || clean === "auto" || clean === "default") return null;
+  if (clean === "true" || clean === "1" || clean === "yes" || clean === "on") return true;
+  if (clean === "false" || clean === "0" || clean === "no" || clean === "off") return false;
+  throw new Error(`${label} must be true, false, or auto`);
+}
+
+function resolveRequestedFavorRecency(input, fallback = null) {
+  if (!input || typeof input !== "object") return fallback;
+  if (Object.prototype.hasOwnProperty.call(input, "favorRecency")) {
+    return parseOptionalBooleanFlag(input.favorRecency, "favorRecency");
+  }
+  if (Object.prototype.hasOwnProperty.call(input, "favor_recency")) {
+    return parseOptionalBooleanFlag(input.favor_recency, "favorRecency");
+  }
+  return fallback;
+}
+
 function parseStringListInput(raw, { maxItems = 16, maxItemLength = 240, label = "value" } = {}) {
   if (raw === undefined || raw === null || raw === "") return [];
   let values = [];
@@ -3543,7 +3566,8 @@ function parseCodeInput(body = {}) {
     context: parseCodeContextInput(body?.context),
     provider: resolveAskProviderOverride(body),
     model: resolveAskModelOverride(body),
-    policy: resolveRequestedMemoryPolicy(body)
+    policy: resolveRequestedMemoryPolicy(body),
+    favorRecency: resolveRequestedFavorRecency(body)
   };
 }
 
@@ -4425,6 +4449,96 @@ function recencyTimestampMs(memory) {
   return 0;
 }
 
+function parseTimestampMs(value) {
+  if (value === undefined || value === null || value === "") return NaN;
+  const millis = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(millis) ? millis : NaN;
+}
+
+function memoryMetadataValue(memory, keys = []) {
+  const metadata = memory?.metadata && typeof memory.metadata === "object" && !Array.isArray(memory.metadata)
+    ? memory.metadata
+    : null;
+  if (!metadata) return undefined;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
+      return metadata[key];
+    }
+  }
+  return undefined;
+}
+
+function resolveMemoryKnowledgeType(memory) {
+  const raw = memoryMetadataValue(memory, ["knowledgeType", "knowledge_type"]);
+  const clean = String(raw || "").trim().toLowerCase();
+  if (clean === "semantic" || clean === "procedural" || clean === "episodic" || clean === "conversation" || clean === "summary") {
+    return clean;
+  }
+  return null;
+}
+
+function resolveMemoryFavorRecencyPreference(memory) {
+  try {
+    return parseOptionalBooleanFlag(memoryMetadataValue(memory, ["favorRecency", "favor_recency"]), "favorRecency");
+  } catch {
+    return null;
+  }
+}
+
+function memoryFreshnessTimestampMs(memory) {
+  const metadataTs = parseTimestampMs(memoryMetadataValue(memory, [
+    "updatedAt",
+    "updated_at",
+    "lastUpdatedAt",
+    "last_updated_at",
+    "modifiedAt",
+    "modified_at",
+    "publishedAt",
+    "published_at",
+    "effectiveAt",
+    "effective_at",
+    "sourceUpdatedAt",
+    "source_updated_at",
+    "syncedAt",
+    "synced_at",
+    "lastSyncedAt",
+    "last_synced_at"
+  ]));
+  if (Number.isFinite(metadataTs) && metadataTs > 0) return metadataTs;
+  const created = memory?.created_at ? new Date(memory.created_at).getTime() : NaN;
+  if (Number.isFinite(created)) return created;
+  return 0;
+}
+
+function computeMemoryRetrievalRecencyScore(memory, now = Date.now(), halfLifeDays = MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS) {
+  const freshnessTs = memoryFreshnessTimestampMs(memory);
+  if (!Number.isFinite(freshnessTs) || freshnessTs <= 0) return 0;
+  return computeRecencyDecay(
+    null,
+    new Date(freshnessTs),
+    new Date(now),
+    Number.isFinite(halfLifeDays) && halfLifeDays > 0 ? halfLifeDays : MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS
+  );
+}
+
+function isRecencyBiasedType(type) {
+  const clean = String(type || "").trim().toLowerCase();
+  return clean === "episodic" || clean === "conversation";
+}
+
+function determineRecencyBoostMode({ explicitFavorRecency, memory, candidateTypes }) {
+  if (explicitFavorRecency === false) return "off";
+  if (explicitFavorRecency === true) return "all";
+  const memoryPreference = resolveMemoryFavorRecencyPreference(memory);
+  if (memoryPreference === false) return "off";
+  if (memoryPreference === true) return "memory";
+  if (isRecencyBiasedType(memory?.item_type) || isRecencyBiasedType(resolveMemoryKnowledgeType(memory))) {
+    return "memory";
+  }
+  const requestedTypes = Array.isArray(candidateTypes) ? candidateTypes : [];
+  return requestedTypes.some(isRecencyBiasedType) ? "context" : "off";
+}
+
 function selectWarmCandidates(items, size, selection = MEMORY_RETRIEVAL_WARM_SELECTION) {
   const list = Array.isArray(items) ? items.slice() : [];
   const k = Number.isFinite(size) && size > 0 ? Math.floor(size) : 0;
@@ -4547,7 +4661,7 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, apiKey, embedProvider, embedModel }) {
+async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, favorRecency, apiKey, embedProvider, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -4593,6 +4707,12 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     ...(retrievalSet.warm || []),
     ...(retrievalSet.cold || [])
   ];
+  const memoryByNamespaceId = new Map();
+  for (const memory of retrievalMemories) {
+    if (memory?.namespace_id) {
+      memoryByNamespaceId.set(memory.namespace_id, memory);
+    }
+  }
   const warmSampleBudget = Math.max(topK, Number.isFinite(policyConfig.retrievalWarmSampleK) ? policyConfig.retrievalWarmSampleK : 0);
   const seenNamespaceIds = new Set();
   const candidateNamespaceIds = [];
@@ -4707,11 +4827,13 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     const existing = candidates.get(key) || {
       row,
       parsed,
+      memory: null,
       vectorScore: null,
       lexicalScore: null
     };
     existing.row = row;
     existing.parsed = parsed;
+    existing.memory = memoryByNamespaceId.get(row.doc_id) || existing.memory;
     if (Number.isFinite(vectorScore)) {
       existing.vectorScore = Number.isFinite(existing.vectorScore)
         ? Math.max(existing.vectorScore, vectorScore)
@@ -4758,9 +4880,11 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
 
   const overlapBoostScale = clampNumber(HYBRID_RERANK_OVERLAP_BOOST, 0, 1);
   const exactBoostScale = clampNumber(HYBRID_RERANK_EXACT_BOOST, 0, 1);
+  const recencyWeight = clampNumber(MEMORY_RETRIEVAL_RECENCY_WEIGHT, 0, 0.8);
   const applyRerank = useHybrid;
   const cleanQuery = String(query || "").trim().toLowerCase();
   const queryTokens = tokenizeForRerank(cleanQuery);
+  const recencyNow = Date.now();
 
   const ranked = Array.from(candidates.values()).map((candidate) => {
     const vectorNorm = Number.isFinite(candidate.vectorScore)
@@ -4775,15 +4899,31 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
       + (lexicalNorm * lexicalWeight)
       + (overlapScore * overlapBoostScale)
       + (hasExactMatch ? exactBoostScale : 0);
+    const recencyMode = determineRecencyBoostMode({
+      explicitFavorRecency: favorRecency,
+      memory: candidate.memory,
+      candidateTypes
+    });
+    const recencyScore = recencyMode === "off"
+      ? 0
+      : computeMemoryRetrievalRecencyScore(candidate.memory, recencyNow, MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS);
+    const finalScore = recencyMode === "off"
+      ? fusedScore
+      : ((fusedScore * (1 - recencyWeight)) + (recencyScore * recencyWeight));
 
     return {
       ...candidate,
-      fusedScore
+      fusedScore,
+      recencyMode,
+      recencyScore,
+      finalScore
     };
   });
 
   ranked.sort((a, b) => {
+    if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
     if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore;
+    if (b.recencyScore !== a.recencyScore) return b.recencyScore - a.recencyScore;
     const av = Number.isFinite(a.vectorScore) ? a.vectorScore : -Infinity;
     const bv = Number.isFinite(b.vectorScore) ? b.vectorScore : -Infinity;
     if (bv !== av) return bv - av;
@@ -4795,7 +4935,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
 
   const results = ranked.slice(0, topK).map((candidate) => ({
     chunkId: stripChunkNamespace(candidate.row.chunk_id),
-    score: candidate.fusedScore,
+    score: candidate.finalScore,
     docId: candidate.parsed.docId,
     collection: candidate.parsed.collection,
     preview: buildSearchPreview(candidate.row.text, query, 180),
@@ -5606,7 +5746,7 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
   };
 }
 
-async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, apiKey, operation, retrievalSource, embedProvider, embedModel }) {
+async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, favorRecency, apiKey, operation, retrievalSource, embedProvider, embedModel }) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -5625,6 +5765,7 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
     policy,
+    favorRecency,
     apiKey,
     embedProvider,
     embedModel,
@@ -5719,6 +5860,7 @@ async function buildCodeAnswerContext({
   privileges,
   telemetry,
   policy,
+  favorRecency,
   apiKey,
   operation,
   retrievalSource,
@@ -5776,6 +5918,7 @@ async function buildCodeAnswerContext({
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
     policy,
+    favorRecency,
     apiKey,
     embedProvider,
     embedModel,
@@ -6015,7 +6158,7 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -6037,6 +6180,7 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     privileges,
     telemetry,
     policy,
+    favorRecency,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -6124,6 +6268,7 @@ async function answerCodeQuestion({
   answerLength,
   telemetry,
   policy,
+  favorRecency,
   generationApiKey,
   generationBillable = true,
   embedApiKey,
@@ -6165,6 +6310,7 @@ async function answerCodeQuestion({
     privileges,
     telemetry,
     policy,
+    favorRecency,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -6272,7 +6418,7 @@ async function answerCodeQuestion({
   };
 }
 
-async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
+async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -6294,6 +6440,7 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     privileges,
     telemetry,
     policy,
+    favorRecency,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -10090,6 +10237,7 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
     const principalId = resolvePrincipalId(req);
     const collection = resolveCollection(req);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
+    const requestMetadata = parseTenantMetadataInput(req.body?.metadata) || {};
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const expiresAt = resolveExpiresAt(req.body);
@@ -10099,7 +10247,7 @@ app.post("/docs/url", requireJwt, requireRole("indexer"), async (req, res) => {
       collection,
       cleanDocId,
       fetched.text,
-      { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+      { type: "url", url: cleanUrl, metadata: { ...requestMetadata, contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
       {
         apiKey: embedConfig.apiKey,
         embedProvider: embedConfig.embedProvider,
@@ -10143,11 +10291,13 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
   let agentId = null;
   let tags = [];
   let embedConfig = null;
+  let requestMetadata = {};
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
     principalId = resolvePrincipalId(req);
     embedConfig = await getRequestEmbeddingConfig(req, tenantId);
+    requestMetadata = parseTenantMetadataInput(req.body?.metadata) || {};
     agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     tags = parseTagsInput(req.body?.tags);
   } catch (e) {
@@ -10170,7 +10320,7 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
           collection,
           cleanDocId,
           fetched.text,
-          { type: "url", url: cleanUrl, metadata: { contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
+          { type: "url", url: cleanUrl, metadata: { ...requestMetadata, contentType: fetched.contentType || null }, expiresAt, principalId, agentId, tags, visibility: req.body?.visibility, acl: req.body?.acl },
           {
             apiKey: embedConfig.apiKey,
             embedProvider: embedConfig.embedProvider,
@@ -10228,6 +10378,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
@@ -10249,6 +10400,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      favorRecency,
       model,
       provider,
       models: effectiveModels,
@@ -10272,6 +10424,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answerLength: result.answerLength,
       provider: result.provider,
       model: result.model,
+      favorRecency: favorRecency === null ? undefined : favorRecency,
       tenantId,
       collection
     });
@@ -10300,6 +10453,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
@@ -10320,6 +10474,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength,
       policy,
+      favorRecency,
       model,
       provider,
       models: effectiveModels,
@@ -10342,7 +10497,8 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       answerLength: result.answerLength,
       provider: result.provider,
       model: result.model,
-      k
+      k,
+      favorRecency: favorRecency === null ? undefined : favorRecency
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "ASK_FAILED", tenantId, collection);
@@ -10380,6 +10536,7 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength: input.answerLength,
       policy: input.policy,
+      favorRecency: input.favorRecency,
       task: input.task,
       language: input.language,
       deployment: input.deployment,
@@ -10418,6 +10575,7 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       task: input.task,
       provider: result.provider,
       model: result.model,
+      favorRecency: input.favorRecency === null ? undefined : input.favorRecency,
       tenantId,
       collection
     });
@@ -10459,6 +10617,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       answerLength: input.answerLength,
       policy: input.policy,
+      favorRecency: input.favorRecency,
       task: input.task,
       language: input.language,
       deployment: input.deployment,
@@ -10499,6 +10658,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       provider: result.provider,
       model: result.model,
       k: input.k,
+      favorRecency: input.favorRecency === null ? undefined : input.favorRecency,
       answerConfidence: result.answerConfidence || "high"
     }, tenantId, collection);
   } catch (e) {
@@ -10520,6 +10680,7 @@ async function handleBooleanAskLegacy(req, res) {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
@@ -10540,6 +10701,7 @@ async function handleBooleanAskLegacy(req, res) {
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
+      favorRecency,
       model,
       provider,
       models: effectiveModels,
@@ -10563,6 +10725,7 @@ async function handleBooleanAskLegacy(req, res) {
       supportingChunks: result.supportingChunks,
       provider: result.provider,
       model: result.model,
+      favorRecency: favorRecency === null ? undefined : favorRecency,
       tenantId,
       collection
     });
@@ -10587,6 +10750,7 @@ async function handleBooleanAskV1(req, res) {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
@@ -10606,6 +10770,7 @@ async function handleBooleanAskV1(req, res) {
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
+      favorRecency,
       model,
       provider,
       models: effectiveModels,
@@ -10627,7 +10792,8 @@ async function handleBooleanAskV1(req, res) {
       chunksUsed: result.chunksUsed,
       provider: result.provider,
       model: result.model,
-      k
+      k,
+      favorRecency: favorRecency === null ? undefined : favorRecency
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "BOOLEAN_ASK_FAILED", tenantId, collection);
@@ -10787,6 +10953,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
+    const favorRecency = resolveRequestedFavorRecency(req.query);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
@@ -10796,6 +10963,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
+      favorRecency,
       apiKey: embedConfig.apiKey,
       embedProvider: embedConfig.embedProvider,
       embedModel: embedConfig.embedModel,
@@ -10820,6 +10988,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
         collection: r.collection,
         preview: r.preview
       })),
+      favorRecency: favorRecency === null ? undefined : favorRecency,
       tenantId,
       collection
     });
@@ -10842,6 +11011,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
     const access = resolveAccessContext(req);
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
+    const favorRecency = resolveRequestedFavorRecency(req.query);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     const results = await searchChunks({
       tenantId,
@@ -10850,6 +11020,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       k,
       docIds,
       policy,
+      favorRecency,
       apiKey: embedConfig.apiKey,
       embedProvider: embedConfig.embedProvider,
       embedModel: embedConfig.embedModel,
@@ -10872,7 +11043,8 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
         docId: r.docId,
         collection: r.collection,
         preview: r.preview
-      }))
+      })),
+      favorRecency: favorRecency === null ? undefined : favorRecency
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "SEARCH_FAILED", tenantId, collection);
@@ -10984,6 +11156,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
@@ -11000,6 +11173,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       since: sinceTime,
       until: untilTime,
       policy,
+      favorRecency,
       apiKey: embedConfig.apiKey,
       embedProvider: embedConfig.embedProvider,
       embedModel: embedConfig.embedModel,
@@ -11058,6 +11232,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       query,
       results: recalled,
       k: limit,
+      favorRecency: favorRecency === null ? undefined : favorRecency,
       tenantId,
       collection
     });
@@ -11092,6 +11267,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
     const tags = parseTagsInput(req.body?.tags);
     const policy = resolveRequestedMemoryPolicy(req.body);
+    const favorRecency = resolveRequestedFavorRecency(req.body);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
@@ -11108,6 +11284,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       since: sinceTime,
       until: untilTime,
       policy,
+      favorRecency,
       apiKey: embedConfig.apiKey,
       embedProvider: embedConfig.embedProvider,
       embedModel: embedConfig.embedModel,
@@ -11164,7 +11341,8 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
     sendOk(res, {
       query,
       results: recalled,
-      k: limit
+      k: limit,
+      favorRecency: favorRecency === null ? undefined : favorRecency
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "MEMORY_RECALL_FAILED", tenantId, collection);
@@ -11782,8 +11960,14 @@ module.exports = {
     selectCodeCandidatesForPrompt,
     formatTenantRecord,
     normalizeMemoryPolicy,
+    resolveRequestedFavorRecency,
     getMemoryPolicy,
     resolveMemoryPolicyConfig,
+    resolveMemoryKnowledgeType,
+    resolveMemoryFavorRecencyPreference,
+    memoryFreshnessTimestampMs,
+    computeMemoryRetrievalRecencyScore,
+    determineRecencyBoostMode,
     resolveChunkingOptionsForSource,
     shouldReindexStoredVectors,
     splitIntoBatches,

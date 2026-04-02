@@ -70,6 +70,17 @@ function testBooleanAskPromptRemainsSingleStringPrompt() {
   assert.match(prompt, /Question:\s*\nIs SupaVector a database\?/);
 }
 
+function testAnswerLengthInstructionsAndTokenBudgets() {
+  assert.match(__testHooks.buildAnswerLengthInstruction("medium"), /roughly 220-450 words/);
+  assert.match(__testHooks.buildAnswerLengthInstruction("long"), /roughly 450-900 words/);
+  assert.equal(__testHooks.resolveAnswerMaxTokens("short"), 1024);
+  assert.equal(__testHooks.resolveAnswerMaxTokens("medium"), 3072);
+  assert.equal(__testHooks.resolveAnswerMaxTokens("long"), 6144);
+  assert.equal(__testHooks.resolveCodeAnswerMaxTokens("short"), 2048);
+  assert.equal(__testHooks.resolveCodeAnswerMaxTokens("medium"), 6144);
+  assert.equal(__testHooks.resolveCodeAnswerMaxTokens("long"), 12288);
+}
+
 function testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText() {
   const fallback = __testHooks.fallbackFromChunks([
     {
@@ -125,6 +136,7 @@ function main() {
   testCodeTaskNormalization();
   testAskPromptRemainsSingleStringPrompt();
   testBooleanAskPromptRemainsSingleStringPrompt();
+  testAnswerLengthInstructionsAndTokenBudgets();
   testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
   testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms();
   testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSources();

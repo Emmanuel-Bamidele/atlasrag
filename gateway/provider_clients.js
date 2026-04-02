@@ -123,6 +123,20 @@ function extractOpenAiUsage(usage) {
   };
 }
 
+function buildOpenAiTextRequestBody({ model, input, temperature, jsonMode = false, maxTokens }) {
+  const resolvedInput = (input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined)
+    ? [{ role: "developer", content: input.system }, { role: "user", content: input.user }]
+    : input;
+  return buildResponsesCreateParams({
+    provider: "openai",
+    model,
+    input: resolvedInput,
+    temperature,
+    ...(Number.isFinite(maxTokens) && maxTokens > 0 ? { max_output_tokens: Math.floor(maxTokens) } : {}),
+    ...(jsonMode ? { text: { format: { type: "json_object" } } } : {})
+  });
+}
+
 async function fetchJson(url, options = {}) {
   const { signal, dispose } = createAbortSignal();
   try {
@@ -151,18 +165,14 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-async function generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode = false }) {
+async function generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode = false, maxTokens }) {
   const client = getOpenAIClient(apiKey);
-  // Support input as { system, user } object or plain string
-  const resolvedInput = (input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined)
-    ? [{ role: "developer", content: input.system }, { role: "user", content: input.user }]
-    : input;
-  const resp = await client.responses.create(buildResponsesCreateParams({
-    provider: "openai",
+  const resp = await client.responses.create(buildOpenAiTextRequestBody({
     model,
-    input: resolvedInput,
+    input,
     temperature,
-    ...(jsonMode ? { text: { format: { type: "json_object" } } } : {})
+    jsonMode,
+    maxTokens
   }));
   return {
     text: String(resp?.output_text || "").trim(),
@@ -170,10 +180,11 @@ async function generateTextWithOpenAI({ model, input, apiKey, temperature, jsonM
   };
 }
 
-async function generateTextWithGemini({ model, input, apiKey, temperature, jsonMode = false }) {
+async function generateTextWithGemini({ model, input, apiKey, temperature, jsonMode = false, maxTokens }) {
   const key = resolveProviderApiKey("gemini", apiKey);
   const generationConfig = {};
   if (temperature !== undefined) generationConfig.temperature = temperature;
+  if (Number.isFinite(maxTokens) && maxTokens > 0) generationConfig.maxOutputTokens = Math.floor(maxTokens);
   if (jsonMode) generationConfig.responseMimeType = "application/json";
   // Support input as { system, user } object or plain string
   const isStructured = input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined;
@@ -241,12 +252,12 @@ async function generateProviderText({
 }) {
   const cleanProvider = normalizeProviderId(provider) || DEFAULT_ANSWER_PROVIDER;
   if (cleanProvider === "gemini") {
-    return generateTextWithGemini({ model, input, apiKey, temperature, jsonMode });
+    return generateTextWithGemini({ model, input, apiKey, temperature, jsonMode, maxTokens });
   }
   if (cleanProvider === "anthropic") {
     return generateTextWithAnthropic({ model, input, apiKey, temperature, maxTokens });
   }
-  return generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode });
+  return generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode, maxTokens });
 }
 
 function extractOpenAiEmbeddingUsage(usage) {
@@ -336,6 +347,7 @@ module.exports = {
   generateProviderText,
   embedProviderTexts,
   __testHooks: {
+    buildOpenAiTextRequestBody,
     normalizeGeminiModelPath,
     extractGeminiText,
     extractAnthropicText,

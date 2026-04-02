@@ -975,7 +975,8 @@ function buildDocConnectContent(baseUrl){
       "Run supavector doctor first. If Supavector is not configured, run supavector onboard.",
       "On the local CLI path, supavector onboard creates the first admin and first service token and saves local config for later CLI use.",
       "Use --collection explicitly on supavector write/search/ask/boolean_ask when scope matters. supavector write --folder ./name uses the folder name as the default collection.",
-      "For /v1/ask, you can set answerLength: auto, short, medium, or long.",
+      "For /v1/ask and /v1/code, you can set answerLength: auto, short, medium, or long.",
+      "Use favorRecency=true on search, ask, code, boolean_ask, or memory/recall when newer matching evidence should outrank older results.",
       "Use /v1/boolean_ask when you need a grounded response constrained to true, false, or invalid.",
       "When answering, cite the endpoint path and required headers for each Supavector API call."
     ].join("\n")

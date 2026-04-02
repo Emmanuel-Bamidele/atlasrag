@@ -81,9 +81,21 @@ function buildAnswerLengthInstruction(answerLength) {
     return "Target length: short (about 2-4 sentences, roughly 60-120 words).";
   }
   if (answerLength === "long") {
-    return "Target length: long (about 2-4 concise paragraphs, roughly 220-450 words).";
+    return "Target length: long (about 4-8 concise paragraphs, roughly 450-900 words).";
   }
-  return "Target length: medium (about 1-2 concise paragraphs, roughly 120-220 words).";
+  return "Target length: medium (about 2-4 concise paragraphs, roughly 220-450 words).";
+}
+
+function resolveAnswerMaxTokens(answerLength) {
+  if (answerLength === "short") return 1024;
+  if (answerLength === "long") return 6144;
+  return 3072;
+}
+
+function resolveCodeAnswerMaxTokens(answerLength) {
+  if (answerLength === "short") return 2048;
+  if (answerLength === "long") return 12288;
+  return 6144;
 }
 
 function sanitizeChunkText(text) {
@@ -747,6 +759,7 @@ async function generateAnswer(question, chunks, options = {}) {
     fallbackProvider: resolveAnswerProvider(options),
     fallbackModel: resolveAnswerModel(options)
   });
+  const answerMaxTokens = resolveAnswerMaxTokens(effectiveAnswerLength);
 
   let resp = null;
   try {
@@ -755,7 +768,8 @@ async function generateAnswer(question, chunks, options = {}) {
       model: resolved.model,
       input,
       apiKey: options?.apiKey,
-      temperature: 0.2
+      temperature: 0.2,
+      maxTokens: answerMaxTokens
     });
   } catch (err) {
     if (!fallbackWarned) {
@@ -963,7 +977,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
     fallbackModel: resolveAnswerModel(options)
   });
 
-  const codeAnswerMaxTokens = effectiveAnswerLength === "short" ? 2048 : effectiveAnswerLength === "long" ? 7168 : 4096;
+  const codeAnswerMaxTokens = resolveCodeAnswerMaxTokens(effectiveAnswerLength);
 
   let resp = null;
   try {
@@ -1044,9 +1058,12 @@ module.exports = {
     sanitizeChunks,
     fallbackFromChunks,
     isCanonicalUnknownAnswer,
+    buildAnswerLengthInstruction,
     buildPrompt,
     buildBooleanAskPrompt,
     buildCodePrompt,
+    resolveAnswerMaxTokens,
+    resolveCodeAnswerMaxTokens,
     resolveAnswerProvider,
     resolveAnswerModel,
     resolveBooleanAskProvider,

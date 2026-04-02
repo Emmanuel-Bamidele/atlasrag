@@ -279,28 +279,20 @@ function testBaseUrlHelpers() {
 }
 
 function testModelHelpers() {
-  assert.equal(DEFAULT_ANSWER_MODEL, "gpt-4o");
+  assert.equal(DEFAULT_ANSWER_MODEL, "gpt-5.2");
   assert.equal(DEFAULT_EMBED_MODEL, "text-embedding-3-large");
-  assert.equal(DEFAULT_REFLECT_MODEL, "gpt-4o-mini");
-  assert.equal(GENERATION_MODEL_PRESETS.length, 13);
-  assert.equal(normalizeConfiguredModel("", "gpt-4o"), "gpt-4o");
-  assert.equal(normalizeConfiguredModel(" gpt-4.1 ", "gpt-4o"), "gpt-4.1");
-  assert.equal(defaultOnboardAnswerModelSelection("gpt-4o"), "1");
-  assert.equal(defaultOnboardAnswerModelSelection("gpt-4.1"), "2");
-  assert.equal(defaultOnboardAnswerModelSelection("gpt-4o-mini"), "3");
-  assert.equal(defaultOnboardAnswerModelSelection("gpt-4.1-mini"), "4");
-  assert.equal(defaultOnboardAnswerModelSelection("gpt-5.2"), "6");
-  assert.equal(defaultOnboardAnswerModelSelection("o1"), "9");
-  assert.equal(normalizeOnboardAnswerModelSelection("1"), "gpt-4o");
-  assert.equal(normalizeOnboardAnswerModelSelection("2"), "gpt-4.1");
-  assert.equal(normalizeOnboardAnswerModelSelection("3"), "gpt-4o-mini");
-  assert.equal(normalizeOnboardAnswerModelSelection("4"), "gpt-4.1-mini");
-  assert.equal(normalizeOnboardAnswerModelSelection("6"), "gpt-5.2");
-  assert.equal(normalizeOnboardAnswerModelSelection("9"), "o1");
-  assert.equal(normalizeOnboardAnswerModelSelection("10"), "o3");
-  assert.equal(normalizeOnboardAnswerModelSelection("12"), "o4-mini");
+  assert.equal(DEFAULT_REFLECT_MODEL, "gpt-5-mini");
+  assert.equal(GENERATION_MODEL_PRESETS.length, 4);
+  assert.equal(normalizeConfiguredModel("", "gpt-5.2"), "gpt-5.2");
+  assert.equal(normalizeConfiguredModel(" gpt-5-mini ", "gpt-5.2"), "gpt-5-mini");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-5.2"), "1");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-5-mini"), "2");
+  assert.equal(defaultOnboardAnswerModelSelection("gpt-5-nano"), "3");
+  assert.equal(normalizeOnboardAnswerModelSelection("1"), "gpt-5.2");
+  assert.equal(normalizeOnboardAnswerModelSelection("2"), "gpt-5-mini");
+  assert.equal(normalizeOnboardAnswerModelSelection("3"), "gpt-5-nano");
   assert.equal(normalizeOnboardAnswerModelSelection("gpt-5.2"), "gpt-5.2");
-  assert.throws(() => normalizeOnboardAnswerModelSelection("13"), /Custom model id is required/);
+  assert.throws(() => normalizeOnboardAnswerModelSelection("4"), /Custom model id is required/);
 }
 
 function testInstallHelpers() {

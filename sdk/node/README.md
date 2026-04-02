@@ -134,11 +134,11 @@ await client.updateTenantSettings({
   ssoProviders: ["google"],
   models: {
     answerProvider: "openai",
-    answerModel: "gpt-4.1",
+    answerModel: "gpt-5.2",
     booleanAskProvider: null,
     booleanAskModel: null,
     reflectProvider: "openai",
-    reflectModel: "gpt-4o-mini",
+    reflectModel: "gpt-5-mini",
     compactProvider: null,
     compactModel: null
   }
@@ -154,7 +154,7 @@ Memory writes and reflect support access control via `visibility` (`tenant`, `pr
 You can set a default principal on the client with `setPrincipal()`, but the server will validate it against the token.
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
 Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
-Ask and boolean_ask requests also accept `provider` and `model` for a per-request generation override. Memory recall requests accept `policy` to choose retrieval mode per request.
+Ask, code, and boolean_ask requests also accept `provider` and `model` for a per-request generation override. Search, ask, code, boolean_ask, and memory recall also accept `favorRecency` when fresher matching evidence should rank ahead of older matches. Memory recall requests accept `policy` to choose retrieval mode per request.
 Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
@@ -163,6 +163,8 @@ Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
 Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `supavector changemodel`.
 The live preset catalog is available from `client.getModels()` / `client.models()`. It returns provider-aware generation catalogs for OpenAI, Gemini, and Anthropic, plus embedding catalogs for OpenAI and Gemini.
+
+For continuously updated data, pass timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in document or memory `metadata` so freshness bias can make sensible decisions. Hosted synced sources stamp `syncedAt` automatically. `episodic` and `conversation` source types default to recency-friendly retrieval in the portal UI and API wrappers unless you override them.
 
 Per-request model override example:
 
@@ -178,13 +180,28 @@ const answer = await client.ask("What does SupaVector store?", {
 const answerWithOpenAI = await client.ask("What does SupaVector store?", {
   collection: "default",
   provider: "openai",
-  model: "gpt-4.1"
+  model: "gpt-5.2"
+});
+
+const debugAnswer = await client.code("Why are newer product records ranking first?", {
+  collection: "default",
+  task: "debug",
+  answerLength: "medium",
+  favorRecency: true
 });
 
 const check = await client.booleanAsk("Does SupaVector store memory for agents?", {
   collection: "default",
   provider: "anthropic",
   model: "claude-sonnet-4-20250514"
+});
+
+const recall = await client.memoryRecall({
+  query: "current product pricing",
+  collection: "default",
+  types: ["semantic"],
+  favorRecency: true,
+  k: 8
 });
 ```
 
