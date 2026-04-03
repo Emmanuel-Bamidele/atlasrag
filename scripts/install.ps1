@@ -163,14 +163,18 @@ Write-Host "Node: $nodeBin"
 Write-Host "Docker: $(if ($dockerBin) { $dockerBin } else { 'not detected in this shell' })"
 Write-Host ""
 Write-Host "Open a new terminal if \`"supavector\`" is not available yet."
-Write-Host "Recommended next commands:"
+Write-Host "Recommended first-run commands:"
 Write-Host "  supavector doctor"
-Write-Host "  supavector update"
-Write-Host "  supavector changemodel"
 Write-Host "  supavector onboard"
+Write-Host ""
+Write-Host "After onboarding:"
 Write-Host '  supavector write --doc-id welcome --text "SupaVector stores memory for agents."'
 Write-Host '  supavector ask --question "What does SupaVector store?"'
 Write-Host '  supavector boolean_ask --question "Does SupaVector store memory for agents?"'
+Write-Host ""
+Write-Host "Useful later:"
+Write-Host "  supavector changemodel"
+Write-Host "  supavector update"
 
 if ($RunOnboard) {
   Write-Host ""

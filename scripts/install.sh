@@ -216,14 +216,18 @@ Install mode: $(if [[ "$SYSTEM_INSTALL" -eq 1 ]]; then printf 'system'; else pri
 If this is a new shell, make sure this path is available:
   export PATH="$BIN_DIR:\$PATH"
 
-Recommended next commands:
+Recommended first-run commands:
   supavector doctor
-  supavector update
-  supavector changemodel
   supavector onboard
+
+After onboarding:
   supavector write --doc-id welcome --text "SupaVector stores memory for agents."
   supavector ask --question "What does SupaVector store?"
   supavector boolean_ask --question "Does SupaVector store memory for agents?"
+
+Useful later:
+  supavector changemodel
+  supavector update
 EOF
 
 if [[ "$RUN_ONBOARD" -eq 1 ]]; then
