@@ -1202,6 +1202,38 @@ function setCopyButtonState(btn, label, state = "copy"){
   btn.dataset.copyState = state;
 }
 
+function resolveCopyTargetElement(btn){
+  if (!btn) return null;
+  if (btn.__copyTargetEl && btn.__copyTargetEl.isConnected) {
+    return btn.__copyTargetEl;
+  }
+
+  const targetId = String(btn.getAttribute("data-copy-target") || "").trim();
+  if (!targetId) return null;
+
+  const wrap = btn.closest(".doc-copy-wrap");
+  const wrapTarget = wrap
+    ? Array.from(wrap.querySelectorAll("[id]")).find((el) => el.id === targetId)
+    : null;
+  if (wrapTarget) {
+    btn.__copyTargetEl = wrapTarget;
+    return wrapTarget;
+  }
+
+  const scopedRoot = btn.closest(".page, .doc-panel, .docs-shell, .product-page") || document;
+  const scopedTarget = Array.from(scopedRoot.querySelectorAll("[id]")).find((el) => el.id === targetId) || null;
+  if (scopedTarget) {
+    btn.__copyTargetEl = scopedTarget;
+    return scopedTarget;
+  }
+
+  const globalTarget = Array.from(document.querySelectorAll("[id]")).find((el) => el.id === targetId) || null;
+  if (globalTarget) {
+    btn.__copyTargetEl = globalTarget;
+  }
+  return globalTarget;
+}
+
 function bindCopyButton(btn){
   if (!btn || btn.dataset.copyBound === "1") return;
   btn.dataset.copyBound = "1";
@@ -1216,8 +1248,7 @@ function bindCopyButton(btn){
   setCopyButtonState(btn, existingLabel, "copy");
 
   btn.addEventListener("click", async () => {
-    const targetId = btn.getAttribute("data-copy-target");
-    const targetEl = targetId ? $(targetId) : null;
+    const targetEl = resolveCopyTargetElement(btn);
     const value = String(targetEl?.textContent || "").trim();
     if (!value) {
       setCopyButtonState(btn, "No text", "failed");
@@ -1257,6 +1288,7 @@ function mountCopyButtonOnTarget(btn, targetEl){
   const wrap = ensureDocCopyWrap(targetEl);
   if (!wrap) return;
   const sourceActions = btn.parentElement?.classList?.contains("actions") ? btn.parentElement : null;
+  btn.__copyTargetEl = targetEl;
   btn.classList.remove("btn", "secondary");
   btn.classList.add("copy-inline-btn");
   wrap.appendChild(btn);
@@ -1280,7 +1312,12 @@ function initPageCopyButtons(page){
 
   Array.from(page.querySelectorAll("[data-copy-target]")).forEach((btn) => {
     const targetId = btn.getAttribute("data-copy-target");
-    const targetEl = targetId ? $(targetId) : null;
+    const targetEl = targetId
+      ? (Array.from(page.querySelectorAll("[id]")).find((el) => el.id === targetId) || $(targetId))
+      : null;
+    if (targetEl) {
+      btn.__copyTargetEl = targetEl;
+    }
     if (targetEl?.matches?.("pre.doc-code")) {
       mountCopyButtonOnTarget(btn, targetEl);
     }
@@ -1297,6 +1334,7 @@ function initPageCopyButtons(page){
     btn.className = "copy-inline-btn";
     btn.setAttribute("data-copy-target", pre.id);
     btn.dataset.copyLabel = "Copy";
+    btn.__copyTargetEl = pre;
     wrap.appendChild(btn);
     bindCopyButton(btn);
   });
