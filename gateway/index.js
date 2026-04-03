@@ -201,7 +201,8 @@ const DASHBOARD_URL = String(
 ).trim();
 let portalPluginMounted = false;
 
-app.use(express.json({ limit: "8mb" }));
+const JSON_BODY_LIMIT = String(process.env.JSON_BODY_LIMIT || "64mb").trim() || "64mb";
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(cookieParser(COOKIE_SIGNING_SECRET));
 
 app.use((req, res, next) => {
@@ -349,8 +350,8 @@ app.use((req, res, next) => {
   next();
 });
 
-const MAX_DOC_CHARS = 200000;
-const MAX_FETCH_CHARS = 1000000;
+const MAX_DOC_CHARS = parseInt(process.env.MAX_DOC_CHARS || "2000000", 10);
+const MAX_FETCH_CHARS = parseInt(process.env.MAX_FETCH_CHARS || "5000000", 10);
 const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || "15000", 10);
 const MAX_FETCH_REDIRECTS = parseInt(process.env.MAX_FETCH_REDIRECTS || "5", 10);
 const MAX_REFLECT_CHARS = parseInt(process.env.REFLECT_MAX_CHARS || "12000", 10);
@@ -368,7 +369,7 @@ const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300
 const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
 const STORAGE_BILLING_ACCRUAL_INTERVAL_MS = parseInt(process.env.STORAGE_BILLING_ACCRUAL_INTERVAL_MS || "3600000", 10);
 const STORAGE_USAGE_SYNC_DEBOUNCE_MS = parseInt(process.env.STORAGE_USAGE_SYNC_DEBOUNCE_MS || "5000", 10);
-const DOCS_BULK_MAX_ITEMS = parseInt(process.env.DOCS_BULK_MAX_ITEMS || "25", 10);
+const DOCS_BULK_MAX_ITEMS = parseInt(process.env.DOCS_BULK_MAX_ITEMS || "250", 10);
 const JOB_MAX_ATTEMPTS = parseInt(process.env.JOB_MAX_ATTEMPTS || "3", 10);
 const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
 const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);

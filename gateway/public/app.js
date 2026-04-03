@@ -43,7 +43,7 @@ let modelCatalogData = null;
 const usageWindowByCard = {};
 const USAGE_WINDOWS = ["24h", "7d", "all"];
 const USAGE_WINDOW_LABELS = { "24h": "24h", "7d": "7d", "all": "All" };
-const MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 64 * 1024 * 1024;
 const PDFJS_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const MAMMOTH_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
@@ -3274,7 +3274,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!file) return;
 
     if (file.size > MAX_UPLOAD_FILE_BYTES) {
-      setBanner($("indexBanner"), "err", "File too large. Max size is 5 MB.");
+      setBanner($("indexBanner"), "err", `File too large. Max size is ${formatBytes(MAX_UPLOAD_FILE_BYTES)}.`);
       return;
     }
 
