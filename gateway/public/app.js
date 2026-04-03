@@ -324,19 +324,39 @@ async function copyTextToClipboard(text){
   const value = String(text || "");
   if (!value) return;
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch (_err) {
+      // Fall through to the legacy path for mobile browsers and restricted contexts.
+    }
   }
 
   const tmp = document.createElement("textarea");
   tmp.value = value;
   tmp.setAttribute("readonly", "true");
-  tmp.style.position = "absolute";
-  tmp.style.left = "-9999px";
+  tmp.style.position = "fixed";
+  tmp.style.top = "0";
+  tmp.style.left = "0";
+  tmp.style.width = "1px";
+  tmp.style.height = "1px";
+  tmp.style.padding = "0";
+  tmp.style.border = "0";
+  tmp.style.outline = "0";
+  tmp.style.boxShadow = "none";
+  tmp.style.background = "transparent";
+  tmp.style.opacity = "0";
+  tmp.style.fontSize = "16px";
+  tmp.style.pointerEvents = "none";
   document.body.appendChild(tmp);
+  tmp.focus();
   tmp.select();
-  document.execCommand("copy");
+  tmp.setSelectionRange(0, tmp.value.length);
+  const copied = document.execCommand("copy");
   document.body.removeChild(tmp);
+  if (!copied) {
+    throw new Error("Clipboard copy failed");
+  }
 }
 
 function escapeHtml(s){

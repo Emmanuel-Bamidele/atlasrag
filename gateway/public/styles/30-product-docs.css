@@ -3765,6 +3765,25 @@ body.light-theme .product-story-panel:hover {
     justify-content: center;
     gap: 8px;
   }
+
+  .product-qs-step {
+    padding: 16px;
+    gap: 8px;
+  }
+
+  .product-qs-code {
+    padding: 12px;
+    border-radius: 12px;
+    overflow-x: hidden;
+  }
+
+  .product-qs-code .doc-code {
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
 
 /* ============================================================
