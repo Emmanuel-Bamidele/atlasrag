@@ -23,7 +23,9 @@ const {
   buildInstallRepoDir,
   buildShellPathLine,
   buildBaseUrlCandidates,
+  buildComposeProjectName,
   buildComposeContext,
+  classifyBundledPostgresBootstrapIssue,
   createOnboardConfig,
   defaultProviderSelection,
   defaultGenerationModelSelectionForProvider,
@@ -362,7 +364,12 @@ async function runCommandEcho(command, args, options = {}) {
 }
 
 function buildComposeArgs(ctx) {
-  return ["compose", "-f", ctx.composeFile, "--env-file", ctx.envFile];
+  const args = ["compose"];
+  if (ctx.projectName) {
+    args.push("-p", ctx.projectName);
+  }
+  args.push("-f", ctx.composeFile, "--env-file", ctx.envFile);
+  return args;
 }
 
 async function runCompose(ctx, extraArgs, options = {}) {
@@ -375,6 +382,47 @@ async function runCompose(ctx, extraArgs, options = {}) {
     capture: options.capture,
     env: options.env
   });
+}
+
+async function readComposeLogs(ctx, services, tail = 120) {
+  try {
+    const result = await runCompose(ctx, ["logs", "--tail", String(tail), ...services]);
+    return `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+  } catch (err) {
+    return `${err.stdout || ""}\n${err.stderr || ""}`.trim();
+  }
+}
+
+async function diagnoseBundledPostgresBootstrapFailure(composeCtx, cliCommand = "supavector") {
+  const env = readEnvAssignments(composeCtx.envFile);
+  const [gatewayLogs, postgresLogs] = await Promise.all([
+    readComposeLogs(composeCtx, ["gateway"]),
+    readComposeLogs(composeCtx, ["postgres"])
+  ]);
+  const issue = classifyBundledPostgresBootstrapIssue({
+    gatewayLogs,
+    postgresLogs,
+    expectedUser: env.POSTGRES_USER,
+    expectedDatabase: env.POSTGRES_DB
+  });
+  if (!issue) return null;
+
+  const expectedParts = [];
+  if (issue.expectedUser) expectedParts.push(`user ${issue.expectedUser}`);
+  if (issue.expectedDatabase) expectedParts.push(`database ${issue.expectedDatabase}`);
+  const expectedText = expectedParts.length ? ` (${expectedParts.join(", ")})` : "";
+  const existingDataText = issue.skipInitDetected
+    ? " Postgres skipped initialization because the data directory already existed."
+    : "";
+
+  return {
+    code: issue.code,
+    message:
+      `Bundled Postgres volume appears to have been initialized with different local credentials${expectedText}.`
+      + existingDataText
+      + ` This usually happens when another local SupaVector checkout already created the Docker volume for this compose project.`
+      + ` If you do not need to keep that local data, run \`docker compose down -v\` in ${composeCtx.projectRoot} and rerun \`${cliCommand} onboard\`.`
+  };
 }
 
 async function sleep(ms) {
@@ -523,6 +571,15 @@ async function runBootstrapWithRetries(composeCtx, options = {}) {
       return { payload, serviceToken };
     } catch (err) {
       lastError = err;
+      if (typeof options.diagnoseFailure === "function") {
+        const diagnosis = await options.diagnoseFailure(err, attempt);
+        if (diagnosis?.message) {
+          const diagnosed = new Error(diagnosis.message);
+          diagnosed.code = diagnosis.code || err.code;
+          diagnosed.cause = err;
+          throw diagnosed;
+        }
+      }
       if (attempt >= attempts) break;
       console.log(`Bootstrap attempt ${attempt}/${attempts} failed; retrying in ${Math.round(retryDelayMs / 1000)}s...`);
       await sleep(retryDelayMs);
@@ -823,6 +880,9 @@ function normalizeCliOptionalModelFlag(value, provider, fallback = "", options =
 function resolveLocalEnvTarget(parsed) {
   const saved = readConfig();
   const projectRoot = resolveProjectRoot(saved, getFlag(parsed, "project-root"));
+  const savedProjectName = saved.projectRoot && path.resolve(saved.projectRoot) === path.resolve(projectRoot)
+    ? String(saved.projectName || "").trim()
+    : "";
   const seen = new Set();
   const candidates = [];
 
@@ -848,7 +908,8 @@ function resolveLocalEnvTarget(parsed) {
         projectRoot,
         envFile: candidate.envFile,
         composeFile: candidate.composeFile,
-        externalPostgres: candidate.envFile === ".env.external-postgres"
+        externalPostgres: candidate.envFile === ".env.external-postgres",
+        projectName: savedProjectName
       };
     }
   }
@@ -857,7 +918,8 @@ function resolveLocalEnvTarget(parsed) {
     projectRoot,
     envFile: ".env",
     composeFile: "docker-compose.yml",
-    externalPostgres: false
+    externalPostgres: false,
+    projectName: savedProjectName
   };
 }
 
@@ -1107,6 +1169,7 @@ async function handleOnboard(parsed) {
   const nonInteractive = boolFromFlag(getFlag(parsed, "non-interactive"), false);
   const externalPostgres = boolFromFlag(getFlag(parsed, "external-postgres"), false);
   const projectRoot = resolveProjectRoot(saved, getFlag(parsed, "project-root"));
+  const projectName = String(saved.projectName || "").trim() || buildComposeProjectName(projectRoot);
   const outputName = externalPostgres ? ".env.external-postgres" : ".env";
   const existingEnvPath = path.join(projectRoot, outputName);
   const existingEnv = readEnvAssignments(existingEnvPath);
@@ -1354,7 +1417,7 @@ async function handleOnboard(parsed) {
     force: boolFromFlag(getFlag(parsed, "force"), false)
   });
 
-  const composeCtx = buildComposeContext(projectRoot, { composeFile, envFile });
+  const composeCtx = buildComposeContext(projectRoot, { composeFile, envFile, projectName });
   console.log(`Using project root: ${projectRoot}`);
   console.log(`Wrote ${path.relative(projectRoot, outputPath)}`);
   if (backupPath) {
@@ -1365,6 +1428,7 @@ async function handleOnboard(parsed) {
   // fail so users can resume with `supavector bootstrap` if onboarding stops.
   writeConfig(createOnboardConfig({
     projectRoot,
+    projectName,
     mode: externalPostgres ? "external-postgres" : "bundled-postgres",
     envFile,
     composeFile,
@@ -1387,11 +1451,15 @@ async function handleOnboard(parsed) {
     adminPassword,
     tenantId,
     attempts: 60,
-    retryDelayMs: 2500
+    retryDelayMs: 2500,
+    diagnoseFailure: externalPostgres
+      ? null
+      : () => diagnoseBundledPostgresBootstrapFailure(composeCtx, "supavector")
   });
 
   writeConfig(createOnboardConfig({
     projectRoot,
+    projectName,
     mode: externalPostgres ? "external-postgres" : "bundled-postgres",
     envFile,
     composeFile,
@@ -1627,7 +1695,8 @@ async function handleChangeModel(parsed) {
     ensureDockerAvailable();
     const composeCtx = buildComposeContext(target.projectRoot, {
       composeFile: target.composeFile,
-      envFile: target.envFile
+      envFile: target.envFile,
+      projectName: target.projectName
     });
     await runCompose(composeCtx, ["up", "-d"], { capture: false });
     rows.push("Restarted the local SupaVector stack.");
@@ -1666,7 +1735,11 @@ function resolveComposeFromSaved(parsed) {
   const projectRoot = resolveProjectRoot(saved, getFlag(parsed, "project-root"));
   const composeFile = saved.composeFile || "docker-compose.yml";
   const envFile = saved.envFile || ".env";
-  const ctx = buildComposeContext(projectRoot, { composeFile, envFile });
+  const ctx = buildComposeContext(projectRoot, {
+    composeFile,
+    envFile,
+    projectName: saved.projectName || ""
+  });
   ensureFileExists(ctx.composeFile, "Compose file");
   ensureFileExists(ctx.envFile, "Env file");
   return { saved, ctx };
@@ -1739,7 +1812,8 @@ function resolveUninstallPlan() {
   const composeCtx = repoDir
     ? buildComposeContext(repoDir, {
         composeFile: useSavedPaths ? (saved.composeFile || "docker-compose.yml") : "docker-compose.yml",
-        envFile: useSavedPaths ? (saved.envFile || ".env") : ".env"
+        envFile: useSavedPaths ? (saved.envFile || ".env") : ".env",
+        projectName: useSavedPaths ? (saved.projectName || "") : ""
       })
     : null;
   return {

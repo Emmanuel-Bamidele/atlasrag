@@ -5,9 +5,12 @@ const path = require("path");
 
 const {
   buildBaseUrlCandidates,
+  buildComposeContext,
+  buildComposeProjectName,
   buildInstallBinDir,
   buildInstallRepoDir,
   buildShellPathLine,
+  classifyBundledPostgresBootstrapIssue,
   createOnboardConfig,
   DEFAULT_ANSWER_MODEL,
   DEFAULT_EMBED_MODEL,
@@ -162,6 +165,7 @@ function testDetectProjectRoot() {
 function testCreateOnboardConfig() {
   const config = createOnboardConfig({
     projectRoot: "/tmp/supavector",
+    projectName: "supavector-deadbeef1234",
     mode: "bundled-postgres",
     envFile: ".env",
     composeFile: "docker-compose.yml",
@@ -175,6 +179,7 @@ function testCreateOnboardConfig() {
   });
 
   assert.equal(config.projectRoot, "/tmp/supavector");
+  assert.equal(config.projectName, "supavector-deadbeef1234");
   assert.equal(config.baseUrl, "http://localhost:4100");
   assert.equal(config.tenantId, "default");
   assert.equal(config.adminUsername, "admin");
@@ -187,6 +192,7 @@ function testCreateOnboardConfig() {
 
   const pending = createOnboardConfig({
     projectRoot: "/tmp/supavector",
+    projectName: "supavector-deadbeef1234",
     mode: "bundled-postgres",
     envFile: ".env",
     composeFile: "docker-compose.yml",
@@ -198,6 +204,46 @@ function testCreateOnboardConfig() {
     onboardingPending: true
   });
   assert.equal(pending.onboardingPending, true);
+}
+
+function testComposeProjectHelpers() {
+  const first = buildComposeProjectName("/tmp/supavector-a");
+  const second = buildComposeProjectName("/tmp/supavector-a");
+  const third = buildComposeProjectName("/tmp/supavector-b");
+
+  assert.match(first, /^supavector-[a-f0-9]{12}$/);
+  assert.equal(first, second);
+  assert.notEqual(first, third);
+
+  const ctx = buildComposeContext("/tmp/supavector-a", {
+    composeFile: "docker-compose.yml",
+    envFile: ".env",
+    projectName: first
+  });
+  assert.equal(ctx.projectName, first);
+}
+
+function testBootstrapFailureClassification() {
+  const issue = classifyBundledPostgresBootstrapIssue({
+    gatewayLogs: 'Failed to start gateway: error: password authentication failed for user "supavector"',
+    postgresLogs: [
+      "PostgreSQL Database directory appears to contain a database; Skipping initialization",
+      'DETAIL:  Role "supavector" does not exist.'
+    ].join("\n"),
+    expectedUser: "supavector",
+    expectedDatabase: "supavector"
+  });
+  assert.equal(issue.code, "bundled_postgres_volume_mismatch");
+  assert.equal(issue.skipInitDetected, true);
+  assert.equal(issue.roleMissing, true);
+  assert.equal(issue.expectedUser, "supavector");
+
+  assert.equal(classifyBundledPostgresBootstrapIssue({
+    gatewayLogs: "Gateway healthy",
+    postgresLogs: "database system is ready to accept connections",
+    expectedUser: "supavector",
+    expectedDatabase: "supavector"
+  }), null);
 }
 
 function testFolderHelpers() {
@@ -338,6 +384,8 @@ async function main() {
   await testEnvAssignmentHelpers();
   await testDetectProjectRoot();
   testCreateOnboardConfig();
+  testComposeProjectHelpers();
+  testBootstrapFailureClassification();
   testFolderHelpers();
   await testDocumentExtraction();
   await testCodebaseHelpers();

@@ -340,6 +340,18 @@ function buildInstallRepoDir(installHome = DEFAULT_INSTALL_HOME) {
   return path.join(path.resolve(String(installHome || DEFAULT_INSTALL_HOME)), "src", "supavector");
 }
 
+function buildComposeProjectName(projectRoot, prefix = "supavector") {
+  const base = String(prefix || "supavector")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z0-9]+/g, "")
+    || "supavector";
+  const root = path.resolve(String(projectRoot || DEFAULT_INSTALL_HOME));
+  const suffix = crypto.createHash("sha1").update(root).digest("hex").slice(0, 12);
+  return `${base}-${suffix}`;
+}
+
 function buildShellPathLine(binDir) {
   return `export PATH="${path.resolve(String(binDir || ""))}:$PATH"`;
 }
@@ -706,6 +718,10 @@ function normalizeCommandName(text) {
     .replace(/\s+/g, "-");
 }
 
+function escapeRegExp(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function buildComposeContext(projectRoot, config = {}) {
   const composeFile = config.composeFile
     ? path.resolve(projectRoot, config.composeFile)
@@ -713,11 +729,51 @@ function buildComposeContext(projectRoot, config = {}) {
   const envFile = config.envFile
     ? path.resolve(projectRoot, config.envFile)
     : path.resolve(projectRoot, ".env");
-  return { projectRoot, composeFile, envFile };
+  const projectName = String(config.projectName || "").trim();
+  return { projectRoot, composeFile, envFile, projectName };
+}
+
+function classifyBundledPostgresBootstrapIssue({
+  gatewayLogs,
+  postgresLogs,
+  expectedUser,
+  expectedDatabase
+}) {
+  const gatewayText = String(gatewayLogs || "");
+  const postgresText = String(postgresLogs || "");
+  const combinedText = `${gatewayText}\n${postgresText}`;
+  const skipInitDetected = /database directory appears to contain a database;\s*skipping initialization/i.test(postgresText);
+  const userText = String(expectedUser || "").trim();
+  const databaseText = String(expectedDatabase || "").trim();
+
+  const authFailedForUser = userText
+    ? new RegExp(`password authentication failed for user\\s+"${escapeRegExp(userText)}"`, "i").test(combinedText)
+    : /password authentication failed for user/i.test(combinedText);
+  const roleMissing = userText
+    ? new RegExp(`role\\s+"${escapeRegExp(userText)}"\\s+does not exist`, "i").test(postgresText)
+    : /role\s+".+?"\s+does not exist/i.test(postgresText);
+  const databaseMissing = databaseText
+    ? new RegExp(`database\\s+"${escapeRegExp(databaseText)}"\\s+does not exist`, "i").test(combinedText)
+    : /database\s+".+?"\s+does not exist/i.test(combinedText);
+
+  if (!roleMissing && !databaseMissing && !(skipInitDetected && authFailedForUser)) {
+    return null;
+  }
+
+  return {
+    code: "bundled_postgres_volume_mismatch",
+    skipInitDetected,
+    authFailedForUser,
+    roleMissing,
+    databaseMissing,
+    expectedUser: userText,
+    expectedDatabase: databaseText
+  };
 }
 
 function createOnboardConfig({
   projectRoot,
+  projectName,
   mode,
   envFile,
   composeFile,
@@ -733,6 +789,7 @@ function createOnboardConfig({
   return {
     version: 1,
     projectRoot,
+    projectName: projectName || "",
     mode,
     envFile,
     composeFile,
@@ -771,10 +828,12 @@ module.exports = {
   backupFileIfExists,
   buildInstallBinDir,
   buildInstallRepoDir,
+  buildComposeProjectName,
   buildShellPathLine,
   boolFromFlag,
   buildBaseUrlCandidates,
   buildComposeContext,
+  classifyBundledPostgresBootstrapIssue,
   createOnboardConfig,
   defaultProviderSelection,
   defaultCollectionFromFolder,
