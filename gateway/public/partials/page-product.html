@@ -501,7 +501,10 @@ console.log(data.answer);</pre>
                   <h4>Install the CLI</h4>
                   <p>Use the one-line installer to get started fast. If you prefer working from a checkout, you can also clone the repo and run <span class="mono">./scripts/install.sh</span>.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep01">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep01" data-copy-label="Copy install command" aria-label="Copy install command" title="Copy install command"></button>
+                    </div>
                   </div>
                   <p>Need a machine-wide install? <a href="#product-installer" class="product-hosted-nudge-link">Click here</a>.</p>
                 </div>
@@ -510,7 +513,10 @@ console.log(data.answer);</pre>
                   <h4>Onboard the stack</h4>
                   <p>If you used the one-line installer, onboarding brings up the vector core, gateway, and Postgres locally. If you cloned the repo instead, run the install script first, then onboard.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">supavector onboard</pre>
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep02">supavector onboard</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep02" data-copy-label="Copy onboard command" aria-label="Copy onboard command" title="Copy onboard command"></button>
+                    </div>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -518,7 +524,10 @@ console.log(data.answer);</pre>
                   <h4>Write your first memory</h4>
                   <p>Use the CLI or call the API directly with your service token.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">supavector write --text "Hello, memory"</pre>
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep03">supavector write --text "Hello, memory"</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep03" data-copy-label="Copy write command" aria-label="Copy write command" title="Copy write command"></button>
+                    </div>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -526,7 +535,10 @@ console.log(data.answer);</pre>
                   <h4>Ask a question</h4>
                   <p>Query the memory you just wrote. Supavector retrieves and answers grounded in your data.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">supavector ask --question "What did I store?"</pre>
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep04">supavector ask --question "What did I store?"</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep04" data-copy-label="Copy ask command" aria-label="Copy ask command" title="Copy ask command"></button>
+                    </div>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -534,8 +546,11 @@ console.log(data.answer);</pre>
                   <h4>Add to your app env</h4>
                   <p>Export the base URL and service token so your backend can reach Supavector.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">export SUPAVECTOR_BASE_URL="http://localhost:3000"
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep05">export SUPAVECTOR_BASE_URL="http://localhost:3000"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep05" data-copy-label="Copy env snippet" aria-label="Copy env snippet" title="Copy env snippet"></button>
+                    </div>
                   </div>
                 </div>
                 <div class="product-qs-step">
@@ -543,9 +558,12 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                   <h4>Call server-to-server</h4>
                   <p>Your backend calls Supavector directly. No browser, no end-user login needed.</p>
                   <div class="product-qs-code">
-                    <pre class="doc-code">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
+                    <div class="doc-copy-wrap">
+                      <pre class="doc-code" id="productSelfHostStep06">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
   -H "X-API-Key: $SUPAVECTOR_API_KEY" \
   -d '{"question":"What did I store?","k":3}'</pre>
+                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep06" data-copy-label="Copy server-to-server example" aria-label="Copy server-to-server example" title="Copy server-to-server example"></button>
+                    </div>
                   </div>
                 </div>
               </div>
