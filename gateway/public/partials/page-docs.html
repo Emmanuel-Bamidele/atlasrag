@@ -680,7 +680,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before answer generation (default: <span class="mono">5</span>).</td>
+                        <td>Top-K chunks retrieved before answer generation (default: <span class="mono">40</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">docIds</span></td>
@@ -744,7 +744,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before generation (default: <span class="mono">5</span>).</td>
+                        <td>Top-K chunks retrieved before generation (default: <span class="mono">40</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">answerLength</span></td>
@@ -796,7 +796,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before classification (default: <span class="mono">5</span>).</td>
+                        <td>Top-K chunks retrieved before classification (default: <span class="mono">40</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">docIds</span></td>
@@ -1073,21 +1073,21 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How is durability handled?", "k": 5, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "How is durability handled?", "k": 40, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Code</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/code \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Why would newer synced product records rank first here?", "k": 6, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Why would newer synced product records rank first here?", "k": 40, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Boolean ask</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/boolean_ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Is write-ahead logging enabled?", "k": 5, "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Is write-ahead logging enabled?", "k": 40, "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
@@ -1188,7 +1188,7 @@ print(res.json())
 # 2) Search
 res = requests.get(f"{BASE}/v1/search", headers=headers, params={
   "q": "durability",
-  "k": 5,
+  "k": 40,
   "collection": "default"
 })
 res.raise_for_status()
@@ -1197,7 +1197,7 @@ print(res.json())
 # 3) Ask
 res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
   "question": "How do we persist vectors?",
-  "k": 5,
+  "k": 40,
   "answerLength": "short",
   "policy": "amvl"
 })
@@ -1207,7 +1207,7 @@ print(res.json())
 # 4) Boolean ask
 res = requests.post(f"{BASE}/v1/boolean_ask", headers=headers, json={
   "question": "Does WAL keep vectors durable across restarts?",
-  "k": 5,
+  "k": 40,
   "policy": "amvl"
 })
 res.raise_for_status()
@@ -1339,10 +1339,10 @@ await post("/v1/docs", {
 console.log(await get("/v1/search", { q: "durability", k: "5", collection: "default" }));
 
 // 3) Ask
-console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 5, answerLength: "long", policy: "amvl" }));
+console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 40, answerLength: "long", policy: "amvl" }));
 
 // 4) Boolean ask
-console.log(await post("/v1/boolean_ask", { question: "Do we persist vectors with WAL?", k: 5, policy: "amvl" }));
+console.log(await post("/v1/boolean_ask", { question: "Do we persist vectors with WAL?", k: 40, policy: "amvl" }));
 
 // 5) Memory write
 await post("/v1/memory/write", {

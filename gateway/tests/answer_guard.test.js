@@ -55,6 +55,20 @@ function testAskPromptRemainsSingleStringPrompt() {
   assert.equal(typeof prompt, "string");
   assert.match(prompt, /Question:\s*\nWhat does SupaVector store\?/);
   assert.match(prompt, /Sources:\s*\nSOURCE default::cli-smoke::welcome#0/);
+  assert.match(prompt, /Final line: "Citations: <comma-separated SOURCE ids>"/);
+}
+
+function testAskPromptSupportsMetadataCitationMode() {
+  const prompt = __testHooks.buildPrompt("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], "short", "metadata");
+
+  assert.equal(typeof prompt, "string");
+  assert.match(prompt, /Do not include citation labels, source ids, source references, footnotes/);
+  assert.doesNotMatch(prompt, /Final line: "Citations: <comma-separated SOURCE ids>"/);
 }
 
 function testBooleanAskPromptRemainsSingleStringPrompt() {
@@ -123,6 +137,28 @@ function testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSourc
   assert.deepEqual(fallback.citations, ["default::cli-smoke::welcome#0"]);
 }
 
+function testPromptChunkSelectionPrefersSourceDiversityAndCapsSize() {
+  const selected = __testHooks.selectChunksForPrompt([
+    { chunk_id: "doc-a#0", doc_id: "doc-a", text: "A0 ".repeat(120) },
+    { chunk_id: "doc-a#1", doc_id: "doc-a", text: "A1 ".repeat(120) },
+    { chunk_id: "doc-b#0", doc_id: "doc-b", text: "B0 ".repeat(120) },
+    { chunk_id: "doc-c#0", doc_id: "doc-c", text: "C0 ".repeat(120) },
+    { chunk_id: "doc-d#0", doc_id: "doc-d", text: "D0 ".repeat(120) },
+    { chunk_id: "doc-e#0", doc_id: "doc-e", text: "E0 ".repeat(120) }
+  ], {
+    maxChunks: 4,
+    maxChars: 2200,
+    maxPerSource: 2,
+    targetUniqueSources: 4
+  });
+
+  assert.equal(selected.length, 4);
+  assert.deepEqual(
+    selected.map((chunk) => chunk.doc_id),
+    ["doc-a", "doc-b", "doc-c", "doc-d"]
+  );
+}
+
 function testCanonicalUnknownDetectionMatchesExpectedForms() {
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I don't know based on the provided sources."), true);
   assert.equal(__testHooks.isCanonicalUnknownAnswer("I dont know based on the provided sources."), true);
@@ -135,11 +171,13 @@ function main() {
   testBooleanAskAnswerNormalization();
   testCodeTaskNormalization();
   testAskPromptRemainsSingleStringPrompt();
+  testAskPromptSupportsMetadataCitationMode();
   testBooleanAskPromptRemainsSingleStringPrompt();
   testAnswerLengthInstructionsAndTokenBudgets();
   testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
   testFallbackSummaryPrefersSentenceThatMatchesQuestionTerms();
   testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSources();
+  testPromptChunkSelectionPrefersSourceDiversityAndCapsSize();
   testCanonicalUnknownDetectionMatchesExpectedForms();
   console.log("answer guard tests passed");
 }

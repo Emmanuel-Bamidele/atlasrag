@@ -66,6 +66,13 @@ function testSelectCodeCandidatesForPromptPrefersFileDiversity() {
   assert.deepEqual(selectedPaths, ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"]);
 }
 
+function testResolveCodeSelectionSizeCapsPromptBreadth() {
+  assert.equal(indexHooks.resolveCodeSelectionSize(40, "structure"), 16);
+  assert.equal(indexHooks.resolveCodeSelectionSize(40, "debug"), 12);
+  assert.equal(indexHooks.resolveCodeSelectionSize(40, "understand"), 10);
+  assert.equal(indexHooks.resolveCodeSelectionSize(40, "general"), 8);
+}
+
 function testBuildCodePromptIncludesRetrievedFileSummary() {
   const prompt = answerHooks.buildCodePrompt(
     "How does authentication work?",
@@ -178,6 +185,34 @@ function testBuildCodePromptIncludesWorkingSetAndRecentTurns() {
   assert.match(prompt.user, /Why is validateSession redirecting twice\?/);
   assert.match(prompt.user, /The redirect likely starts in validateSession before middleware runs\./);
   assert.match(prompt.system, /continue from that working set/i);
+}
+
+function testBuildCodePromptSupportsMetadataCitationMode() {
+  const prompt = answerHooks.buildCodePrompt(
+    "How does authentication work?",
+    [
+      {
+        chunk_id: "default::repo::auth#0",
+        source_type: "code",
+        title: "src/auth.ts",
+        metadata: {
+          repo: "acme/app",
+          branch: "main",
+          path: "src/auth.ts",
+          language: "typescript"
+        },
+        text: "export function validateSession(token) { return token.startsWith('sess_'); }"
+      }
+    ],
+    "medium",
+    {
+      task: "understand",
+      citationMode: "metadata"
+    }
+  );
+
+  assert.match(prompt.system, /Do not include citation labels, source ids, source references, footnotes/);
+  assert.doesNotMatch(prompt.system, /Final line: "Citations: <comma-separated SOURCE ids>"/);
 }
 
 function testExtractCodeStructureMetadataCapturesConnections() {
@@ -406,8 +441,10 @@ function main() {
   testBuildCodeRetrievalQueryIncludesPathHints();
   testBuildCodeRetrievalQueryIncludesWorkingSetContext();
   testSelectCodeCandidatesForPromptPrefersFileDiversity();
+  testResolveCodeSelectionSizeCapsPromptBreadth();
   testBuildCodePromptIncludesRetrievedFileSummary();
   testBuildCodePromptIncludesWorkingSetAndRecentTurns();
+  testBuildCodePromptSupportsMetadataCitationMode();
   testExtractCodeStructureMetadataCapturesConnections();
   testExtractCodeStructureMetadataCapturesRepoSignals();
   testBuildCodeRelationshipSummaryTracesImportsAndCalls();

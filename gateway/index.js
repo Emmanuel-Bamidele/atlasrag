@@ -3454,6 +3454,15 @@ function parseAnswerLength(raw) {
   return null;
 }
 
+function parseCitationMode(raw) {
+  if (raw === undefined || raw === null || raw === "") return "inline";
+  const clean = String(raw).trim().toLowerCase();
+  if (clean === "inline" || clean === "metadata") {
+    return clean;
+  }
+  return null;
+}
+
 function parseQuestionInput(input = {}) {
   return String(input?.question ?? input?.query ?? input?.q ?? "").trim();
 }
@@ -3539,9 +3548,10 @@ function parseCodeContextInput(raw) {
 function parseCodeInput(body = {}) {
   return {
     question: parseQuestionInput(body),
-    k: parseInt(body?.k || "5", 10),
+    k: parseInt(body?.k || "40", 10),
     docIds: parseDocFilter(body?.docIds ?? body?.doc_ids),
     answerLength: parseAnswerLength(body?.answerLength || body?.responseLength),
+    citationMode: parseCitationMode(body?.citationMode ?? body?.citation_mode),
     task: normalizeCodeTask(body?.task ?? body?.mode, "general"),
     language: parseOptionalString(body?.language ?? body?.lang, { label: "language", max: 80 }),
     deployment: parseOptionalString(body?.deployment, { label: "deployment", max: 120 }),
@@ -5413,10 +5423,10 @@ function buildCodeCandidateFileKey(candidate) {
 function resolveCodeSelectionSize(topK, task) {
   const base = Number.isFinite(topK) && topK > 0 ? Math.floor(topK) : 5;
   const mode = normalizeCodeTask(task, "general");
-  if (mode === "structure") return Math.max(base, 12);
-  if (mode === "debug" || mode === "write" || mode === "review" || mode === "improve") return Math.max(base, 10);
-  if (mode === "understand") return Math.max(base, 8);
-  return Math.max(base, 6);
+  if (mode === "structure") return Math.max(12, Math.min(base, 16));
+  if (mode === "debug" || mode === "write" || mode === "review" || mode === "improve") return Math.max(10, Math.min(base, 12));
+  if (mode === "understand") return Math.max(8, Math.min(base, 10));
+  return Math.max(6, Math.min(base, 8));
 }
 
 function selectCodeCandidatesForPrompt(ranked, limit, options = {}) {
@@ -6159,7 +6169,7 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
+async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, citationMode = "inline", telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -6190,11 +6200,12 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   });
 
   const injectedMemoryIds = new Set();
-  const { answer, citations, usage, answerLength: resolvedAnswerLength } = await generateAnswer(question, chunks, {
+  const { answer, citations, usage, answerLength: resolvedAnswerLength, selectedChunks } = await generateAnswer(question, chunks, {
     apiKey: generationApiKey,
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     answerLength,
+    citationMode,
     onPromptBuilt: (promptStats) => {
       const memoryIds = [];
       const seen = new Set();
@@ -6250,8 +6261,8 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
   return {
     answer,
     citations: mapAnswerCitations(citations),
-    chunksUsed: chunks.length,
-    supportingChunks: mapSupportingChunks(chunks),
+    chunksUsed: Array.isArray(selectedChunks) ? selectedChunks.length : chunks.length,
+    supportingChunks: mapSupportingChunks(Array.isArray(selectedChunks) ? selectedChunks : chunks),
     answerLength: resolvedAnswerLength || answerLength || "auto",
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model
@@ -6267,6 +6278,7 @@ async function answerCodeQuestion({
   principalId,
   privileges,
   answerLength,
+  citationMode = "inline",
   telemetry,
   policy,
   favorRecency,
@@ -6329,11 +6341,12 @@ async function answerCodeQuestion({
   });
 
   const injectedMemoryIds = new Set();
-  const { answer, citations, usage, answerLength: resolvedAnswerLength, answerConfidence } = await generateCodeAnswer(question, chunks, {
+  const { answer, citations, usage, answerLength: resolvedAnswerLength, answerConfidence, selectedChunks } = await generateCodeAnswer(question, chunks, {
     apiKey: generationApiKey,
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
     answerLength,
+    citationMode,
     files,
     workingSet,
     sourceSummary,
@@ -6406,8 +6419,8 @@ async function answerCodeQuestion({
   return {
     answer,
     citations: mapAnswerCitations(citations),
-    chunksUsed: chunks.length,
-    supportingChunks: mapSupportingChunks(chunks),
+    chunksUsed: Array.isArray(selectedChunks) ? selectedChunks.length : chunks.length,
+    supportingChunks: mapSupportingChunks(Array.isArray(selectedChunks) ? selectedChunks : chunks),
     answerLength: resolvedAnswerLength || answerLength || "auto",
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
@@ -6450,7 +6463,7 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
   });
 
   const injectedMemoryIds = new Set();
-  const { answer, citations, usage } = await generateBooleanAskAnswer(question, chunks, {
+  const { answer, citations, usage, selectedChunks } = await generateBooleanAskAnswer(question, chunks, {
     apiKey: generationApiKey,
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model,
@@ -6509,8 +6522,8 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
   return {
     answer,
     citations: mapAnswerCitations(citations),
-    chunksUsed: chunks.length,
-    supportingChunks: mapSupportingChunks(chunks),
+    chunksUsed: Array.isArray(selectedChunks) ? selectedChunks.length : chunks.length,
+    supportingChunks: mapSupportingChunks(Array.isArray(selectedChunks) ? selectedChunks : chunks),
     provider: requestedAnswerConfig.provider,
     model: requestedAnswerConfig.model
   };
@@ -10363,15 +10376,19 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
 app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "5", 10);
+  const k = parseInt(req.body?.k || "40", 10);
   const docIds = parseDocFilter(req.body?.docIds);
   const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
+  const citationMode = parseCitationMode(req.body?.citationMode ?? req.body?.citation_mode);
 
   if (!question || !question.trim()) {
     return res.status(400).json({ error: "question is required" });
   }
   if (!answerLength) {
     return res.status(400).json({ error: "answerLength must be one of: auto, short, medium, long" });
+  }
+  if (!citationMode) {
+    return res.status(400).json({ error: "citationMode must be one of: inline, metadata" });
   }
 
   try {
@@ -10400,6 +10417,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
+      citationMode,
       policy,
       favorRecency,
       model,
@@ -10436,15 +10454,19 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
 app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "5", 10);
+  const k = parseInt(req.body?.k || "40", 10);
   const docIds = parseDocFilter(req.body?.docIds);
   const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
+  const citationMode = parseCitationMode(req.body?.citationMode ?? req.body?.citation_mode);
 
   if (!question || !question.trim()) {
     return sendError(res, 400, "question is required", "INVALID_INPUT", null, null);
   }
   if (!answerLength) {
     return sendError(res, 400, "answerLength must be one of: auto, short, medium, long", "INVALID_INPUT", null, null);
+  }
+  if (!citationMode) {
+    return sendError(res, 400, "citationMode must be one of: inline, metadata", "INVALID_INPUT", null, null);
   }
 
   let tenantId = null;
@@ -10474,6 +10496,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
+      citationMode,
       policy,
       favorRecency,
       model,
@@ -10514,6 +10537,9 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
   if (!input.answerLength) {
     return res.status(400).json({ error: "answerLength must be one of: auto, short, medium, long" });
   }
+  if (!input.citationMode) {
+    return res.status(400).json({ error: "citationMode must be one of: inline, metadata" });
+  }
 
   try {
     const tenantId = resolveTenantId(req);
@@ -10536,6 +10562,7 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength: input.answerLength,
+      citationMode: input.citationMode,
       policy: input.policy,
       favorRecency: input.favorRecency,
       task: input.task,
@@ -10593,6 +10620,9 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
   if (!input.answerLength) {
     return sendError(res, 400, "answerLength must be one of: auto, short, medium, long", "INVALID_INPUT", null, null);
   }
+  if (!input.citationMode) {
+    return sendError(res, 400, "citationMode must be one of: inline, metadata", "INVALID_INPUT", null, null);
+  }
 
   let tenantId = null;
   let collection = null;
@@ -10617,6 +10647,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength: input.answerLength,
+      citationMode: input.citationMode,
       policy: input.policy,
       favorRecency: input.favorRecency,
       task: input.task,
@@ -10669,7 +10700,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
 
 async function handleBooleanAskLegacy(req, res) {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "5", 10);
+  const k = parseInt(req.body?.k || "40", 10);
   const docIds = parseDocFilter(req.body?.docIds);
 
   if (!question || !question.trim()) {
@@ -10737,7 +10768,7 @@ async function handleBooleanAskLegacy(req, res) {
 
 async function handleBooleanAskV1(req, res) {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "5", 10);
+  const k = parseInt(req.body?.k || "40", 10);
   const docIds = parseDocFilter(req.body?.docIds);
 
   if (!question || !question.trim()) {
