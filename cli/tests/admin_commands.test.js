@@ -8,30 +8,37 @@ const { execFile } = require("child_process");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function runCli(args, env = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      process.execPath,
-      [path.join("bin", "supavector.js"), ...args],
-      {
-        cwd: REPO_ROOT,
-        env: {
-          ...process.env,
-          ...env
+  return withTempDir(async (dir) => {
+    const homeDir = path.join(dir, "home");
+    fs.mkdirSync(homeDir, { recursive: true });
+
+    return new Promise((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [path.join("bin", "supavector.js"), ...args],
+        {
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            HOME: homeDir,
+            USERPROFILE: homeDir,
+            ...env
+          }
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            error.stdout = stdout;
+            error.stderr = stderr;
+            reject(error);
+            return;
+          }
+          resolve({
+            stdout: String(stdout || ""),
+            stderr: String(stderr || "")
+          });
         }
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          error.stdout = stdout;
-          error.stderr = stderr;
-          reject(error);
-          return;
-        }
-        resolve({
-          stdout: String(stdout || ""),
-          stderr: String(stderr || "")
-        });
-      }
-    );
+      );
+    });
   });
 }
 
@@ -77,7 +84,7 @@ async function withMockServer(handler, fn) {
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
   try {
-    await fn({ baseUrl, requests });
+    return await fn({ baseUrl, requests });
   } finally {
     await new Promise((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
@@ -88,7 +95,7 @@ async function withMockServer(handler, fn) {
 async function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "supavector-cli-admin-"));
   try {
-    await fn(dir);
+    return await fn(dir);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

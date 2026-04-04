@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support And Usage Questions
+    url: https://github.com/Emmanuel-Bamidele/supavector/blob/main/SUPPORT.md
+    about: Check the support guide before opening a public issue for setup or usage questions.
+  - name: Security Policy
+    url: https://github.com/Emmanuel-Bamidele/supavector/blob/main/SECURITY.md
+    about: Do not file public issues for suspected vulnerabilities.

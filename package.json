@@ -29,6 +29,8 @@
     "README.md",
     "QUICKSTART.md",
     "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "CHANGELOG.md",
     "SECURITY.md",
     "SUPPORT.md",
     "LICENSE",
@@ -39,11 +41,15 @@
   },
   "scripts": {
     "test:cli": "node cli/tests/cli_helpers.test.js && node cli/tests/admin_commands.test.js",
+    "test:prepush": "npm run test:cli && RESET_VOLUMES_BEFORE_UP=0 ./scripts/test_ci_local.sh",
     "test:quickstart-smoke": "./scripts/test_quickstart_ci_local.sh",
     "test:oss-smoke": "./scripts/test_oss_ci_local.sh"
   },
   "dependencies": {
     "mammoth": "^1.12.0",
     "pdf-parse": "^1.1.1"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "^0.8.12"
   }
 }

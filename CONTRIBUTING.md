@@ -7,6 +7,7 @@ This repository is currently optimized for self-hosted deployment and active ite
 ## Before You Start
 
 - Read the root `README.md` first.
+- Read `CODE_OF_CONDUCT.md` before joining issues, pull requests, or discussions.
 - If you want a small entry point, start with [`docs/good-first-issues.md`](docs/good-first-issues.md).
 - Keep changes focused. Small, reviewable pull requests are preferred over large mixed refactors.
 - If you are changing behavior, update docs and tests in the same change.
@@ -47,6 +48,34 @@ npm run test:unit
 If the full stack is running, also run:
 
 ```bash
+npm run test:integration
+npm run test:e2e
+npm run test:e2e:code
+```
+
+## Before Pushing
+
+Run the smallest test set that matches your change:
+
+- Docs-only changes: verify the edited docs manually and make sure commands, file paths, and links still match the repository.
+- CLI or root workflow changes: run `npm run test:cli` from the repository root.
+- Gateway behavior changes: run `npm run test:prepush` from the repository root.
+- Installer, onboarding, or quickstart-path changes: also run `npm run test:quickstart-smoke`.
+- Public OSS packaging, install, or release-path changes: also run `npm run test:oss-smoke`.
+
+For normal code changes that touch the CLI or gateway, the default pre-push command is:
+
+```bash
+npm run test:prepush
+```
+
+That root command runs the CLI tests and then the local gateway CI flow. It starts the local stack if needed, ensures the e2e user exists, and runs the gateway unit, integration, API e2e, and code API e2e suites without resetting your local volumes.
+
+If you already have the full stack running and want the direct gateway-only path, use:
+
+```bash
+cd gateway
+npm run test:unit
 npm run test:integration
 npm run test:e2e
 npm run test:e2e:code
