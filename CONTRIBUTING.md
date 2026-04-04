@@ -7,8 +7,25 @@ This repository is currently optimized for self-hosted deployment and active ite
 ## Before You Start
 
 - Read the root `README.md` first.
+- If you want a small entry point, start with [`docs/good-first-issues.md`](docs/good-first-issues.md).
 - Keep changes focused. Small, reviewable pull requests are preferred over large mixed refactors.
 - If you are changing behavior, update docs and tests in the same change.
+
+## Good First Issues
+
+SupaVector now keeps a starter backlog in [`docs/good-first-issues.md`](docs/good-first-issues.md).
+
+Use it when you want one of these:
+
+- a beginner-friendly issue with a narrow scope
+- a small intermediate issue with clear starting files
+- a short advanced-small-scope issue that still fits in one reviewable pull request
+
+For maintainers opening new starter tickets, use the repository's `Good First Issue` template and make sure the issue includes:
+
+- exact files or directories to start in
+- a definition of done
+- a verify command or manual validation path
 
 ## Development Setup
 

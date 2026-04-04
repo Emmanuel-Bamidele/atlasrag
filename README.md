@@ -6,7 +6,7 @@ Current public scope: single-node self-hosted deployment. You run it in your own
 
 License: MIT
 
-[Quickstart](QUICKSTART.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Support](SUPPORT.md)
+[Quickstart](QUICKSTART.md) · [Contributing](CONTRIBUTING.md) · [Good First Issues](docs/good-first-issues.md) · [Security](SECURITY.md) · [Support](SUPPORT.md)
 
 ## Main Surfaces
 
