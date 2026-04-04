@@ -337,7 +337,7 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
   -H "Content-Type: application/json" \
   -d '{
     "question": "What does Supavector store?",
-    "k":        5,
+    "k":        7,
     "policy":   "amvl"
   }'</pre>
                         </div>
@@ -379,7 +379,7 @@ requests.post(
     headers=HDR,
     json={
         "question": "What does Supavector store?",
-        "k":        5,
+        "k":        7,
         "policy":   "amvl",
     },
 )
@@ -425,7 +425,7 @@ await ar("/v1/docs",
                         <div class="doc-copy-wrap">
                           <pre class="doc-code" id="hostedNodeAsk">const { data } = await ar("/v1/ask", {
   question: "What does Supavector store?",
-  k:        5,
+  k:        7,
   policy:   "amvl",
 });
 
@@ -470,7 +470,7 @@ await fetch(`${BASE}/v1/docs`, {
   },
   body: JSON.stringify({
     question: "What does Supavector store?",
-    k:        5,
+    k:        7,
     policy:   "amvl",
   }),
 });
@@ -561,7 +561,7 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                     <div class="doc-copy-wrap">
                       <pre class="doc-code" id="productSelfHostStep06">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
   -H "X-API-Key: $SUPAVECTOR_API_KEY" \
-  -d '{"question":"What did I store?","k":3}'</pre>
+  -d '{"question":"What did I store?","k":7}'</pre>
                       <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep06" data-copy-label="Copy server-to-server example" aria-label="Copy server-to-server example" title="Copy server-to-server example"></button>
                     </div>
                   </div>

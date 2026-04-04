@@ -15,6 +15,26 @@ function testShortChunkIsRetainedWhenItIsTheOnlyEvidence() {
   assert.equal(sanitized[0].text, "SupaVector stores memory for agents.");
 }
 
+function testShortChunkIsRetainedAlongsideLongerEvidence() {
+  const chunks = [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    },
+    {
+      chunk_id: "default::cli-smoke::welcome#1",
+      text: "This longer chunk should not cause the shorter relevant chunk to be dropped during prompt preparation."
+    }
+  ];
+
+  const sanitized = __testHooks.sanitizeChunks(chunks);
+  assert.equal(sanitized.length, 2);
+  assert.deepEqual(
+    sanitized.map((chunk) => chunk.chunk_id),
+    ["default::cli-smoke::welcome#0", "default::cli-smoke::welcome#1"]
+  );
+}
+
 function testPromptInjectionLinesAreStillRemoved() {
   const chunks = [
     {
@@ -167,6 +187,7 @@ function testCanonicalUnknownDetectionMatchesExpectedForms() {
 
 function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
+  testShortChunkIsRetainedAlongsideLongerEvidence();
   testPromptInjectionLinesAreStillRemoved();
   testBooleanAskAnswerNormalization();
   testCodeTaskNormalization();

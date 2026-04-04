@@ -2837,7 +2837,7 @@
               },
               "example": {
                 "question": "What does SupaVector store?",
-                "k": 4,
+                "k": 7,
                 "answerLength": "auto",
                 "favorRecency": true,
                 "policy": "amvl",
@@ -2942,7 +2942,7 @@
               },
               "example": {
                 "question": "Is SupaVector designed for agent memory retrieval?",
-                "k": 4,
+                "k": 7,
                 "favorRecency": true,
                 "policy": "amvl",
                 "collection": "default",

@@ -18,23 +18,11 @@ const {
 const { generateProviderText } = require("./provider_clients");
 
 const PROMPT_GUARD = process.env.PROMPT_INJECTION_GUARD !== "0";
-const MIN_SOURCE_CHARS = 40;
 const ANSWER_LENGTHS = new Set(["auto", "short", "medium", "long"]);
 const CITATION_RESPONSE_MODES = new Set(["inline", "metadata"]);
 const BOOLEAN_ASK_ANSWERS = new Set(["true", "false", "invalid"]);
 const CODE_TASKS = new Set(["general", "understand", "debug", "review", "write", "improve", "structure"]);
 const AUTO_ANSWER_LENGTH_SAMPLE_CHUNKS = 8;
-const ASK_PROMPT_CHUNK_LIMITS = {
-  short: { maxChunks: 5, maxChars: 5000, maxPerSource: 2, targetUniqueSources: 3 },
-  medium: { maxChunks: 8, maxChars: 9000, maxPerSource: 2, targetUniqueSources: 4 },
-  long: { maxChunks: 10, maxChars: 14000, maxPerSource: 3, targetUniqueSources: 5 }
-};
-const BOOLEAN_PROMPT_CHUNK_LIMITS = { maxChunks: 6, maxChars: 6000, maxPerSource: 2, targetUniqueSources: 4 };
-const CODE_PROMPT_CHUNK_LIMITS = {
-  short: { maxChunks: 6, maxChars: 12000, maxPerSource: 2, targetUniqueSources: 4 },
-  medium: { maxChunks: 8, maxChars: 18000, maxPerSource: 2, targetUniqueSources: 5 },
-  long: { maxChunks: 10, maxChars: 26000, maxPerSource: 3, targetUniqueSources: 6 }
-};
 const FALLBACK_STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from",
   "how", "i", "in", "is", "it", "of", "on", "or", "the", "this", "to", "was",
@@ -147,18 +135,12 @@ function sanitizeChunkText(text) {
 function sanitizeChunks(chunks) {
   if (!PROMPT_GUARD) return chunks;
   const out = [];
-  const short = [];
   for (const c of chunks) {
     const cleaned = sanitizeChunkText(c.text);
     if (!cleaned) continue;
-    const next = { ...c, text: cleaned };
-    if (cleaned.length >= MIN_SOURCE_CHARS) {
-      out.push(next);
-      continue;
-    }
-    short.push(next);
+    out.push({ ...c, text: cleaned });
   }
-  return out.length ? out : short;
+  return out;
 }
 
 function deduplicateChunks(chunks) {
@@ -816,7 +798,7 @@ async function generateAnswer(question, chunks, options = {}) {
     };
   }
 
-  let safeChunks = deduplicateChunks(sanitizeChunks(chunks));
+  const safeChunks = sanitizeChunks(chunks);
   if (!safeChunks.length) {
     return {
       answer: "I don't know based on the provided sources.",
@@ -829,7 +811,6 @@ async function generateAnswer(question, chunks, options = {}) {
   const effectiveAnswerLength = requestedAnswerLength === "auto"
     ? resolveAutoAnswerLength(safeChunks.slice(0, AUTO_ANSWER_LENGTH_SAMPLE_CHUNKS))
     : requestedAnswerLength;
-  safeChunks = selectChunksForPrompt(safeChunks, ASK_PROMPT_CHUNK_LIMITS[effectiveAnswerLength] || ASK_PROMPT_CHUNK_LIMITS.medium);
 
   const input = buildPrompt(question, safeChunks, effectiveAnswerLength, citationMode);
   if (onPromptBuilt) {
@@ -937,10 +918,7 @@ async function generateBooleanAskAnswer(question, chunks, options = {}) {
     };
   }
 
-  const safeChunks = selectChunksForPrompt(
-    deduplicateChunks(sanitizeChunks(chunks)),
-    BOOLEAN_PROMPT_CHUNK_LIMITS
-  );
+  const safeChunks = sanitizeChunks(chunks);
   if (!safeChunks.length) {
     return {
       answer: "invalid",
@@ -1041,7 +1019,7 @@ async function generateCodeAnswer(question, chunks, options = {}) {
     };
   }
 
-  let safeChunks = deduplicateChunks(sanitizeChunks(chunks));
+  const safeChunks = sanitizeChunks(chunks);
   if (!safeChunks.length) {
     return {
       answer: "I don't know based on the provided sources.",
@@ -1054,7 +1032,6 @@ async function generateCodeAnswer(question, chunks, options = {}) {
   const effectiveAnswerLength = requestedAnswerLength === "auto"
     ? resolveAutoAnswerLength(safeChunks.slice(0, AUTO_ANSWER_LENGTH_SAMPLE_CHUNKS))
     : requestedAnswerLength;
-  safeChunks = selectChunksForPrompt(safeChunks, CODE_PROMPT_CHUNK_LIMITS[effectiveAnswerLength] || CODE_PROMPT_CHUNK_LIMITS.medium);
 
   const input = buildCodePrompt(question, safeChunks, effectiveAnswerLength, options);
   const inputChars = input.system.length + input.user.length;
