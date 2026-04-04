@@ -290,7 +290,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Content-Type: application/json" \
   -d '{
     "question":"What does SupaVector store?",
-    "k":5,
+    "k":7,
     "policy":"amvl",
     "provider":"openai",
     "answerLength":"medium"
@@ -327,7 +327,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "Content-Type: application/json" \
   -d '{
     "question":"Does SupaVector store memory for agents?",
-    "k":5,
+    "k":7,
     "provider":"openai",
     "policy":"amvl"
   }'
@@ -489,7 +489,7 @@ const answer = await supavector("/v1/ask", {
   method: "POST",
   body: {
     question: "What does SupaVector store?",
-    k: 5,
+    k: 7,
     policy: "amvl"
   }
 });
@@ -500,7 +500,7 @@ const booleanAsk = await supavector("/v1/boolean_ask", {
   method: "POST",
   body: {
     question: "Does SupaVector store memory for agents?",
-    k: 5,
+    k: 7,
     policy: "amvl"
   }
 });

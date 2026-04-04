@@ -3548,7 +3548,7 @@ function parseCodeContextInput(raw) {
 function parseCodeInput(body = {}) {
   return {
     question: parseQuestionInput(body),
-    k: parseInt(body?.k || "40", 10),
+    k: parseInt(body?.k || "5", 10),
     docIds: parseDocFilter(body?.docIds ?? body?.doc_ids),
     answerLength: parseAnswerLength(body?.answerLength || body?.responseLength),
     citationMode: parseCitationMode(body?.citationMode ?? body?.citation_mode),
@@ -10376,7 +10376,7 @@ app.post("/v1/docs/url", requireJwt, requireRole("indexer"), async (req, res) =>
 app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "40", 10);
+  const k = parseInt(req.body?.k || "7", 10);
   const docIds = parseDocFilter(req.body?.docIds);
   const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
   const citationMode = parseCitationMode(req.body?.citationMode ?? req.body?.citation_mode);
@@ -10454,7 +10454,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
 
 app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "40", 10);
+  const k = parseInt(req.body?.k || "7", 10);
   const docIds = parseDocFilter(req.body?.docIds);
   const answerLength = parseAnswerLength(req.body?.answerLength || req.body?.responseLength);
   const citationMode = parseCitationMode(req.body?.citationMode ?? req.body?.citation_mode);
@@ -10700,7 +10700,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
 
 async function handleBooleanAskLegacy(req, res) {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "40", 10);
+  const k = parseInt(req.body?.k || "7", 10);
   const docIds = parseDocFilter(req.body?.docIds);
 
   if (!question || !question.trim()) {
@@ -10768,7 +10768,7 @@ async function handleBooleanAskLegacy(req, res) {
 
 async function handleBooleanAskV1(req, res) {
   const { question } = req.body || {};
-  const k = parseInt(req.body?.k || "40", 10);
+  const k = parseInt(req.body?.k || "7", 10);
   const docIds = parseDocFilter(req.body?.docIds);
 
   if (!question || !question.trim()) {

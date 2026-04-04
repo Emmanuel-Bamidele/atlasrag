@@ -59,10 +59,10 @@ async function main() {
     collection: "default"
   });
 
-  const answer = await client.ask("What does SupaVector store?", { k: 3, provider: "openai" });
+  const answer = await client.ask("What does SupaVector store?", { k: 7, provider: "openai" });
   console.log(answer.data.answer);
 
-  const booleanAsk = await client.booleanAsk("Does SupaVector store memory for agents?", { k: 3, provider: "openai" });
+  const booleanAsk = await client.booleanAsk("Does SupaVector store memory for agents?", { k: 7, provider: "openai" });
   console.log(booleanAsk.data.answer);
   console.log(booleanAsk.data.supportingChunks);
 }

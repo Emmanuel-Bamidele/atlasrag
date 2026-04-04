@@ -209,7 +209,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Content-Type: application/json" \
   -d '{
     "question":"What does SupaVector store?",
-    "k":3,
+    "k":7,
     "policy":"amvl",
     "provider":"openai",
     "model":"gpt-5.2"
@@ -250,7 +250,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "Content-Type: application/json" \
   -d '{
     "question":"Does SupaVector store memory for agents?",
-    "k":3,
+    "k":7,
     "policy":"amvl"
   }'
 ```

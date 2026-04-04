@@ -24,10 +24,10 @@ async function main() {
   const search = await client.search("semantic", { k: 3 });
   console.log("search", search.data.results);
 
-  const answer = await client.ask("What does SupaVector store?", { k: 3 });
+  const answer = await client.ask("What does SupaVector store?", { k: 7 });
   console.log("answer", answer.data.answer);
 
-  const booleanAsk = await client.booleanAsk("Does SupaVector store semantic memories for agents?", { k: 3 });
+  const booleanAsk = await client.booleanAsk("Does SupaVector store semantic memories for agents?", { k: 7 });
   console.log("boolean_ask", booleanAsk.data.answer);
   console.log("supportingChunks", booleanAsk.data.supportingChunks);
 }

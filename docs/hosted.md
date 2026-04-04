@@ -120,7 +120,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What does SupaVector store?",
-    "k": 5,
+    "k": 7,
     "policy": "amvl",
     "favorRecency": true
   }'

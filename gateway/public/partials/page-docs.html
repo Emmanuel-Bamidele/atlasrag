@@ -407,12 +407,12 @@ export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does Supavector store?","k":3}'
+  -d '{"question":"What does Supavector store?","k":7}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does Supavector store memory for agents?","k":3}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":7}'</pre>
                   <p class="hint"><span class="mono">/v1/docs</span> defaults to the normal text ingest path. Optional fields such as <span class="mono">title</span>, <span class="mono">metadata</span>, <span class="mono">sourceUrl</span>, and <span class="mono">sourceType</span> are supported. Use <span class="mono">"sourceType":"code"</span> only when the payload is actually source code and you want code-aware chunking.</p>
                 </div>
                 <div class="doc-block">
@@ -680,7 +680,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before answer generation (default: <span class="mono">40</span>).</td>
+                        <td>Top-K chunks retrieved before answer generation (default: <span class="mono">7</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">docIds</span></td>
@@ -744,7 +744,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before generation (default: <span class="mono">40</span>).</td>
+                        <td>Top-K chunks retrieved before generation (default: <span class="mono">5</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">answerLength</span></td>
@@ -796,7 +796,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                         <td><span class="mono">k</span></td>
                         <td>integer</td>
                         <td>No</td>
-                        <td>Top-K chunks retrieved before classification (default: <span class="mono">40</span>).</td>
+                        <td>Top-K chunks retrieved before classification (default: <span class="mono">7</span>).</td>
                       </tr>
                       <tr>
                         <td><span class="mono">docIds</span></td>
@@ -1073,21 +1073,21 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How is durability handled?", "k": 40, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "How is durability handled?", "k": 7, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Code</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/code \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Why would newer synced product records rank first here?", "k": 40, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Why would newer synced product records rank first here?", "k": 6, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Boolean ask</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/boolean_ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Is write-ahead logging enabled?", "k": 40, "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Is write-ahead logging enabled?", "k": 7, "policy": "amvl", "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
@@ -1197,7 +1197,7 @@ print(res.json())
 # 3) Ask
 res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
   "question": "How do we persist vectors?",
-  "k": 40,
+  "k": 7,
   "answerLength": "short",
   "policy": "amvl"
 })
@@ -1207,7 +1207,7 @@ print(res.json())
 # 4) Boolean ask
 res = requests.post(f"{BASE}/v1/boolean_ask", headers=headers, json={
   "question": "Does WAL keep vectors durable across restarts?",
-  "k": 40,
+  "k": 7,
   "policy": "amvl"
 })
 res.raise_for_status()
@@ -1339,10 +1339,10 @@ await post("/v1/docs", {
 console.log(await get("/v1/search", { q: "durability", k: "5", collection: "default" }));
 
 // 3) Ask
-console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 40, answerLength: "long", policy: "amvl" }));
+console.log(await post("/v1/ask", { question: "How do we persist vectors?", k: 7, answerLength: "long", policy: "amvl" }));
 
 // 4) Boolean ask
-console.log(await post("/v1/boolean_ask", { question: "Do we persist vectors with WAL?", k: 40, policy: "amvl" }));
+console.log(await post("/v1/boolean_ask", { question: "Do we persist vectors with WAL?", k: 7, policy: "amvl" }));
 
 // 5) Memory write
 await post("/v1/memory/write", {
@@ -1810,7 +1810,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -d '{
     "question": "What does Supavector store?",
     "collection": "default",
-    "k": 3
+    "k": 7
   }'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
@@ -1819,7 +1819,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -d '{
     "question": "Does Supavector store memory for agents?",
     "collection": "default",
-    "k": 3
+    "k": 7
   }'</pre>
                   <p class="hint">Keep write and read operations on the same <span class="mono">collection</span>. If you write to <span class="mono">default</span>, search, ask, and <span class="mono">boolean_ask</span> on <span class="mono">default</span> too unless you intentionally want a different scope.</p>
                 </div>
@@ -1842,7 +1842,7 @@ async function main() {
 
   const answer = await client.ask("What does Supavector store?", {
     collection: process.env.SUPAVECTOR_COLLECTION || "default",
-    k: 3,
+    k: 7,
     provider: "openai"
   });
 
@@ -1850,7 +1850,7 @@ async function main() {
 
   const booleanAsk = await client.booleanAsk("Does Supavector store memory for agents?", {
     collection: process.env.SUPAVECTOR_COLLECTION || "default",
-    k: 3,
+    k: 7,
     provider: "openai"
   });
 
@@ -2166,11 +2166,11 @@ supavector search --q "tenant auth mode" --collection default --json</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Ask and boolean_ask examples</div>
-                  <pre class="doc-code">supavector ask --question "What does Supavector store?" --collection local-demo --k 3
+                  <pre class="doc-code">supavector ask --question "What does Supavector store?" --collection local-demo --k 7
 supavector ask --question "Summarize the auth model." --collection default --policy amvl --answer-length short --model 2
 supavector code --question "Review the auth middleware for redirect loops." --collection default --task review --paths src/middleware.ts,src/auth.ts
 supavector code --question "Write a retry helper for failed webhooks." --collection default --task write --language typescript --constraints "do not add dependencies"
-supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo --k 3
+supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo --k 7
 supavector boolean_ask --question "Is password login enabled?" --collection default --policy amvl --model gpt-5.2</pre>
                   <p class="hint"><span class="mono">--model</span> is optional. If you omit it, Supavector uses the tenant or instance default model. On the CLI you can use the same numbered shortcuts shown in <span class="mono">supavector changemodel</span>, and the live preset catalog is available from <span class="mono">GET /v1/models</span>.</p>
                 </div>
@@ -2773,12 +2773,12 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does Supavector store?","k":3}'
+  -d '{"question":"What does Supavector store?","k":7}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does Supavector store memory for agents?","k":3}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":7}'</pre>
                     </div>
                   </div>
 
@@ -2934,7 +2934,7 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/docs" \
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "Authorization: Bearer ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does Supavector store?","k":5,"policy":"amvl"}'</pre>
+  -d '{"question":"What does Supavector store?","k":7,"policy":"amvl"}'</pre>
                       <p class="hint">The hosted instance supplies the AI provider by default. You do not need to send <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, or <span class="mono">X-Anthropic-API-Key</span> unless you want that request to use your provider key instead of the hosted default.</p>
                     </div>
                     <div class="doc-block">
@@ -3142,13 +3142,13 @@ ANTHROPIC_API_KEY=YOUR_ANTHROPIC_KEY</pre>
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-Gemini-API-Key: ${GEMINI_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does Supavector store?","k":3,"policy":"amvl","provider":"gemini","model":"gemini-2.5-flash"}'
+  -d '{"question":"What does Supavector store?","k":7,"policy":"amvl","provider":"gemini","model":"gemini-2.5-flash"}'
 
 curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "X-Anthropic-API-Key: ${ANTHROPIC_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"Does Supavector store memory for agents?","k":3,"policy":"amvl","provider":"anthropic","model":"claude-sonnet-4-20250514"}'</pre>
+  -d '{"question":"Does Supavector store memory for agents?","k":7,"policy":"amvl","provider":"anthropic","model":"claude-sonnet-4-20250514"}'</pre>
                     </div>
                     <div class="doc-block">
                       <div class="doc-label">Supported today</div>
@@ -3605,7 +3605,7 @@ SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                   <pre class="doc-code">curl -X POST "${SUPAVECTOR_BASE_URL}/v1/ask" \
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does SupaVector store?","k":3}'</pre>
+  -d '{"question":"What does SupaVector store?","k":7}'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Optional BYO provider key</div>

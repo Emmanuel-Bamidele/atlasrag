@@ -3508,7 +3508,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const isBooleanAsk = mode === "boolean_ask";
     const question = $("askQ").value.trim();
-    const k = parseInt($("askK").value || "5", 10);
+    const k = parseInt($("askK").value || "7", 10);
     const scope = String($("askCollectionScope")?.value || "all").trim();
     const answerLength = String($("askAnswerLength")?.value || "auto").trim().toLowerCase();
     const policy = normalizePolicy($("askPolicy")?.value || "amvl");
