@@ -17,8 +17,8 @@
   cursor:pointer;
   transition: all .2s ease;
 }
-.tab:hover{ color: var(--text); background: rgba(246,195,86,0.08); border-color: rgba(246,195,86,0.2); }
-.tab.active{ color: var(--text); background: rgba(200,160,32,0.18); border-color: rgba(200,160,32,0.28); }
+.tab:hover{ color: var(--text); background: rgba(192,132,252,0.08); border-color: rgba(192,132,252,0.2); }
+.tab.active{ color: var(--text); background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.28); }
 
 .content{
   padding: 20px;
@@ -67,13 +67,13 @@
 
 .play-tab:hover{
   color: var(--text);
-  border-color: rgba(200,160,32,0.35);
+  border-color: rgba(96,165,250,0.35);
 }
 
 .play-tab.active{
   color: var(--text);
-  border-color: rgba(200,160,32,0.6);
-  background: rgba(200,160,32,0.12);
+  border-color: rgba(96,165,250,0.6);
+  background: rgba(96,165,250,0.12);
 }
 
 .play-pane{
@@ -120,7 +120,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(200,160,32,0.18);
+  background: rgba(96,165,250,0.18);
   color: var(--text);
   display:inline-flex;
   align-items:center;
@@ -201,8 +201,8 @@ input, textarea, select{
 }
 
 input:focus, textarea:focus, select:focus{
-  border-color: rgba(200,160,32,0.7);
-  box-shadow: 0 0 0 3px rgba(200,160,32,0.18);
+  border-color: rgba(96,165,250,0.7);
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.18);
 }
 
 .check{
@@ -275,8 +275,8 @@ select option{
 }
 
 .copy-inline-btn:hover{
-  background: rgba(200,160,32,0.16);
-  border-color: rgba(200,160,32,0.3);
+  background: rgba(96,165,250,0.16);
+  border-color: rgba(96,165,250,0.3);
   color: var(--text);
   transform: translateY(-1px);
 }
@@ -307,7 +307,7 @@ select option{
 
 .btn{
   border:1px solid rgba(226,232,240,0.18);
-  background: rgba(246,195,86,0.18);
+  background: rgba(192,132,252,0.18);
   color: var(--text);
   padding: 10px 14px;
   border-radius: 12px;
@@ -316,9 +316,9 @@ select option{
   transition: all .2s ease;
 }
 
-.btn:hover{ background: rgba(246,195,86,0.25); }
-.btn.secondary{ background: rgba(200,160,32,0.12); }
-.btn.secondary:hover{ background: rgba(200,160,32,0.2); }
+.btn:hover{ background: rgba(192,132,252,0.25); }
+.btn.secondary{ background: rgba(96,165,250,0.12); }
+.btn.secondary:hover{ background: rgba(96,165,250,0.2); }
 .btn.danger{ background: rgba(251,113,133,0.16); border-color: rgba(251,113,133,0.3); }
 .btn.danger:hover{ background: rgba(251,113,133,0.24); }
 .btn:disabled{ opacity:0.6; cursor:not-allowed; }
