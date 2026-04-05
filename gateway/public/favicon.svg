@@ -1,17 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Supavector">
   <defs>
     <linearGradient id="brandBg" x1="6" y1="6" x2="58" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0d0d0f"/>
-      <stop offset="1" stop-color="#111113"/>
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#172033"/>
+    </linearGradient>
+    <linearGradient id="brandAccent" x1="10" y1="54" x2="54" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#a78bfa"/>
     </linearGradient>
   </defs>
 
   <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#brandBg)"/>
   <g transform="translate(5.25 5.25) scale(0.8359375)">
-    <circle cx="18" cy="46" r="9.5" fill="rgba(255,255,255,0.08)" stroke="#ede6d6" stroke-width="2.6"/>
-    <circle cx="32" cy="32" r="9.5" fill="rgba(255,255,255,0.08)" stroke="#ede6d6" stroke-width="2.6"/>
-    <circle cx="46" cy="18" r="9.5" fill="rgba(255,255,255,0.08)" stroke="#ede6d6" stroke-width="2.6"/>
-    <path d="M10 54 54 10" fill="none" stroke="#c8a020" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M42 10h12v12" fill="none" stroke="#c8a020" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="18" cy="46" r="9.5" fill="#ffffff" fill-opacity="0.06" stroke="#dbeafe" stroke-opacity="0.92" stroke-width="2.6"/>
+    <circle cx="32" cy="32" r="9.5" fill="#ffffff" fill-opacity="0.06" stroke="#dbeafe" stroke-opacity="0.92" stroke-width="2.6"/>
+    <circle cx="46" cy="18" r="9.5" fill="#ffffff" fill-opacity="0.06" stroke="#dbeafe" stroke-opacity="0.92" stroke-width="2.6"/>
+    <path d="M10 54 54 10" fill="none" stroke="url(#brandAccent)" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M42 10h12v12" fill="none" stroke="url(#brandAccent)" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>
