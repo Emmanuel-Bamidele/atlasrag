@@ -73,6 +73,13 @@ function testResolveCodeSelectionSizeCapsPromptBreadth() {
   assert.equal(indexHooks.resolveCodeSelectionSize(40, "general"), 8);
 }
 
+function testResolveVectorSearchWindowSupportsCodeOverrides() {
+  assert.equal(indexHooks.resolveVectorSearchWindow(10, {}), 50);
+  assert.equal(indexHooks.resolveVectorSearchWindow(10, { multiplier: 2, cap: 24 }), 20);
+  assert.equal(indexHooks.resolveVectorSearchWindow(40, { multiplier: 2, cap: 24 }), 24);
+  assert.equal(indexHooks.resolveVectorSearchWindow(8, { hasDocFilter: true, multiplier: 2, cap: 24 }), 24);
+}
+
 function testBuildCodePromptIncludesRetrievedFileSummary() {
   const prompt = answerHooks.buildCodePrompt(
     "How does authentication work?",
@@ -442,6 +449,7 @@ function main() {
   testBuildCodeRetrievalQueryIncludesWorkingSetContext();
   testSelectCodeCandidatesForPromptPrefersFileDiversity();
   testResolveCodeSelectionSizeCapsPromptBreadth();
+  testResolveVectorSearchWindowSupportsCodeOverrides();
   testBuildCodePromptIncludesRetrievedFileSummary();
   testBuildCodePromptIncludesWorkingSetAndRecentTurns();
   testBuildCodePromptSupportsMetadataCitationMode();

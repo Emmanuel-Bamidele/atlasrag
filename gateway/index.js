@@ -446,6 +446,8 @@ const AGENT_RE = /^[a-zA-Z0-9._:@-]+$/;
 const DEFAULT_COLLECTION = process.env.DEFAULT_COLLECTION || "default";
 const TENANT_SEARCH_MULTIPLIER = parseInt(process.env.TENANT_SEARCH_MULTIPLIER || "5", 10);
 const TENANT_SEARCH_CAP = parseInt(process.env.TENANT_SEARCH_CAP || "50", 10);
+const CODE_VECTOR_SEARCH_MULTIPLIER = parseInt(process.env.CODE_VECTOR_SEARCH_MULTIPLIER || "2", 10);
+const CODE_VECTOR_SEARCH_CAP = parseInt(process.env.CODE_VECTOR_SEARCH_CAP || "24", 10);
 const CHUNK_STRATEGY = String(process.env.CHUNK_STRATEGY || "token").toLowerCase() === "char" ? "char" : "token";
 const CHUNK_MAX_CHARS = parseInt(process.env.CHUNK_MAX_CHARS || "900", 10);
 const CHUNK_MAX_TOKENS = parseInt(process.env.CHUNK_MAX_TOKENS || "220", 10);
@@ -4672,7 +4674,37 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, favorRecency, apiKey, embedProvider, embedModel }) {
+function resolveVectorSearchWindow(topK, { hasDocFilter = false, multiplier = null, cap = null } = {}) {
+  const fallbackMultiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
+  const fallbackCap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
+  const effectiveMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallbackMultiplier;
+  const effectiveCap = Number.isFinite(cap) && cap > 0 ? cap : fallbackCap;
+  return Math.min(topK * effectiveMultiplier * (hasDocFilter ? 2 : 1), effectiveCap);
+}
+
+async function searchChunks({
+  tenantId,
+  collection,
+  query,
+  k,
+  docIds,
+  principalId,
+  privileges,
+  enforceArtifactVisibility,
+  telemetry,
+  candidateTypes,
+  tags,
+  agentId,
+  since,
+  until,
+  policy,
+  favorRecency,
+  apiKey,
+  embedProvider,
+  embedModel,
+  vectorSearchMultiplier = null,
+  vectorSearchCap = null
+}) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -4791,10 +4823,12 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     console.warn(`[memory_candidates] cold candidates should be zero; got=${retrievalSet.coldCandidates}`);
   }
 
-  const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
-  const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
   const hasDocFilter = cleanDocIds.length > 0;
-  const internalK = Math.min(topK * multiplier * (hasDocFilter ? 2 : 1), cap);
+  const internalK = resolveVectorSearchWindow(topK, {
+    hasDocFilter,
+    multiplier: vectorSearchMultiplier,
+    cap: vectorSearchCap
+  });
   const scopedK = Math.max(1, Math.min(internalK, vectorSearchScannedCount));
   const cmd = buildVsearchIn(scopedK, qvec, candidateChunkIds);
   const line = await sendCmd(cmd);
@@ -5780,6 +5814,8 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     apiKey,
     embedProvider,
     embedModel,
+    vectorSearchMultiplier: CODE_VECTOR_SEARCH_MULTIPLIER,
+    vectorSearchCap: CODE_VECTOR_SEARCH_CAP,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -11988,6 +12024,7 @@ module.exports = {
     buildCodeWorkingSet,
     buildCodeRelationshipSummary,
     buildCodeScoreBoost,
+    resolveVectorSearchWindow,
     resolveCodeSelectionSize,
     selectCodeCandidatesForPrompt,
     formatTenantRecord,
