@@ -686,6 +686,69 @@ function emitLifecycleActionTelemetry(action, item, details = {}, context = {}) 
   });
 }
 
+const conversationWikiStatsByTenant = new Map();
+
+function getOrCreateConversationWikiStats(tenantId) {
+  const key = String(tenantId || "").trim();
+  if (!key) return null;
+  let entry = conversationWikiStatsByTenant.get(key) || null;
+  if (!entry) {
+    entry = {
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      pagesUpdated: 0,
+      turnsPruned: 0,
+      queuedDeletes: 0,
+      lastPageCount: 0,
+      lastUpdatedAt: null
+    };
+    conversationWikiStatsByTenant.set(key, entry);
+  }
+  return entry;
+}
+
+function recordConversationWikiMetrics(tenantId, updates = {}) {
+  const entry = getOrCreateConversationWikiStats(tenantId);
+  if (!entry) return null;
+  const numericKeys = [
+    "succeeded",
+    "failed",
+    "skipped",
+    "pagesUpdated",
+    "turnsPruned",
+    "queuedDeletes"
+  ];
+  for (const key of numericKeys) {
+    const value = Number(updates?.[key]);
+    if (Number.isFinite(value) && value !== 0) {
+      entry[key] += value;
+    }
+  }
+  const lastPageCount = Number(updates?.lastPageCount);
+  if (Number.isFinite(lastPageCount) && lastPageCount >= 0) {
+    entry.lastPageCount = Math.floor(lastPageCount);
+  }
+  const rawLastUpdatedAt = updates?.lastUpdatedAt;
+  const parsedLastUpdatedAt = rawLastUpdatedAt ? Date.parse(rawLastUpdatedAt) : NaN;
+  if (Number.isFinite(parsedLastUpdatedAt)) {
+    entry.lastUpdatedAt = new Date(parsedLastUpdatedAt).toISOString();
+  }
+  return { ...entry };
+}
+
+function emitConversationWikiTelemetry(eventType, context = {}, payload = {}) {
+  emitTelemetry("conversation_wiki", {
+    requestId: context.requestId || null,
+    tenantId: context.tenantId || null,
+    collection: context.collection || null,
+    source: context.source || "conversation_wiki"
+  }, {
+    event: String(eventType || "").trim() || "unknown",
+    ...payload
+  });
+}
+
 function logIndex(message) {
   if (DEBUG_INDEX) {
     console.log(`[index] ${message}`);
@@ -13614,6 +13677,8 @@ module.exports = {
     mergeConversationWikiStoredExchanges,
     resolveConversationWikiSourceCheckpoint,
     buildConversationWikiUpdatePrompt,
+    recordConversationWikiMetrics,
+    emitConversationWikiTelemetry,
     clearConversationMemoryCollectionWithDeps,
     formatConversationWikiItem,
     getConversationWikiLastUpdatedAt,

@@ -180,6 +180,30 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.match(prompt.user, /Question and response exchanges JSON:/);
 }
 
+function testConversationWikiMetricsHelpers() {
+  const snapshot = __testHooks.recordConversationWikiMetrics("tenant-1", {
+    succeeded: 1,
+    pagesUpdated: 2,
+    queuedDeletes: 1,
+    lastPageCount: 4,
+    lastUpdatedAt: "2026-04-07T12:00:00.000Z"
+  });
+  assert.equal(snapshot.succeeded, 1);
+  assert.equal(snapshot.pagesUpdated, 2);
+  assert.equal(snapshot.queuedDeletes, 1);
+  assert.equal(snapshot.lastPageCount, 4);
+  assert.equal(snapshot.lastUpdatedAt, "2026-04-07T12:00:00.000Z");
+  assert.doesNotThrow(() => {
+    __testHooks.emitConversationWikiTelemetry("succeeded", {
+      tenantId: "tenant-1",
+      collection: "__brain_conv_test",
+      source: "conversation_wiki_job"
+    }, {
+      page_count: 4
+    });
+  });
+}
+
 {
   assert.equal(__testHooks.resolveConversationWikiSourceCheckpoint([
     { checkpointTurnExternalId: "turn-42" }
@@ -389,6 +413,7 @@ async function main() {
   testParsesLegacyConversationWikiResponse();
   testFormatsConversationWikiAuditFields();
   testBuildsTurnExchangesAndPrompt();
+  testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
     await testConversationWikiJobRetryableFailureRequeues();
   }
