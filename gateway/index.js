@@ -402,6 +402,7 @@ const CONVERSATION_WIKI_MAX_STORED_EXCHANGES = parseInt(process.env.CONVERSATION
 const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES || "4", 10);
 const CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS || "900", 10);
 const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS || "1800", 10);
+const CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE = "conversation_wiki_clear_collection";
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
 const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
@@ -7498,6 +7499,10 @@ async function dispatchMemoryJob(jobId, tenantId, jobType) {
     await runDeleteReconcileJob(jobId, tenantId);
     return;
   }
+  if (type === CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE) {
+    await runConversationMemoryClearJob(jobId, tenantId);
+    return;
+  }
   if (!type) {
     const job = await getMemoryJobById(jobId, tenantId);
     if (!job) return;
@@ -7976,6 +7981,41 @@ async function enqueueConversationWikiUpdateJob(args) {
   return enqueueConversationWikiUpdateJobWithDeps({}, args);
 }
 
+async function enqueueConversationMemoryClearJobWithDeps(deps, {
+  tenantId,
+  collection,
+  requestId,
+  source
+}) {
+  const listJobs = deps.listMemoryJobsByCollection || listMemoryJobsByCollection;
+  const createJob = deps.createMemoryJob || createMemoryJob;
+  const activeJobs = await listJobs({
+    tenantId,
+    collection,
+    jobTypes: [CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE],
+    statuses: ["queued", "running"]
+  });
+  if (Array.isArray(activeJobs) && activeJobs.length) {
+    return activeJobs[0];
+  }
+  return createJob({
+    tenantId,
+    jobType: CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE,
+    status: "queued",
+    maxAttempts: JOB_MAX_ATTEMPTS,
+    input: {
+      tenantId,
+      collection,
+      requestId: requestId || null,
+      source: source || "conversation_wiki_api"
+    }
+  });
+}
+
+async function enqueueConversationMemoryClearJob(args) {
+  return enqueueConversationMemoryClearJobWithDeps({}, args);
+}
+
 async function runConversationWikiUpdateJob(jobId, tenantId) {
   const job = await claimMemoryJob({ id: jobId, tenantId });
   if (!job) return;
@@ -8269,6 +8309,91 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }
   }
 }
+
+async function runConversationMemoryClearJobWithDeps(deps, jobId, tenantId) {
+  const claimJob = deps.claimMemoryJob || claimMemoryJob;
+  const clearCollection = deps.clearConversationMemoryCollection || clearConversationMemoryCollection;
+  const updateJob = deps.updateMemoryJob || updateMemoryJob;
+  const finalizeFailure = deps.finalizeJobFailure || finalizeJobFailure;
+  const createAudit = deps.createAuditLog || createAuditLog;
+  const job = await claimJob({ id: jobId, tenantId });
+  if (!job) return;
+  let collection = null;
+  try {
+    const input = parseJsonPayload(job.input) || {};
+    collection = normalizeCollection(input.collection);
+    if (!collection) {
+      recordConversationWikiMetrics(tenantId, { failed: 1 });
+      await finalizeJobFailure(job, "collection is required", { retryable: false });
+      return;
+    }
+    const requestId = String(input.requestId || "").trim() || `job:${jobId}`;
+    const source = String(input.source || "").trim() || "conversation_wiki_job";
+    const cleared = await clearCollection({
+      tenantId,
+      collection,
+      requestId,
+      source
+    });
+    recordConversationWikiMetrics(tenantId, {
+      lastPageCount: 0,
+      lastUpdatedAt: new Date().toISOString()
+    });
+    emitConversationWikiTelemetry("cleared_collection", {
+      requestId,
+      tenantId,
+      collection,
+      source
+    }, {
+      conversation_count: cleared.conversationCount,
+      memory_item_count: cleared.memoryItemCount,
+      deleted_count: cleared.deletedCount,
+      queued_count: cleared.queuedCount,
+      deleted_job_count: cleared.deletedJobCount
+    });
+    await createAudit({
+      tenantId,
+      actorId: "system",
+      actorType: "system",
+      action: "conversation_wiki.cleared",
+      targetType: "collection",
+      targetId: collection,
+      metadata: {
+        conversationCount: cleared.conversationCount,
+        memoryItemCount: cleared.memoryItemCount,
+        deletedCount: cleared.deletedCount,
+        queuedCount: cleared.queuedCount,
+        deletedJobCount: cleared.deletedJobCount,
+        deletedVectors: cleared.deletedVectors
+      },
+      requestId,
+      ip: null
+    });
+    await updateJob({
+      id: job.id,
+      status: "succeeded",
+      output: cleared
+    });
+  } catch (err) {
+    recordConversationWikiMetrics(tenantId, { failed: 1 });
+    emitConversationWikiTelemetry("clear_collection_failed", {
+      requestId: `job:${jobId}`,
+      tenantId,
+      collection,
+      source: "conversation_wiki_job"
+    }, {
+      error: String(err?.message || err)
+    });
+    await finalizeFailure(job, err, {
+      retryable: err?.status !== 400
+    });
+  }
+}
+
+async function runConversationMemoryClearJob(jobId, tenantId) {
+  return runConversationMemoryClearJobWithDeps({}, jobId, tenantId);
+}
+
 async function runReflectionJob(jobId, tenantId) {
   const job = await claimMemoryJob({ id: jobId, tenantId });
   if (!job) return;
@@ -12965,42 +13090,21 @@ app.delete("/v1/memory/conversation_wiki/conversations", requireJwt, requireRole
   try {
     tenantId = resolveTenantId(req);
     collection = resolveCollection(req);
-    const cleared = await clearConversationMemoryCollection({
+    const job = await enqueueConversationMemoryClearJob({
       tenantId,
       collection,
       requestId: req.requestId || null,
       source: "conversation_wiki_api"
     });
-    recordConversationWikiMetrics(tenantId, {
-      lastPageCount: 0,
-      lastUpdatedAt: new Date().toISOString()
+    setImmediate(() => {
+      runConversationMemoryClearJob(job.id, tenantId).catch(() => {});
     });
-    emitConversationWikiTelemetry("cleared_collection", {
-      requestId: req.requestId,
-      tenantId,
-      collection,
-      source: "conversation_wiki_api"
-    }, {
-      conversation_count: cleared.conversationCount,
-      memory_item_count: cleared.memoryItemCount,
-      deleted_count: cleared.deletedCount,
-      queued_count: cleared.queuedCount,
-      deleted_job_count: cleared.deletedJobCount
-    });
-    await recordAudit(req, tenantId, {
-      action: "conversation_wiki.cleared",
-      targetType: "collection",
-      targetId: collection,
-      metadata: {
-        conversationCount: cleared.conversationCount,
-        memoryItemCount: cleared.memoryItemCount,
-        deletedCount: cleared.deletedCount,
-        queuedCount: cleared.queuedCount,
-        deletedJobCount: cleared.deletedJobCount,
-        deletedVectors: cleared.deletedVectors
+    sendOk(res, {
+      job: formatConversationWikiJob(job),
+      wiki: {
+        job: formatConversationWikiJob(job)
       }
-    });
-    sendOk(res, cleared, tenantId, collection);
+    }, tenantId, collection);
   } catch (e) {
     sendError(res, e?.status || 400, e, "CONVERSATION_WIKI_CLEAR_ALL_FAILED", tenantId, collection);
   }
@@ -13680,6 +13784,8 @@ module.exports = {
     recordConversationWikiMetrics,
     emitConversationWikiTelemetry,
     clearConversationMemoryCollectionWithDeps,
+    enqueueConversationMemoryClearJobWithDeps,
+    runConversationMemoryClearJobWithDeps,
     formatConversationWikiItem,
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
