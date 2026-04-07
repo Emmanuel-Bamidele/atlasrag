@@ -7233,26 +7233,34 @@ async function dispatchMemoryJob(jobId, tenantId, jobType) {
   console.warn(`[jobs] Unknown job type ${type} for job ${jobId}`);
 }
 
-async function finalizeJobFailure(job, err, options = {}) {
+async function finalizeJobFailureWithDeps(deps, job, err, options = {}) {
   const retryable = options.retryable !== false;
   const message = String(err?.message || err);
   const maxAttempts = Number.isFinite(job.max_attempts) && job.max_attempts > 0
     ? job.max_attempts
     : (Number.isFinite(JOB_MAX_ATTEMPTS) && JOB_MAX_ATTEMPTS > 0 ? JOB_MAX_ATTEMPTS : 3);
   const attempts = Number.isFinite(job.attempts) ? job.attempts + 1 : 1;
+  const updateJob = deps.updateMemoryJob || updateMemoryJob;
+  const backoff = deps.computeJobBackoff || computeJobBackoff;
+  const scheduleRetry = deps.scheduleRetry || ((fn, delay) => setTimeout(fn, delay));
+  const dispatchJob = deps.dispatchMemoryJob || dispatchMemoryJob;
 
   if (!retryable || attempts >= maxAttempts) {
-    await updateMemoryJob({ id: job.id, status: "failed", error: message, attempts });
+    await updateJob({ id: job.id, status: "failed", error: message, attempts });
     return { retried: false, attempts };
   }
 
-  const delay = computeJobBackoff(attempts);
+  const delay = backoff(attempts);
   const nextRunAt = new Date(Date.now() + delay);
-  await updateMemoryJob({ id: job.id, status: "queued", error: message, attempts, nextRunAt });
-  setTimeout(() => {
-    dispatchMemoryJob(job.id, job.tenant_id, job.job_type).catch(() => {});
+  await updateJob({ id: job.id, status: "queued", error: message, attempts, nextRunAt });
+  scheduleRetry(() => {
+    Promise.resolve(dispatchJob(job.id, job.tenant_id, job.job_type)).catch(() => {});
   }, delay);
   return { retried: true, attempts, nextRunAt };
+}
+
+async function finalizeJobFailure(job, err, options = {}) {
+  return finalizeJobFailureWithDeps({}, job, err, options);
 }
 
 async function cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExternalIds }) {
