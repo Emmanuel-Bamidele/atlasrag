@@ -23,7 +23,6 @@ const {
   getMemoryItemsByNamespaceIds,
   listMemoryItemsByTier,
   getMemoryItemById,
-  getMemoryItemByExternalId,
   deleteMemoryItemById,
   deleteMemoryItemByNamespaceId,
   getArtifactByExternalId,
@@ -46,11 +45,8 @@ const {
   createMemoryLink,
   createMemoryJob,
   claimMemoryJob,
-  acquireConversationWikiLock,
-  releaseConversationWikiLock,
   updateMemoryJob,
   getMemoryJobById,
-  findActiveConversationWikiJob,
   listDueMemoryJobs,
   listMemoryJobs,
   listMemoryJobsByCollection,
@@ -96,7 +92,6 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer, generateCodeAnswer, normalizeCodeTask } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
-const { generateProviderText } = require("./provider_clients");
 const {
   DEFAULT_EMBED_PROVIDER,
   DEFAULT_EMBED_MODEL,
