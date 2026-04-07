@@ -169,7 +169,6 @@ DELETE /portal/projects/:projectId/brains/:memoryId/conversations/:conversationI
 ```
 
 If you are self-hosting or automating outside the browser session, use the underlying gateway conversation wiki endpoints or the CLI memory commands instead of the Studio routes above.
-
 `/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Memory GitHub repo sync applies that automatically for matched repo files.
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
