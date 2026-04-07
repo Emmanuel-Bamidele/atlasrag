@@ -379,12 +379,12 @@ const CONVERSATION_WIKI_PAGES = [];
 const CONVERSATION_WIKI_ARTICLE_PAGE = "article";
 const CONVERSATION_WIKI_PAGE_SET = new Set([CONVERSATION_WIKI_ARTICLE_PAGE]);
 const CONVERSATION_WIKI_SECTION_KEYS = ["confirmed", "uncertain", "open"];
-const CONVERSATION_WIKI_MAX_PAGE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PAGE_CHARS || "5600", 10);
+const CONVERSATION_WIKI_MAX_PAGE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PAGE_CHARS || "9000", 10);
 const CONVERSATION_WIKI_MAX_SOURCE_TURNS = parseInt(process.env.CONVERSATION_WIKI_MAX_SOURCE_TURNS || "32", 10);
-const CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION = parseInt(process.env.CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION || "14", 10);
+const CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION = parseInt(process.env.CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION || "18", 10);
 const CONVERSATION_WIKI_MAX_TITLE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_TITLE_CHARS || "120", 10);
 const CONVERSATION_WIKI_MAX_NOTE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_NOTE_CHARS || "240", 10);
-const CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS || "1200", 10);
+const CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS || "1800", 10);
 const CONVERSATION_WIKI_MAX_SECTIONS = parseInt(process.env.CONVERSATION_WIKI_MAX_SECTIONS || "8", 10);
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
@@ -2476,6 +2476,29 @@ function buildConversationWikiTurnExchanges(recentTurns = []) {
   }));
 }
 
+function buildConversationWikiExchangeDigest(recentTurns = []) {
+  const exchanges = buildConversationWikiTurnExchanges(recentTurns);
+  if (!exchanges.length) return "No question-and-answer exchanges were available.";
+  return exchanges.map((exchange) => {
+    const lines = [`Exchange ${exchange.index}`];
+    if (exchange.question) {
+      lines.push(`Question: ${exchange.question}`);
+    } else {
+      lines.push("Question: None captured before the following responses.");
+    }
+    if (Array.isArray(exchange.responses) && exchange.responses.length) {
+      exchange.responses.forEach((response, responseIndex) => {
+        const role = String(response?.role || "assistant").trim() || "assistant";
+        const createdAt = response?.createdAt ? ` @ ${new Date(response.createdAt).toISOString()}` : "";
+        lines.push(`Answer ${responseIndex + 1} (${role}${createdAt}): ${String(response?.text || "").trim()}`);
+      });
+    } else {
+      lines.push("Answer: No assistant answer was captured for this exchange.");
+    }
+    return lines.join("\n");
+  }).join("\n\n");
+}
+
 function countConversationWikiItems(section = {}) {
   return Array.isArray(section.paragraphs) ? section.paragraphs.length : 0;
 }
@@ -2652,6 +2675,10 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
     }))
     : [];
   const turnExchanges = buildConversationWikiTurnExchanges(recentTurns);
+  const turnExchangeDigest = buildConversationWikiExchangeDigest(recentTurns);
+  const previousWikiArticleText = Array.isArray(existingWikiState?.previousWiki?.paragraphs)
+    ? existingWikiState.previousWiki.paragraphs.map((paragraph) => String(paragraph || "").trim()).filter(Boolean).join("\n\n")
+    : "";
   return {
     system: [
       "You maintain one living conversation wiki article for one conversation.",
@@ -2673,15 +2700,20 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       "- Prefer newer turns when they contradict older wiki material, but preserve still-relevant earlier context.",
       "- Write one continuous article, not sections, not lists, not dashboards, and not bucket labels.",
       "- Make it clear what the user asked, what the assistant answered, and how understanding changed over time.",
+      "- The article must visibly incorporate both the user's questions and the assistant's answers. Do not treat the user questions as the only source of substance.",
       "- Treat answered questions as answered. Do not rewrite answered exchanges as generic knowledge gaps just because the answer was broad, advisory, or not user-specific.",
       "- If there are multiple user questions or question-response exchanges, cover each exchange with its own substantial paragraph before any concluding synthesis.",
+      "- When there are N answered exchanges, write at least N substantial body paragraphs before any concluding synthesis or knowledge-base gap paragraph.",
+      "- Do not mention a user question without also carrying forward the substance of the assistant answer that followed it, unless no answer was actually given.",
       "- Preserve the substance of assistant answers in the article. Summaries should retain what was actually advised, explained, corrected, or recommended.",
+      "- Use the explicit question-and-answer digest and the raw turn transcript together. The digest is the primary structure; the transcript is there to preserve wording and sequence.",
       "- Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information, deferred the answer, or clearly identified missing source material.",
       "- Avoid filler like 'no user-specific context provided' unless that absence materially changed the answer.",
-      "- Use the previous wiki article to avoid losing durable information unless the newer turns clearly supersede it.",
+      "- Use the previous wiki article as source material to preserve durable information unless the newer turns clearly supersede it.",
       "- If something is still missing or unresolved, explain in normal prose what knowledge should be added to the knowledge base; do not create open-loop sections.",
       "- Write substantial paragraphs with multiple sentences. Avoid tiny summary paragraphs.",
       "- Aim for 6 to 12 dense paragraphs when the material supports it. If there is less material, still prefer fewer substantial paragraphs over many short ones.",
+      "- It is better to be long and information-dense than short and generic, as long as every paragraph stays grounded in the source material.",
       "- Use lightweight formatting inside paragraphs when it improves readability: **bold**, *italics*, > blockquotes, inline code, markdown links, and tone callouts like {accent|important}, {muted|context}, {success|resolved}, {warning|caution}, or {danger|critical}.",
       "- Use formatting sparingly but intentionally. Emphasize genuinely important shifts, caveats, or cited phrasing from the conversation so the article does not read like a flat wall of text.",
       "- If article hints are provided, treat them as loose editorial guidance, not a required outline.",
@@ -2690,8 +2722,12 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
     user: [
       `Conversation ID: ${conversationId || ""}`,
       `Article hints: ${articleHints.length ? articleHints.join(", ") : "none"}`,
+      "Previous wiki article text:",
+      previousWikiArticleText || "No previous wiki article was available.",
       "Previous wiki JSON:",
       stableJson(existingWikiState || {}),
+      "Question and answer digest:",
+      turnExchangeDigest,
       "Question and response exchanges JSON:",
       stableJson(turnExchanges),
       "Recent turn transcript JSON:",
@@ -7844,7 +7880,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       input: prompt,
       temperature: 0,
       jsonMode: true,
-      maxTokens: 2400
+      maxTokens: 3600
     });
     recordGenerationUsage(tenantId, generated?.usage, buildTelemetryContext({
       requestId: `job:${jobId}`,

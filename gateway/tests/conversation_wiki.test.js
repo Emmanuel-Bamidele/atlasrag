@@ -157,7 +157,13 @@ function testBuildsTurnExchangesAndPrompt() {
   });
   assert.match(prompt.system, /Treat answered questions as answered\./);
   assert.match(prompt.system, /cover each exchange with its own substantial paragraph/);
+  assert.match(prompt.system, /Do not mention a user question without also carrying forward the substance of the assistant answer/);
   assert.match(prompt.system, /Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information/);
+  assert.match(prompt.user, /Previous wiki article text:/);
+  assert.match(prompt.user, /Earlier draft paragraph\./);
+  assert.match(prompt.user, /Question and answer digest:/);
+  assert.match(prompt.user, /Question: How can I demonstrate consistency in my work\?/);
+  assert.match(prompt.user, /Answer 1 \(assistant @ 2026-04-07T01:01:00.000Z\): Show a repeatable pattern of follow-through, clear communication, and reliable outcomes\./);
   assert.match(prompt.user, /Question and response exchanges JSON:/);
 }
 
