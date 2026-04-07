@@ -353,6 +353,74 @@ async function testAuditListCommand() {
   });
 }
 
+async function testMemoriesCreateCommandWithConversationWiki() {
+  await withMockServer(async (req) => {
+    assert.equal(req.method, "POST");
+    assert.equal(req.path, "/v1/memories");
+    assert.equal(req.headers["x-api-key"], "supav_test_token");
+    assert.deepEqual(req.body, {
+      name: "Support Memory",
+      provider: "openai",
+      model: "gpt-5.2",
+      sourceConfig: {
+        conversationMemory: {
+          wikiKeepRecentTurns: 6,
+          enabled: true,
+          autoWriteDefault: true,
+          includeInAskDefault: true,
+          strategy: "hybrid_wiki",
+          wikiEnabled: true
+        }
+      }
+    });
+    return {
+      body: {
+        ok: true,
+        data: {
+          memory: {
+            id: "mem_support",
+            name: "Support Memory",
+            provider: "openai",
+            model: "gpt-5.2",
+            collection: "__brain_mem_support",
+            sourceConfig: req.body.sourceConfig
+          }
+        },
+        meta: {}
+      }
+    };
+  }, async ({ baseUrl }) => {
+    const result = await runCli([
+      "memories",
+      "create",
+      "--name",
+      "Support Memory",
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-5.2",
+      "--conversation-memory",
+      "true",
+      "--conversation-memory-auto-write",
+      "true",
+      "--conversation-memory-include-in-ask",
+      "true",
+      "--conversation-memory-strategy",
+      "hybrid_wiki",
+      "--source-config-json",
+      "{\"conversationMemory\":{\"wikiKeepRecentTurns\":6}}",
+      "--json"
+    ], {
+      SUPAVECTOR_BASE_URL: baseUrl,
+      SUPAVECTOR_API_KEY: "supav_test_token"
+    });
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.data.memory.id, "mem_support");
+    assert.equal(payload.data.memory.sourceConfig.conversationMemory.strategy, "hybrid_wiki");
+    assert.equal(payload.data.memory.sourceConfig.conversationMemory.wikiKeepRecentTurns, 6);
+  });
+}
+
 async function testCodeCommand() {
   await withMockServer(async (req) => {
     assert.equal(req.method, "POST");
@@ -584,6 +652,7 @@ async function main() {
   await testTenantUpdateCommand();
   await testEnterpriseTenantCreateCommand();
   await testAuditListCommand();
+  await testMemoriesCreateCommandWithConversationWiki();
   await testCodeCommand();
   await testWriteFolderCodebaseMetadata();
   await testWriteGitHubRepoCommand();

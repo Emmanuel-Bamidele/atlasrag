@@ -85,6 +85,7 @@ Usage:
   supavector tenants users list|create|update --tenant TENANT [user flags...]
   supavector tenants tokens list|create|revoke --tenant TENANT [token flags...]
   supavector audit list [--tenant TENANT] [--limit 100]
+  supavector memories list|get|create|update|delete|status [memory flags...]
   supavector collections list [--json]
   supavector collections delete --collection NAME [--yes] [--json]
   supavector docs list [--collection NAME] [--json]
@@ -182,6 +183,24 @@ Tenant / enterprise setup flags:
   --action NAME
   --target-type TYPE
   --target-id ID
+
+Memory flags:
+  --id ID
+  --description TEXT
+  --role TEXT
+  --personality TEXT
+  --provider VALUE
+  --model VALUE
+  --instructions TEXT
+  --metadata-json JSON         Inline memory metadata object
+  --metadata-file PATH         Read memory metadata object from file
+  --source-config-json JSON    Inline Memory sourceConfig object
+  --source-config-file PATH    Read Memory sourceConfig object from file
+  --conversation-memory true|false
+  --conversation-memory-auto-write true|false
+  --conversation-memory-include-in-ask true|false
+  --conversation-memory-strategy turn_log|hybrid_wiki
+  --conversation-wiki true|false
 
 User / token setup flags:
   --id ID                      Target user or token id for update/revoke
@@ -2936,6 +2955,105 @@ function buildServiceTokenBodyFromFlags(parsed, options = {}) {
   return body;
 }
 
+function normalizeConversationMemoryStrategyFlag(value) {
+  if (value === undefined) return undefined;
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return undefined;
+  if (["turn_log", "turn-log", "turnlog"].includes(raw)) return "turn_log";
+  if (["hybrid_wiki", "hybrid-wiki", "conversation_wiki", "conversation-wiki", "wiki"].includes(raw)) return "hybrid_wiki";
+  throw new Error("--conversation-memory-strategy must be turn_log or hybrid_wiki.");
+}
+
+function buildConversationMemoryConfigFromFlags(parsed, existingConversation = null) {
+  const conversation = existingConversation && typeof existingConversation === "object" && !Array.isArray(existingConversation)
+    ? { ...existingConversation }
+    : {};
+  let touched = false;
+
+  const enabled = maybeBooleanFlag(parsed, "conversation-memory");
+  const autoWriteDefault = maybeBooleanFlag(parsed, "conversation-memory-auto-write");
+  const includeInAskDefault = maybeBooleanFlag(parsed, "conversation-memory-include-in-ask");
+  const strategy = normalizeConversationMemoryStrategyFlag(maybeStringFlag(parsed, "conversation-memory-strategy"));
+  const wikiEnabled = maybeBooleanFlag(parsed, "conversation-wiki", "conversation-memory-wiki");
+
+  if (enabled !== undefined) {
+    conversation.enabled = enabled;
+    touched = true;
+  }
+  if (autoWriteDefault !== undefined) {
+    conversation.autoWriteDefault = autoWriteDefault;
+    touched = true;
+  }
+  if (includeInAskDefault !== undefined) {
+    conversation.includeInAskDefault = includeInAskDefault;
+    touched = true;
+  }
+  if (strategy !== undefined) {
+    conversation.strategy = strategy;
+    conversation.wikiEnabled = strategy === "hybrid_wiki";
+    touched = true;
+  }
+  if (wikiEnabled !== undefined) {
+    conversation.wikiEnabled = wikiEnabled;
+    if (wikiEnabled === true && strategy === undefined) {
+      conversation.strategy = "hybrid_wiki";
+    } else if (wikiEnabled === false && strategy === undefined && String(conversation.strategy || "").trim().toLowerCase() === "hybrid_wiki") {
+      conversation.strategy = "turn_log";
+    }
+    touched = true;
+  }
+
+  return touched ? conversation : null;
+}
+
+function buildMemoryBodyFromFlags(parsed, options = {}) {
+  const body = readJsonObjectInput(parsed, {
+    jsonFlag: options.bodyJsonFlag || "body-json",
+    fileFlag: options.bodyFileFlag || "body-file",
+    label: options.bodyLabel || "memory request body"
+  });
+  setIfDefined(body, "name", maybeStringFlag(parsed, "name"));
+  setIfDefined(body, "description", maybeNullableStringFlag(parsed, "description"));
+  setIfDefined(body, "role", maybeNullableStringFlag(parsed, "role"));
+  setIfDefined(body, "personality", maybeNullableStringFlag(parsed, "personality"));
+  setIfDefined(body, "provider", maybeNullableStringFlag(parsed, "provider"));
+  setIfDefined(body, "model", maybeNullableStringFlag(parsed, "model"));
+  setIfDefined(body, "instructions", maybeNullableStringFlag(parsed, "instructions"));
+
+  const metadata = readJsonObjectInput(parsed, {
+    jsonFlag: "metadata-json",
+    fileFlag: "metadata-file",
+    label: "memory metadata"
+  });
+  if (Object.keys(metadata).length) {
+    body.metadata = metadata;
+  }
+
+  const sourceConfig = readJsonObjectInput(parsed, {
+    jsonFlag: "source-config-json",
+    fileFlag: "source-config-file",
+    label: "memory source config"
+  });
+  if (Object.keys(sourceConfig).length) {
+    body.sourceConfig = {
+      ...(body.sourceConfig && typeof body.sourceConfig === "object" && !Array.isArray(body.sourceConfig) ? body.sourceConfig : {}),
+      ...sourceConfig
+    };
+  }
+
+  const existingConversation = body.sourceConfig && typeof body.sourceConfig === "object" && body.sourceConfig.conversationMemory && typeof body.sourceConfig.conversationMemory === "object"
+    ? body.sourceConfig.conversationMemory
+    : null;
+  const conversationMemory = buildConversationMemoryConfigFromFlags(parsed, existingConversation);
+  if (conversationMemory) {
+    body.sourceConfig = {
+      ...(body.sourceConfig && typeof body.sourceConfig === "object" && !Array.isArray(body.sourceConfig) ? body.sourceConfig : {}),
+      conversationMemory
+    };
+  }
+  return body;
+}
+
 function formatRoles(roles) {
   return Array.isArray(roles) && roles.length ? roles.join(",") : "(none)";
 }
@@ -3002,6 +3120,47 @@ function renderAuditLogs(logs) {
   for (const entry of logs) {
     console.log(`#${entry.id}  tenant=${entry.tenantId || "(all)"}  action=${entry.action}  actor=${entry.actorType || "system"}:${entry.actorId || "(none)"}`);
     console.log(`   target=${entry.targetType || "(none)"}:${entry.targetId || "(none)"}  created=${formatDateTime(entry.createdAt)}  requestId=${entry.requestId || "(none)"}`);
+  }
+}
+
+function renderMemoriesList(memories, title = "Memories") {
+  if (!memories.length) {
+    console.log(`No ${title.toLowerCase()}.`);
+    return;
+  }
+  console.log(`${title}:`);
+  console.log("");
+  for (const memory of memories) {
+    const conversation = memory?.sourceConfig?.conversationMemory && typeof memory.sourceConfig.conversationMemory === "object"
+      ? memory.sourceConfig.conversationMemory
+      : {};
+    console.log(`${memory.id || "(unknown)"}  ${memory.name || "(unnamed)"}  model=${memory.model || "(default)"}  conversation=${conversation.enabled ? "on" : "off"}  strategy=${conversation.strategy || "turn_log"}`);
+  }
+}
+
+function renderMemoryRecord(memory, options = {}) {
+  if (!memory) {
+    console.log("Memory not found.");
+    return;
+  }
+  const conversation = memory?.sourceConfig?.conversationMemory && typeof memory.sourceConfig.conversationMemory === "object"
+    ? memory.sourceConfig.conversationMemory
+    : {};
+  console.log(`${options.title || "Memory"}: ${memory.id || "(unknown)"}`);
+  console.log(`Name: ${memory.name || "(none)"}`);
+  console.log(`Description: ${memory.description || "(none)"}`);
+  console.log(`Role: ${memory.role || "(none)"}`);
+  console.log(`Personality: ${memory.personality || "(none)"}`);
+  console.log(`Provider/model: ${memory.provider || "(default)"} / ${memory.model || "(default)"}`);
+  console.log(`Collection: ${memory.collection || "(unknown)"}`);
+  console.log(`Conversation memory: ${conversation.enabled ? "enabled" : "disabled"}`);
+  console.log(`Conversation strategy: ${conversation.strategy || "turn_log"}`);
+  console.log(`Conversation wiki: ${conversation.wikiEnabled || conversation.strategy === "hybrid_wiki" ? "enabled" : "off"}`);
+  if (memory.metadata && Object.keys(memory.metadata).length) {
+    console.log(`Metadata: ${JSON.stringify(memory.metadata)}`);
+  }
+  if (memory.sourceConfig && Object.keys(memory.sourceConfig).length) {
+    console.log(`Source config: ${JSON.stringify(memory.sourceConfig)}`);
   }
 }
 
@@ -4100,6 +4259,73 @@ async function handleAudit(parsed) {
   printJsonOrSummary(parsed, payload, () => renderAuditLogs(Array.isArray(data.logs) ? data.logs : []));
 }
 
+async function handleMemories(parsed) {
+  const subcommand = normalizeSubcommand(parsed, ["list", "get", "show", "create", "update", "delete", "status"]);
+  const memoryId = maybeStringFlag(parsed, "id", "memory-id");
+
+  if (subcommand === "list") {
+    const payload = await requestApiJson(parsed, "GET", "/v1/memories");
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderMemoriesList(Array.isArray(data.memories) ? data.memories : []));
+    return;
+  }
+
+  if (subcommand === "get" || subcommand === "show") {
+    if (!memoryId) throw new Error("memories get requires --id.");
+    const payload = await requestApiJson(parsed, "GET", `/v1/memories/${encodeURIComponent(memoryId)}`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderMemoryRecord(data.memory || data.brain, { title: "Memory" }));
+    return;
+  }
+
+  if (subcommand === "status") {
+    if (!memoryId) throw new Error("memories status requires --id.");
+    const payload = await requestApiJson(parsed, "GET", `/v1/memories/${encodeURIComponent(memoryId)}/status`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => {
+      renderMemoryRecord(data.memory || data.brain, { title: "Memory status" });
+      if (data.status && Object.keys(data.status).length) {
+        console.log(`Status: ${JSON.stringify(data.status)}`);
+      }
+    });
+    return;
+  }
+
+  if (subcommand === "create") {
+    const body = buildMemoryBodyFromFlags(parsed);
+    if (!body.name) {
+      throw new Error("memories create requires --name or --body-json/--body-file with a name.");
+    }
+    const payload = await requestApiJson(parsed, "POST", "/v1/memories", { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderMemoryRecord(data.memory || data.brain, { title: "Memory created" }));
+    return;
+  }
+
+  if (subcommand === "update") {
+    if (!memoryId) throw new Error("memories update requires --id.");
+    const body = buildMemoryBodyFromFlags(parsed);
+    if (!Object.keys(body).length) {
+      throw new Error("memories update requires one or more fields, --source-config-json/--source-config-file, or --body-json/--body-file.");
+    }
+    const payload = await requestApiJson(parsed, "PATCH", `/v1/memories/${encodeURIComponent(memoryId)}`, { body });
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderMemoryRecord(data.memory || data.brain, { title: "Memory updated" }));
+    return;
+  }
+
+  if (subcommand === "delete") {
+    if (!memoryId) throw new Error("memories delete requires --id.");
+    await ensureConfirmedAction(parsed, `Delete Memory ${memoryId}?`, false);
+    const payload = await requestApiJson(parsed, "DELETE", `/v1/memories/${encodeURIComponent(memoryId)}`);
+    const data = unwrapEnvelope(payload);
+    printJsonOrSummary(parsed, payload, () => renderMemoryRecord(data.memory || data.brain, { title: "Memory deleted" }));
+    return;
+  }
+
+  throw new Error("memories requires a subcommand: list, get, create, update, delete, or status.");
+}
+
 function handleConfig(parsed) {
   const sub = parsed.subcommand || "show";
   if (sub !== "show") {
@@ -4173,6 +4399,10 @@ async function main() {
       return;
     case "audit":
       await handleAudit(parsed);
+      return;
+    case "memories":
+    case "memory":
+      await handleMemories(parsed);
       return;
     case "collections":
       await handleCollections(parsed);

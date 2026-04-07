@@ -126,6 +126,29 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
   }'
 ```
 
+To create a hosted Memory with explicit conversation-memory mode, set `sourceConfig.conversationMemory.strategy` to either `turn_log` or `hybrid_wiki`:
+
+```bash
+curl -sS "${SUPAVECTOR_BASE_URL}/v1/memories" \
+  -H "X-API-Key: ${SUPAVECTOR_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Support Memory",
+    "provider": "openai",
+    "model": "gpt-5.2",
+    "sourceConfig": {
+      "conversationMemory": {
+        "enabled": true,
+        "autoWriteDefault": true,
+        "includeInAskDefault": true,
+        "strategy": "turn_log"
+      }
+    }
+  }'
+```
+
+If you want bounded long-term conversation state, switch that `strategy` value to `hybrid_wiki` and optionally add wiki fields such as `wikiEnabled`, `wikiPages`, `wikiUpdateEveryTurns`, `wikiKeepRecentTurns`, `wikiRawRetentionDays`, or `wikiPageMaxChars`. If you do not want conversation wiki, leave the strategy at `turn_log` or omit it.
+
 `/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Memory GitHub repo sync applies that automatically for matched repo files.
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.

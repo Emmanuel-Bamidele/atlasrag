@@ -646,6 +646,30 @@ async function getMemoryItemById(id, tenantId, principalId) {
   return res.rows[0] || null;
 }
 
+async function getMemoryItemByExternalId({ tenantId, collection, externalId, principalId }) {
+  const clauses = ["tenant_id = $1", "collection = $2", "external_id = $3"];
+  const params = [tenantId, collection, externalId];
+
+  if (principalId) {
+    params.push(principalId);
+    clauses.push(`(
+      visibility IS NULL
+      OR visibility = 'tenant'
+      OR (visibility = 'private' AND principal_id = $${params.length})
+      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
+    )`);
+  }
+
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     LIMIT 1`,
+    params
+  );
+  return res.rows[0] || null;
+}
+
 async function deleteMemoryItemById(id) {
   await pool.query(`DELETE FROM memory_items WHERE id = $1`, [id]);
 }
@@ -777,6 +801,161 @@ async function listMemoryItemsByExternalPrefix({ tenantId, collection, prefix })
     [tenantId, collection, `${cleanPrefix}%`]
   );
   return res.rows;
+}
+
+async function listConversationWikiItems({ tenantId, collection, conversationId, pages, principalId }) {
+  const clauses = [
+    "tenant_id = $1",
+    "collection = $2",
+    "item_type = 'summary'",
+    "metadata->>'conversationId' = $3",
+    "metadata->>'kind' = 'conversation_wiki_page'"
+  ];
+  const params = [tenantId, collection, conversationId];
+
+  if (Array.isArray(pages) && pages.length) {
+    params.push(pages);
+    clauses.push(`metadata->>'page' = ANY($${params.length})`);
+  }
+
+  if (principalId) {
+    params.push(principalId);
+    clauses.push(`(
+      visibility IS NULL
+      OR visibility = 'tenant'
+      OR (visibility = 'private' AND principal_id = $${params.length})
+      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
+    )`);
+  }
+
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at ASC, id ASC`,
+    params
+  );
+  return res.rows;
+}
+
+async function listConversationTurnItems({ tenantId, collection, conversationId, afterCreatedAt = null, limit = 24, principalId }) {
+  const clauses = [
+    "tenant_id = $1",
+    "collection = $2",
+    "item_type = 'conversation'",
+    "metadata->>'conversationId' = $3"
+  ];
+  const params = [tenantId, collection, conversationId];
+
+  if (afterCreatedAt) {
+    params.push(afterCreatedAt);
+    clauses.push(`created_at > $${params.length}`);
+  }
+
+  if (principalId) {
+    params.push(principalId);
+    clauses.push(`(
+      visibility IS NULL
+      OR visibility = 'tenant'
+      OR (visibility = 'private' AND principal_id = $${params.length})
+      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
+    )`);
+  }
+
+  params.push(limit);
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at ASC, id ASC
+     LIMIT $${params.length}`,
+    params
+  );
+  return res.rows;
+}
+
+async function listRecentConversationTurnItems({ tenantId, collection, conversationId, limit = 24, principalId }) {
+  const clauses = [
+    "tenant_id = $1",
+    "collection = $2",
+    "item_type = 'conversation'",
+    "metadata->>'conversationId' = $3"
+  ];
+  const params = [tenantId, collection, conversationId];
+
+  if (principalId) {
+    params.push(principalId);
+    clauses.push(`(
+      visibility IS NULL
+      OR visibility = 'tenant'
+      OR (visibility = 'private' AND principal_id = $${params.length})
+      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
+    )`);
+  }
+
+  params.push(limit);
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at DESC, id DESC
+     LIMIT $${params.length}`,
+    params
+  );
+  return res.rows.slice().reverse();
+}
+
+async function listConversationTurnItemsForPrune({ tenantId, collection, conversationId, beforeCreatedAt, keepRecentTurns = 4, principalId }) {
+  const clauses = [
+    "tenant_id = $1",
+    "collection = $2",
+    "item_type = 'conversation'",
+    "metadata->>'conversationId' = $3",
+    "created_at <= $4"
+  ];
+  const params = [tenantId, collection, conversationId, beforeCreatedAt];
+
+  if (principalId) {
+    params.push(principalId);
+    clauses.push(`(
+      visibility IS NULL
+      OR visibility = 'tenant'
+      OR (visibility = 'private' AND principal_id = $${params.length})
+      OR (visibility = 'acl' AND (principal_id = $${params.length} OR $${params.length} = ANY(COALESCE(acl_principals, ARRAY[]::TEXT[]))))
+    )`);
+  }
+
+  params.push(Math.max(0, keepRecentTurns));
+  const res = await pool.query(
+    `WITH ranked AS (
+       SELECT ${MEMORY_ITEM_SELECT_COLUMNS},
+              ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn
+       FROM memory_items
+       WHERE ${clauses.join(" AND ")}
+     )
+     SELECT *
+     FROM ranked
+     WHERE rn > $${params.length}
+     ORDER BY created_at ASC, id ASC`,
+    params
+  );
+  return res.rows;
+}
+
+async function findActiveConversationWikiJob({ tenantId, collection, conversationId }) {
+  const res = await pool.query(
+    `SELECT id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at
+     FROM memory_jobs
+     WHERE tenant_id = $1
+       AND job_type = 'conversation_wiki_update'
+       AND status IN ('queued', 'running')
+       AND input->>'collection' = $2
+       AND input->>'conversationId' = $3
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [tenantId, collection, conversationId]
+  );
+  return res.rows[0] || null;
 }
 
 async function recordMemoryEvent({ memoryId, tenantId, eventType, eventValue, createdAt }) {
@@ -1065,6 +1244,55 @@ async function claimMemoryJob({ id, tenantId }) {
     [id, tenantId || null]
   );
   return res.rows[0] || null;
+}
+
+function buildConversationWikiLockKey({ tenantId, collection, conversationId }) {
+  return [
+    "conversation_wiki",
+    String(tenantId || "").trim(),
+    String(collection || "").trim(),
+    String(conversationId || "").trim()
+  ].join(":");
+}
+
+function buildAdvisoryLockInts(key) {
+  const digest = crypto.createHash("sha256").update(String(key || "")).digest();
+  return [
+    digest.readInt32BE(0),
+    digest.readInt32BE(4)
+  ];
+}
+
+async function acquireConversationWikiLock({ tenantId, collection, conversationId }) {
+  const key = buildConversationWikiLockKey({ tenantId, collection, conversationId });
+  const [major, minor] = buildAdvisoryLockInts(key);
+  const client = await pool.connect();
+  try {
+    const res = await client.query(
+      "SELECT pg_try_advisory_lock($1, $2) AS locked",
+      [major, minor]
+    );
+    if (!res.rows[0]?.locked) {
+      client.release();
+      return null;
+    }
+    return { client, key, major, minor };
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+}
+
+async function releaseConversationWikiLock(lock) {
+  const client = lock?.client;
+  if (!client) return;
+  try {
+    if (Number.isFinite(lock.major) && Number.isFinite(lock.minor)) {
+      await client.query("SELECT pg_advisory_unlock($1, $2)", [lock.major, lock.minor]).catch(() => null);
+    }
+  } finally {
+    client.release();
+  }
 }
 
 async function getIdempotencyKey({ tenantId, endpoint, idempotencyKey }) {
@@ -2888,6 +3116,7 @@ module.exports = {
   listMemoryItemsByTier,
   countMemoryItemsByTier,
   getMemoryItemById,
+  getMemoryItemByExternalId,
   deleteMemoryItemById,
   deleteMemoryItemByNamespaceId,
   getArtifactByExternalId,
@@ -2895,6 +3124,10 @@ module.exports = {
   listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
   listMemoryItemsByExternalPrefix,
+  listConversationWikiItems,
+  listConversationTurnItems,
+  listRecentConversationTurnItems,
+  listConversationTurnItemsForPrune,
   recordMemoryEvent,
   updateMemoryItemMetrics,
   listMemoryItemsForValueDecay,
@@ -2905,8 +3138,11 @@ module.exports = {
   createMemoryLink,
   createMemoryJob,
   claimMemoryJob,
+  acquireConversationWikiLock,
+  releaseConversationWikiLock,
   updateMemoryJob,
   getMemoryJobById,
+  findActiveConversationWikiJob,
   ensureTenant,
   listTenants,
   getUserByUsername,
