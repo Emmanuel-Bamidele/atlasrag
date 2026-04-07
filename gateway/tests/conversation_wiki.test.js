@@ -138,7 +138,18 @@ function testBuildsTurnExchangesAndPrompt() {
         title: "Conversation wiki",
         note: null,
         paragraphs: ["Earlier draft paragraph."]
-      }
+      },
+      previousWikiSourceExchanges: [
+        {
+          question: "What mattered before?",
+          responses: [
+            {
+              role: "assistant",
+              text: "The earlier answer explained the prior context."
+            }
+          ]
+        }
+      ]
     },
     recentTurns: [
       {
@@ -161,10 +172,21 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.match(prompt.system, /Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information/);
   assert.match(prompt.user, /Previous wiki article text:/);
   assert.match(prompt.user, /Earlier draft paragraph\./);
+  assert.match(prompt.user, /Previous wiki source exchanges JSON:/);
+  assert.match(prompt.user, /The earlier answer explained the prior context\./);
   assert.match(prompt.user, /Question and answer digest:/);
   assert.match(prompt.user, /Question: How can I demonstrate consistency in my work\?/);
   assert.match(prompt.user, /Answer 1 \(assistant @ 2026-04-07T01:01:00.000Z\): Show a repeatable pattern of follow-through, clear communication, and reliable outcomes\./);
   assert.match(prompt.user, /Question and response exchanges JSON:/);
+}
+
+{
+  assert.equal(__testHooks.resolveConversationWikiSourceCheckpoint([
+    { checkpointTurnExternalId: "turn-42" }
+  ], { force: false }), "turn-42");
+  assert.equal(__testHooks.resolveConversationWikiSourceCheckpoint([
+    { checkpointTurnExternalId: "turn-42" }
+  ], { force: true }), null);
 }
 
 async function testConversationWikiJobRetryableFailureRequeues() {
@@ -280,6 +302,86 @@ async function testPrunesConversationTailAndCountsQueuedDeletes() {
   assert.deepEqual(result, { pruned: 2, queued: 1 });
 }
 
+async function testClearsConversationMemoryCollection() {
+  const steps = [];
+  const result = await __testHooks.clearConversationMemoryCollectionWithDeps({
+    listMemoryItemsByCollection: async () => ([
+      {
+        id: "memory-1",
+        namespace_id: "ns-1",
+        tenant_id: "tenant-1",
+        collection: "__brain_conv_test",
+        metadata: { conversationId: "conv-1" }
+      },
+      {
+        id: "memory-2",
+        namespace_id: "ns-2",
+        tenant_id: "tenant-1",
+        collection: "__brain_conv_test",
+        metadata: { conversationId: "conv-2" }
+      }
+    ]),
+    listMemoryJobsByCollection: async () => ([
+      {
+        id: "job-1",
+        job_type: "conversation_wiki_update",
+        input: JSON.stringify({
+          collection: "__brain_conv_test",
+          conversationId: "conv-2"
+        })
+      },
+      {
+        id: "job-2",
+        job_type: "delete_reconcile",
+        input: JSON.stringify({
+          collection: "__brain_conv_test"
+        })
+      }
+    ]),
+    acquireConversationWikiLock: async ({ conversationId }) => {
+      steps.push(`lock:${conversationId}`);
+      return { conversationId };
+    },
+    releaseConversationWikiLock: async (lock) => {
+      steps.push(`unlock:${lock.conversationId}`);
+    },
+    deleteMemoryJobsByCollection: async ({ jobTypes }) => {
+      steps.push(`deleteJobs:${jobTypes.join(",")}`);
+      return 2;
+    },
+    deleteMemoryItemFully: async (item, options) => {
+      steps.push(`deleteItem:${item.id}:${options.reason}`);
+      if (item.id === "memory-2") {
+        return { deleted: false, queued: true, vectorsDeleted: 1 };
+      }
+      return { deleted: true, queued: false, vectorsDeleted: 3 };
+    }
+  }, {
+    tenantId: "tenant-1",
+    collection: "__brain_conv_test",
+    requestId: "req-1",
+    source: "conversation_wiki_api"
+  });
+
+  assert.deepEqual(steps, [
+    "lock:conv-1",
+    "lock:conv-2",
+    "deleteJobs:conversation_wiki_update,delete_reconcile",
+    "deleteItem:memory-1:conversation_memory_clear_all",
+    "deleteItem:memory-2:conversation_memory_clear_all",
+    "unlock:conv-2",
+    "unlock:conv-1"
+  ]);
+  assert.equal(result.collection, "__brain_conv_test");
+  assert.equal(result.conversationCount, 2);
+  assert.deepEqual(result.conversationIds, ["conv-1", "conv-2"]);
+  assert.equal(result.memoryItemCount, 2);
+  assert.equal(result.deletedCount, 1);
+  assert.equal(result.queuedCount, 1);
+  assert.equal(result.deletedJobCount, 2);
+  assert.equal(result.deletedVectors, 4);
+}
+
 async function main() {
   testNormalizesWikiPages();
   testBuildsConversationWikiPageText();
@@ -292,6 +394,7 @@ async function main() {
   }
   await testConversationWikiEnqueueDedupesConcurrentRequests();
   await testPrunesConversationTailAndCountsQueuedDeletes();
+  await testClearsConversationMemoryCollection();
   console.log("conversation wiki tests passed");
 }
 

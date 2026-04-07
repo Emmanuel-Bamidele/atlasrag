@@ -30,6 +30,11 @@ const {
   listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
   listMemoryItemsByExternalPrefix,
+  listMemoryItemsByCollection,
+  listConversationWikiItems,
+  listConversationTurnItems,
+  listRecentConversationTurnItems,
+  listConversationTurnItemsForPrune,
   recordMemoryEvent,
   updateMemoryItemMetrics,
   listMemoryItemsForValueDecay,
@@ -44,7 +49,9 @@ const {
   getMemoryJobById,
   listDueMemoryJobs,
   listMemoryJobs,
+  listMemoryJobsByCollection,
   findActiveDeleteJob,
+  deleteMemoryJobsByCollection,
   deleteMemoryItemsByCollection,
   beginIdempotencyKey,
   touchIdempotencyKey,
@@ -386,6 +393,10 @@ const CONVERSATION_WIKI_MAX_TITLE_CHARS = parseInt(process.env.CONVERSATION_WIKI
 const CONVERSATION_WIKI_MAX_NOTE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_NOTE_CHARS || "240", 10);
 const CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS || "1800", 10);
 const CONVERSATION_WIKI_MAX_SECTIONS = parseInt(process.env.CONVERSATION_WIKI_MAX_SECTIONS || "8", 10);
+const CONVERSATION_WIKI_MAX_STORED_EXCHANGES = parseInt(process.env.CONVERSATION_WIKI_MAX_STORED_EXCHANGES || "24", 10);
+const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES || "4", 10);
+const CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS || "900", 10);
+const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS || "1800", 10);
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
 const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
@@ -2476,8 +2487,67 @@ function buildConversationWikiTurnExchanges(recentTurns = []) {
   }));
 }
 
+function normalizeConversationWikiStoredExchanges(value = [], { label = "conversationWiki.sourceExchanges" } = {}) {
+  const exchanges = [];
+  const seen = new Set();
+  for (let exchangeIndex = 0; exchangeIndex < (Array.isArray(value) ? value.length : 0); exchangeIndex += 1) {
+    const rawExchange = value[exchangeIndex];
+    if (!rawExchange || typeof rawExchange !== "object" || Array.isArray(rawExchange)) continue;
+    const question = normalizeConversationWikiParagraphText(
+      rawExchange.question,
+      CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS
+    ) || null;
+    const askedAt = normalizeConversationWikiInlineText(rawExchange.askedAt, 80) || null;
+    const questionExternalId = normalizeConversationWikiInlineText(rawExchange.questionExternalId, 160) || null;
+    const responses = [];
+    const rawResponses = Array.isArray(rawExchange.responses) ? rawExchange.responses : [];
+    for (let responseIndex = 0; responseIndex < rawResponses.length; responseIndex += 1) {
+      const rawResponse = rawResponses[responseIndex];
+      if (!rawResponse || typeof rawResponse !== "object" || Array.isArray(rawResponse)) continue;
+      const text = normalizeConversationWikiParagraphText(
+        rawResponse.text,
+        CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS
+      ) || null;
+      if (!text) continue;
+      const role = normalizeConversationWikiInlineText(rawResponse.role, 40) || "assistant";
+      const createdAt = normalizeConversationWikiInlineText(rawResponse.createdAt, 80) || null;
+      const externalId = normalizeConversationWikiInlineText(rawResponse.externalId, 160) || null;
+      responses.push({ role, text, createdAt, externalId });
+      if (responses.length >= CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES) break;
+    }
+    if (!question && !responses.length) continue;
+    const key = stableJson({
+      questionExternalId,
+      question: question ? question.toLowerCase() : null,
+      responses: responses.map((response) => ({
+        externalId: response.externalId || null,
+        text: response.text.toLowerCase()
+      }))
+    });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    exchanges.push({
+      question,
+      askedAt,
+      questionExternalId,
+      responseCount: responses.length,
+      responses
+    });
+    if (exchanges.length >= CONVERSATION_WIKI_MAX_STORED_EXCHANGES) break;
+  }
+  return exchanges;
+}
+
+function mergeConversationWikiStoredExchanges(...sets) {
+  return normalizeConversationWikiStoredExchanges(
+    sets.flatMap((set) => (Array.isArray(set) ? set : []))
+  );
+}
+
 function buildConversationWikiExchangeDigest(recentTurns = []) {
-  const exchanges = buildConversationWikiTurnExchanges(recentTurns);
+  const exchanges = Array.isArray(recentTurns) && recentTurns.length && recentTurns[0] && typeof recentTurns[0] === "object" && "responses" in recentTurns[0]
+    ? normalizeConversationWikiStoredExchanges(recentTurns)
+    : normalizeConversationWikiStoredExchanges(buildConversationWikiTurnExchanges(recentTurns));
   if (!exchanges.length) return "No question-and-answer exchanges were available.";
   return exchanges.map((exchange) => {
     const lines = [`Exchange ${exchange.index}`];
@@ -2636,6 +2706,7 @@ function formatConversationWikiItem(memory, text) {
     title: normalized.title,
     note: normalized.note,
     paragraphs: normalized.paragraphs,
+    sourceExchanges: normalizeConversationWikiStoredExchanges(metadata.sourceExchanges),
     sections: normalizeConversationWikiSections(metadata.sections),
     text: String(text || "").trim(),
     memory: formatMemoryItem(memory)
@@ -2676,6 +2747,10 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
     : [];
   const turnExchanges = buildConversationWikiTurnExchanges(recentTurns);
   const turnExchangeDigest = buildConversationWikiExchangeDigest(recentTurns);
+  const previousWikiSourceExchanges = normalizeConversationWikiStoredExchanges(
+    existingWikiState?.previousWikiSourceExchanges,
+    { label: "conversationWiki.previousWikiSourceExchanges" }
+  );
   const previousWikiArticleText = Array.isArray(existingWikiState?.previousWiki?.paragraphs)
     ? existingWikiState.previousWiki.paragraphs.map((paragraph) => String(paragraph || "").trim()).filter(Boolean).join("\n\n")
     : "";
@@ -2707,6 +2782,7 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       "- Do not mention a user question without also carrying forward the substance of the assistant answer that followed it, unless no answer was actually given.",
       "- Preserve the substance of assistant answers in the article. Summaries should retain what was actually advised, explained, corrected, or recommended.",
       "- Use the explicit question-and-answer digest and the raw turn transcript together. The digest is the primary structure; the transcript is there to preserve wording and sequence.",
+      "- Use previous wiki source exchanges as factual scaffolding so earlier answered exchanges are not silently dropped when older raw turns are no longer available.",
       "- Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information, deferred the answer, or clearly identified missing source material.",
       "- Avoid filler like 'no user-specific context provided' unless that absence materially changed the answer.",
       "- Use the previous wiki article as source material to preserve durable information unless the newer turns clearly supersede it.",
@@ -2726,6 +2802,8 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       previousWikiArticleText || "No previous wiki article was available.",
       "Previous wiki JSON:",
       stableJson(existingWikiState || {}),
+      "Previous wiki source exchanges JSON:",
+      stableJson(previousWikiSourceExchanges),
       "Question and answer digest:",
       turnExchangeDigest,
       "Question and response exchanges JSON:",
@@ -7465,6 +7543,11 @@ function buildConversationWikiPromptState(records = []) {
       note: previousArticle.note,
       paragraphs: previousArticle.paragraphs
     },
+    previousWikiSourceExchanges: mergeConversationWikiStoredExchanges(
+      ...(Array.isArray(records)
+        ? records.map((record) => record?.sourceExchanges ?? record?.memory?.metadata?.sourceExchanges ?? [])
+        : [])
+    ),
     previousWikiPages: Array.isArray(records)
       ? records.map((record) => ({
         page: record?.page || null,
@@ -7542,6 +7625,10 @@ async function loadConversationTurnsForWikiUpdate({ tenantId, collection, conver
   return loadConversationTurnTexts(recent);
 }
 
+function resolveConversationWikiSourceCheckpoint(records = [], { force = false } = {}) {
+  return force ? null : getConversationWikiCheckpoint(records);
+}
+
 async function upsertConversationWikiPage({
   tenantId,
   collection,
@@ -7551,6 +7638,7 @@ async function upsertConversationWikiPage({
   note,
   paragraphs,
   sections,
+  sourceExchanges,
   checkpointTurnExternalId,
   revision,
   pageMaxChars,
@@ -7595,6 +7683,7 @@ async function upsertConversationWikiPage({
       position: 0,
       revision,
       checkpointTurnExternalId: checkpointTurnExternalId || null,
+      sourceExchanges: normalizeConversationWikiStoredExchanges(sourceExchanges),
       updatedAt,
       updatedBySource: sourceType || "conversation_wiki",
       itemCount: built.itemCount,
@@ -7648,6 +7737,83 @@ async function deleteConversationWikiPages({ tenantId, collection, conversationI
     deleted.push({ id: item.id, deleted: Boolean(result?.deleted), queued: Boolean(result?.queued) });
   }
   return deleted;
+}
+
+function collectConversationIdsForCollectionClear(memoryItems = [], jobs = []) {
+  const ids = new Set();
+  for (const item of Array.isArray(memoryItems) ? memoryItems : []) {
+    const conversationId = String(item?.metadata?.conversationId || "").trim();
+    if (conversationId) ids.add(conversationId);
+  }
+  for (const job of Array.isArray(jobs) ? jobs : []) {
+    const input = parseJsonPayload(job?.input) || {};
+    const conversationId = String(input?.conversationId || "").trim();
+    if (conversationId) ids.add(conversationId);
+  }
+  return Array.from(ids).sort((left, right) => left.localeCompare(right));
+}
+
+async function clearConversationMemoryCollectionWithDeps(deps, {
+  tenantId,
+  collection,
+  requestId,
+  source
+}) {
+  const listItems = deps.listMemoryItemsByCollection || listMemoryItemsByCollection;
+  const listJobs = deps.listMemoryJobsByCollection || listMemoryJobsByCollection;
+  const deleteJobs = deps.deleteMemoryJobsByCollection || deleteMemoryJobsByCollection;
+  const acquireLock = deps.acquireConversationWikiLock || acquireConversationWikiLock;
+  const releaseLock = deps.releaseConversationWikiLock || releaseConversationWikiLock;
+  const deleteItem = deps.deleteMemoryItemFully || deleteMemoryItemFully;
+  const jobTypes = ["conversation_wiki_update", "delete_reconcile"];
+  const items = await listItems({ tenantId, collection });
+  const jobs = await listJobs({ tenantId, collection, jobTypes });
+  const conversationIds = collectConversationIdsForCollectionClear(items, jobs);
+  const locks = [];
+  try {
+    for (const conversationId of conversationIds) {
+      const lock = await acquireLock({ tenantId, collection, conversationId });
+      if (!lock) {
+        const err = new Error(`Conversation wiki is currently being updated for ${conversationId}`);
+        err.status = 409;
+        err.code = "CONVERSATION_WIKI_LOCKED";
+        err.conversationId = conversationId;
+        throw err;
+      }
+      locks.push(lock);
+    }
+    const deletedJobCount = await deleteJobs({ tenantId, collection, jobTypes });
+    let deletedCount = 0;
+    let queuedCount = 0;
+    let deletedVectors = 0;
+    for (const item of items) {
+      const result = await deleteItem(item, {
+        reason: "conversation_memory_clear_all",
+        requestId,
+        source: source || "conversation_wiki"
+      });
+      if (result?.deleted) deletedCount += 1;
+      if (result?.queued) queuedCount += 1;
+      deletedVectors += Number(result?.vectorsDeleted || 0);
+    }
+    return {
+      collection,
+      conversationCount: conversationIds.length,
+      conversationIds,
+      memoryItemCount: items.length,
+      deletedCount,
+      queuedCount,
+      deletedJobCount,
+      deletedVectors,
+      note: "Cleared stored conversation memory, wiki articles, and collection-scoped conversation jobs."
+    };
+  } finally {
+    await Promise.all(locks.reverse().map((lock) => releaseLock(lock).catch(() => null)));
+  }
+}
+
+async function clearConversationMemoryCollection(args) {
+  return clearConversationMemoryCollectionWithDeps({}, args);
 }
 
 async function pruneConversationTurnsForWikiWithDeps(deps, { tenantId, collection, conversationId, principalId, checkpointTurnExternalId, keepRecentTurns, requestId }) {
@@ -7797,12 +7963,13 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       principalId
     });
     const checkpointTurnExternalId = getConversationWikiCheckpoint(existingPages);
+    const sourceCheckpointTurnExternalId = resolveConversationWikiSourceCheckpoint(existingPages, { force });
     const recentTurns = await loadConversationTurnsForWikiUpdate({
       tenantId,
       collection,
       conversationId,
       principalId,
-      checkpointTurnExternalId
+      checkpointTurnExternalId: sourceCheckpointTurnExternalId
     });
 
     if (!force && recentTurns.length < updateEveryTurns) {
@@ -7861,6 +8028,11 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }
 
     const existingWikiState = buildConversationWikiPromptState(existingPages);
+    const currentTurnExchanges = normalizeConversationWikiStoredExchanges(buildConversationWikiTurnExchanges(recentTurns));
+    const nextSourceExchanges = mergeConversationWikiStoredExchanges(
+      existingWikiState.previousWikiSourceExchanges,
+      currentTurnExchanges
+    );
     const prompt = buildConversationWikiUpdatePrompt({
       conversationId,
       pages,
@@ -7925,6 +8097,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
         title: built.title,
         note: built.note,
         paragraphs: built.paragraphs,
+        sourceExchanges: nextSourceExchanges,
         checkpointTurnExternalId: nextCheckpoint,
         revision,
         pageMaxChars,
@@ -8602,6 +8775,7 @@ async function deleteMemoryItemFully(item, options = {}) {
       jobId: job?.id || null
     };
   }
+  await deleteDoc(item.namespace_id);
   await deleteMemoryItemById(item.id);
   scheduleStorageUsageMeter(item.tenant_id, buildTelemetryContext({
     requestId: options.requestId || null,
@@ -12627,6 +12801,7 @@ app.put("/v1/memory/conversation_wiki", requireJwt, requireRole("indexer"), asyn
         note: req.body?.note,
         paragraphs: req.body?.paragraphs ?? req.body?.body ?? req.body?.text,
         sections: req.body?.sections || {},
+        sourceExchanges: req.body?.sourceExchanges || existing[0]?.sourceExchanges || existing[0]?.memory?.metadata?.sourceExchanges || [],
         checkpointTurnExternalId: req.body?.checkpointTurnExternalId || req.body?.checkpoint_turn_external_id || existing[0]?.checkpointTurnExternalId || null,
         revision,
       pageMaxChars: Number(req.body?.pageMaxChars || req.body?.page_max_chars || CONVERSATION_WIKI_MAX_PAGE_CHARS),
@@ -12714,6 +12889,53 @@ app.post("/v1/memory/conversation_wiki/update", requireJwt, requireRole("indexer
 
 app.post("/v1/memory/conversation_wiki/rebuild", requireJwt, requireRole("indexer"), async (req, res) => {
   return handleConversationWikiJobEnqueue(req, res, { forceDefault: true });
+});
+
+app.delete("/v1/memory/conversation_wiki/conversations", requireJwt, requireRole("indexer"), async (req, res) => {
+  let tenantId = null;
+  let collection = null;
+  try {
+    tenantId = resolveTenantId(req);
+    collection = resolveCollection(req);
+    const cleared = await clearConversationMemoryCollection({
+      tenantId,
+      collection,
+      requestId: req.requestId || null,
+      source: "conversation_wiki_api"
+    });
+    recordConversationWikiMetrics(tenantId, {
+      lastPageCount: 0,
+      lastUpdatedAt: new Date().toISOString()
+    });
+    emitConversationWikiTelemetry("cleared_collection", {
+      requestId: req.requestId,
+      tenantId,
+      collection,
+      source: "conversation_wiki_api"
+    }, {
+      conversation_count: cleared.conversationCount,
+      memory_item_count: cleared.memoryItemCount,
+      deleted_count: cleared.deletedCount,
+      queued_count: cleared.queuedCount,
+      deleted_job_count: cleared.deletedJobCount
+    });
+    await recordAudit(req, tenantId, {
+      action: "conversation_wiki.cleared",
+      targetType: "collection",
+      targetId: collection,
+      metadata: {
+        conversationCount: cleared.conversationCount,
+        memoryItemCount: cleared.memoryItemCount,
+        deletedCount: cleared.deletedCount,
+        queuedCount: cleared.queuedCount,
+        deletedJobCount: cleared.deletedJobCount,
+        deletedVectors: cleared.deletedVectors
+      }
+    });
+    sendOk(res, cleared, tenantId, collection);
+  } catch (e) {
+    sendError(res, e?.status || 400, e, "CONVERSATION_WIKI_CLEAR_ALL_FAILED", tenantId, collection);
+  }
 });
 
 app.delete("/v1/memory/conversation_wiki", requireJwt, requireRole("indexer"), async (req, res) => {
@@ -13383,7 +13605,11 @@ module.exports = {
     buildConversationWikiPageTitle,
     buildConversationWikiPageText,
     buildConversationWikiTurnExchanges,
+    normalizeConversationWikiStoredExchanges,
+    mergeConversationWikiStoredExchanges,
+    resolveConversationWikiSourceCheckpoint,
     buildConversationWikiUpdatePrompt,
+    clearConversationMemoryCollectionWithDeps,
     formatConversationWikiItem,
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
