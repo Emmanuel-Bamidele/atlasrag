@@ -281,9 +281,7 @@ async function main() {
   testParsesLegacyConversationWikiResponse();
   testFormatsConversationWikiAuditFields();
   testBuildsTurnExchangesAndPrompt();
-  if (__testHooks.finalizeJobFailureWithDeps) {
-    await testConversationWikiJobRetryableFailureRequeues();
-  }
+  await testConversationWikiJobRetryableFailureRequeues();
   await testConversationWikiEnqueueDedupesConcurrentRequests();
   await testPrunesConversationTailAndCountsQueuedDeletes();
   console.log("conversation wiki tests passed");

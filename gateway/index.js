@@ -7,7 +7,7 @@ const net = require("net");
 
 const { embedTexts, resolveEmbedDimension } = require("./ai");
 const { chunkText } = require("./chunk");
-const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
+const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVdelPrefix, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
   saveChunks,
@@ -23,6 +23,7 @@ const {
   getMemoryItemsByNamespaceIds,
   listMemoryItemsByTier,
   getMemoryItemById,
+  getMemoryItemByExternalId,
   deleteMemoryItemById,
   deleteMemoryItemByNamespaceId,
   getArtifactByExternalId,
@@ -30,6 +31,10 @@ const {
   listExpiredMemoryItemsGlobal,
   listMemoryItemsForCompaction,
   listMemoryItemsByExternalPrefix,
+  listConversationWikiItems,
+  listConversationTurnItems,
+  listRecentConversationTurnItems,
+  listConversationTurnItemsForPrune,
   recordMemoryEvent,
   updateMemoryItemMetrics,
   listMemoryItemsForValueDecay,
@@ -40,8 +45,11 @@ const {
   createMemoryLink,
   createMemoryJob,
   claimMemoryJob,
+  acquireConversationWikiLock,
+  releaseConversationWikiLock,
   updateMemoryJob,
   getMemoryJobById,
+  findActiveConversationWikiJob,
   listDueMemoryJobs,
   listMemoryJobs,
   findActiveDeleteJob,
@@ -85,6 +93,7 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer, generateCodeAnswer, normalizeCodeTask } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
+const { generateProviderText } = require("./provider_clients");
 const {
   DEFAULT_EMBED_PROVIDER,
   DEFAULT_EMBED_MODEL,
@@ -364,6 +373,8 @@ const REINDEX_SLEEP_MS = parseInt(process.env.REINDEX_SLEEP_MS || "0", 10);
 const REINDEX_LOG_EVERY = parseInt(process.env.REINDEX_LOG_EVERY || "500", 10);
 const REINDEX_TCP_ATTEMPTS = parseInt(process.env.REINDEX_TCP_ATTEMPTS || "12", 10);
 const REINDEX_TCP_DELAY_MS = parseInt(process.env.REINDEX_TCP_DELAY_MS || "2000", 10);
+const REINDEX_VERIFY_INTERVAL_MS = parseInt(process.env.REINDEX_VERIFY_INTERVAL_MS || "900000", 10);
+const VECTOR_WRITE_RETRY_ATTEMPTS = parseInt(process.env.VECTOR_WRITE_RETRY_ATTEMPTS || "2", 10);
 const TTL_SWEEP_ENABLED = process.env.TTL_SWEEP_ENABLED !== "0";
 const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300000", 10);
 const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
@@ -434,6 +445,8 @@ const MEMORY_COMPACT_COOLDOWN_HOURS = parseInt(process.env.MEMORY_COMPACT_COOLDO
 const MEMORY_SNAPSHOT_INTERVAL_MS = parseInt(process.env.TELEMETRY_SNAPSHOT_INTERVAL_MS || "300000", 10);
 const BILLING_STORAGE_INCLUDED_GB_MONTH = parseFloat(process.env.BILLING_STORAGE_INCLUDED_GB_MONTH || "0");
 let reindexStarted = false;
+let reindexRunning = false;
+let reindexAuditStarted = false;
 let ttlSweepRunning = false;
 let storageBillingAccrualRunning = false;
 let jobSweepRunning = false;
@@ -457,6 +470,8 @@ const AGENT_RE = /^[a-zA-Z0-9._:@-]+$/;
 const DEFAULT_COLLECTION = process.env.DEFAULT_COLLECTION || "default";
 const TENANT_SEARCH_MULTIPLIER = parseInt(process.env.TENANT_SEARCH_MULTIPLIER || "5", 10);
 const TENANT_SEARCH_CAP = parseInt(process.env.TENANT_SEARCH_CAP || "50", 10);
+const CODE_VECTOR_SEARCH_MULTIPLIER = parseInt(process.env.CODE_VECTOR_SEARCH_MULTIPLIER || "2", 10);
+const CODE_VECTOR_SEARCH_CAP = parseInt(process.env.CODE_VECTOR_SEARCH_CAP || "24", 10);
 const CHUNK_STRATEGY = String(process.env.CHUNK_STRATEGY || "token").toLowerCase() === "char" ? "char" : "token";
 const CHUNK_MAX_CHARS = parseInt(process.env.CHUNK_MAX_CHARS || "900", 10);
 const CHUNK_MAX_TOKENS = parseInt(process.env.CHUNK_MAX_TOKENS || "220", 10);
@@ -667,6 +682,63 @@ function emitLifecycleActionTelemetry(action, item, details = {}, context = {}) 
     namespace_id: item?.namespace_id || null,
     item_type: item?.item_type || null,
     ...details
+  });
+}
+
+function createConversationWikiMetricsBucket() {
+  return {
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    pagesUpdated: 0,
+    turnsPruned: 0,
+    queuedDeletes: 0,
+    lastPageCount: 0,
+    lastUpdatedAt: null
+  };
+}
+
+const conversationWikiMetrics = {
+  overall: createConversationWikiMetricsBucket(),
+  tenants: new Map()
+};
+
+function getConversationWikiMetricsBucket(tenantId) {
+  if (!conversationWikiMetrics.tenants.has(tenantId)) {
+    conversationWikiMetrics.tenants.set(tenantId, createConversationWikiMetricsBucket());
+  }
+  return conversationWikiMetrics.tenants.get(tenantId);
+}
+
+function applyConversationWikiMetricDelta(bucket, delta = {}) {
+  if (!bucket || !delta || typeof delta !== "object") return;
+  if (Number.isFinite(Number(delta.succeeded))) bucket.succeeded += Number(delta.succeeded);
+  if (Number.isFinite(Number(delta.failed))) bucket.failed += Number(delta.failed);
+  if (Number.isFinite(Number(delta.skipped))) bucket.skipped += Number(delta.skipped);
+  if (Number.isFinite(Number(delta.pagesUpdated))) bucket.pagesUpdated += Number(delta.pagesUpdated);
+  if (Number.isFinite(Number(delta.turnsPruned))) bucket.turnsPruned += Number(delta.turnsPruned);
+  if (Number.isFinite(Number(delta.queuedDeletes))) bucket.queuedDeletes += Number(delta.queuedDeletes);
+  if (Number.isFinite(Number(delta.lastPageCount))) bucket.lastPageCount = Math.max(0, Math.floor(Number(delta.lastPageCount)));
+  if (delta.lastUpdatedAt) bucket.lastUpdatedAt = String(delta.lastUpdatedAt);
+}
+
+function recordConversationWikiMetrics(tenantId, delta = {}) {
+  applyConversationWikiMetricDelta(conversationWikiMetrics.overall, delta);
+  if (tenantId) {
+    applyConversationWikiMetricDelta(getConversationWikiMetricsBucket(tenantId), delta);
+  }
+}
+
+function emitConversationWikiTelemetry(stage, context = {}, payload = {}) {
+  emitTelemetry("conversation_wiki", {
+    requestId: context.requestId || null,
+    tenantId: context.tenantId || null,
+    collection: context.collection || null,
+    source: context.source || "conversation_wiki"
+  }, {
+    stage,
+    conversation_id: context.conversationId || null,
+    ...payload
   });
 }
 
@@ -2699,6 +2771,7 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
     ].join("\n\n")
   };
 }
+
 function buildAuditActor(req) {
   const auth = req.user?.auth || "system";
   const actorId = req.user?.principal_id || req.user?.sub || null;
@@ -3662,97 +3735,115 @@ async function resolveExpectedEmbedVectorDim() {
 }
 
 async function reindexAllChunks() {
-  const mode = normalizeReindexMode(REINDEX_MODE);
-  if (mode === "off") return;
-
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn("[reindex] OPENAI_API_KEY not set; skipping auto reindex.");
+  if (reindexRunning) {
+    console.log("[reindex] Already running; skipping duplicate request.");
     return;
   }
+  reindexRunning = true;
+  try {
+    const mode = normalizeReindexMode(REINDEX_MODE);
+    if (mode === "off") return;
 
-  const totalChunks = await countChunks();
-  if (!totalChunks) {
-    console.log("[reindex] No stored chunks found; skipping.");
-    return;
-  }
-
-  await waitForVectorStore();
-  const expectedVectorDim = await resolveExpectedEmbedVectorDim();
-  let decision = shouldReindexStoredVectors({
-    mode,
-    totalChunks,
-    vectorCount: 0,
-    vectorDims: 0,
-    expectedVectorDim
-  });
-
-  if (mode === "auto") {
-    try {
-      const { vectors, vectorDims } = await getVectorStats();
-      decision = shouldReindexStoredVectors({
-        mode,
-        totalChunks,
-        vectorCount: vectors,
-        vectorDims,
-        expectedVectorDim
-      });
-      if (!decision.shouldReindex) {
-        console.log(`[reindex] Vector store already has ${vectors} vectors with dim ${vectorDims}; skipping auto reindex.`);
-        return;
-      }
-      if (decision.reason === "dimension_mismatch") {
-        console.log(`[reindex] Vector dimension mismatch detected (store=${vectorDims}, expected=${expectedVectorDim}); rebuilding vectors.`);
-      } else if (decision.reason === "count_mismatch") {
-        console.log(`[reindex] Vector count mismatch detected (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
-      }
-    } catch (err) {
-      console.warn("[reindex] Failed to read vector stats; continuing with reindex.");
-      decision = { shouldReindex: true, clearFirst: true, reason: "stats_unavailable" };
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[reindex] OPENAI_API_KEY not set; skipping auto reindex.");
+      return;
     }
-  }
 
-  const batchSize = Number.isFinite(REINDEX_BATCH_SIZE) && REINDEX_BATCH_SIZE > 0 ? REINDEX_BATCH_SIZE : 64;
-  const fetchSize = Number.isFinite(REINDEX_FETCH_SIZE) && REINDEX_FETCH_SIZE > 0 ? REINDEX_FETCH_SIZE : 256;
-  const logEvery = Number.isFinite(REINDEX_LOG_EVERY) && REINDEX_LOG_EVERY > 0 ? REINDEX_LOG_EVERY : 500;
-  const sleepMs = Number.isFinite(REINDEX_SLEEP_MS) && REINDEX_SLEEP_MS > 0 ? REINDEX_SLEEP_MS : 0;
-
-  if (decision.clearFirst) {
-    console.log("[reindex] Clearing vector store before rebuild...");
-    await clearVectorStore();
-  }
-
-  console.log(`[reindex] Starting reindex of ${totalChunks} chunks...`);
-  let processed = 0;
-  let lastId = null;
-  let buffer = [];
-
-  while (true) {
-    const rows = await listChunksAfter({ afterId: lastId, limit: fetchSize });
-    if (!rows.length) break;
-
-    for (const row of rows) {
-      buffer.push(row);
-      if (buffer.length >= batchSize) {
-        await reindexChunkBatch(buffer);
-        processed += buffer.length;
-        buffer = [];
-        if (processed % logEvery === 0 || processed >= totalChunks) {
-          console.log(`[reindex] Progress ${processed}/${totalChunks} chunks`);
+    await waitForVectorStore();
+    const totalChunks = await countChunks();
+    if (!totalChunks) {
+      try {
+        const { vectors } = await getVectorStats();
+        if (vectors > 0) {
+          console.log(`[reindex] No stored chunks found but vector store has ${vectors} vectors; clearing stale vectors.`);
+          await clearVectorStore();
         }
-        if (sleepMs) {
-          await sleep(sleepMs);
+      } catch (err) {
+        console.warn("[reindex] Failed to read vector stats while checking for stale vectors.");
+      }
+      console.log("[reindex] No stored chunks found; skipping.");
+      return;
+    }
+
+    const expectedVectorDim = await resolveExpectedEmbedVectorDim();
+    let decision = shouldReindexStoredVectors({
+      mode,
+      totalChunks,
+      vectorCount: 0,
+      vectorDims: 0,
+      expectedVectorDim
+    });
+
+    if (mode === "auto") {
+      try {
+        const { vectors, vectorDims } = await getVectorStats();
+        decision = shouldReindexStoredVectors({
+          mode,
+          totalChunks,
+          vectorCount: vectors,
+          vectorDims,
+          expectedVectorDim
+        });
+        if (!decision.shouldReindex) {
+          console.log(`[reindex] Vector store already has ${vectors} vectors with dim ${vectorDims}; skipping auto reindex.`);
+          return;
         }
+        if (decision.reason === "dimension_mismatch") {
+          console.log(`[reindex] Vector dimension mismatch detected (store=${vectorDims}, expected=${expectedVectorDim}); rebuilding vectors.`);
+        } else if (decision.reason === "count_mismatch") {
+          console.log(`[reindex] Vector count mismatch detected (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
+        }
+      } catch (err) {
+        console.warn("[reindex] Failed to read vector stats; continuing with reindex.");
+        decision = { shouldReindex: true, clearFirst: true, reason: "stats_unavailable" };
       }
     }
-    lastId = rows[rows.length - 1].chunk_id;
-  }
 
-  if (buffer.length) {
-    await reindexChunkBatch(buffer);
-    processed += buffer.length;
-  }
+    const batchSize = Number.isFinite(REINDEX_BATCH_SIZE) && REINDEX_BATCH_SIZE > 0 ? REINDEX_BATCH_SIZE : 64;
+    const fetchSize = Number.isFinite(REINDEX_FETCH_SIZE) && REINDEX_FETCH_SIZE > 0 ? REINDEX_FETCH_SIZE : 256;
+    const logEvery = Number.isFinite(REINDEX_LOG_EVERY) && REINDEX_LOG_EVERY > 0 ? REINDEX_LOG_EVERY : 500;
+    const sleepMs = Number.isFinite(REINDEX_SLEEP_MS) && REINDEX_SLEEP_MS > 0 ? REINDEX_SLEEP_MS : 0;
 
-  console.log(`[reindex] Completed: ${processed}/${totalChunks} chunks indexed.`);
+    if (decision.clearFirst) {
+      console.log("[reindex] Clearing vector store before rebuild...");
+      await clearVectorStore();
+    }
+
+    console.log(`[reindex] Starting reindex of ${totalChunks} chunks...`);
+    let processed = 0;
+    let lastId = null;
+    let buffer = [];
+
+    while (true) {
+      const rows = await listChunksAfter({ afterId: lastId, limit: fetchSize });
+      if (!rows.length) break;
+
+      for (const row of rows) {
+        buffer.push(row);
+        if (buffer.length >= batchSize) {
+          await reindexChunkBatch(buffer);
+          processed += buffer.length;
+          buffer = [];
+          if (processed % logEvery === 0 || processed >= totalChunks) {
+            console.log(`[reindex] Progress ${processed}/${totalChunks} chunks`);
+          }
+          if (sleepMs) {
+            await sleep(sleepMs);
+          }
+        }
+      }
+      lastId = rows[rows.length - 1].chunk_id;
+    }
+
+    if (buffer.length) {
+      await reindexChunkBatch(buffer);
+      processed += buffer.length;
+    }
+
+    console.log(`[reindex] Completed: ${processed}/${totalChunks} chunks indexed.`);
+  } finally {
+    reindexRunning = false;
+  }
 }
 
 function scheduleAutoReindex() {
@@ -3763,6 +3854,45 @@ function scheduleAutoReindex() {
       console.warn("[reindex] Failed:", err?.message || err);
     });
   }, 1500);
+}
+
+async function runVectorStoreConsistencyAuditOnce() {
+  const mode = normalizeReindexMode(REINDEX_MODE);
+  if (mode === "off") return;
+  if (reindexRunning) return;
+
+  try {
+    const totalChunks = await countChunks();
+    await waitForVectorStore();
+    const { vectors } = await getVectorStats();
+    if (totalChunks === 0) {
+      if (vectors > 0) {
+        console.warn(`[reindex] Periodic consistency check found ${vectors} stale vectors with no stored chunks; clearing vector store.`);
+        await clearVectorStore();
+      }
+      return;
+    }
+    if (vectors === totalChunks) return;
+    console.warn(`[reindex] Periodic consistency check detected vector count mismatch (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
+    await reindexAllChunks();
+  } catch (err) {
+    console.warn("[reindex] Periodic consistency check failed:", err?.message || err);
+  }
+}
+
+function scheduleVectorStoreConsistencyAudit() {
+  if (reindexAuditStarted) return;
+  const intervalMs = Number.isFinite(REINDEX_VERIFY_INTERVAL_MS) && REINDEX_VERIFY_INTERVAL_MS > 0
+    ? REINDEX_VERIFY_INTERVAL_MS
+    : 0;
+  if (!intervalMs) return;
+  reindexAuditStarted = true;
+  setTimeout(() => {
+    runVectorStoreConsistencyAuditOnce().catch(() => {});
+    setInterval(() => {
+      runVectorStoreConsistencyAuditOnce().catch(() => {});
+    }, intervalMs);
+  }, Math.min(intervalMs, 30000));
 }
 
 async function runTtlSweepOnce() {
@@ -5214,7 +5344,37 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, favorRecency, apiKey, embedProvider, embedModel }) {
+function resolveVectorSearchWindow(topK, { hasDocFilter = false, multiplier = null, cap = null } = {}) {
+  const fallbackMultiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
+  const fallbackCap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
+  const effectiveMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallbackMultiplier;
+  const effectiveCap = Number.isFinite(cap) && cap > 0 ? cap : fallbackCap;
+  return Math.min(topK * effectiveMultiplier * (hasDocFilter ? 2 : 1), effectiveCap);
+}
+
+async function searchChunks({
+  tenantId,
+  collection,
+  query,
+  k,
+  docIds,
+  principalId,
+  privileges,
+  enforceArtifactVisibility,
+  telemetry,
+  candidateTypes,
+  tags,
+  agentId,
+  since,
+  until,
+  policy,
+  favorRecency,
+  apiKey,
+  embedProvider,
+  embedModel,
+  vectorSearchMultiplier = null,
+  vectorSearchCap = null
+}) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -5333,10 +5493,12 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     console.warn(`[memory_candidates] cold candidates should be zero; got=${retrievalSet.coldCandidates}`);
   }
 
-  const multiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
-  const cap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
   const hasDocFilter = cleanDocIds.length > 0;
-  const internalK = Math.min(topK * multiplier * (hasDocFilter ? 2 : 1), cap);
+  const internalK = resolveVectorSearchWindow(topK, {
+    hasDocFilter,
+    multiplier: vectorSearchMultiplier,
+    cap: vectorSearchCap
+  });
   const scopedK = Math.max(1, Math.min(internalK, vectorSearchScannedCount));
   const cmd = buildVsearchIn(scopedK, qvec, candidateChunkIds);
   const line = await sendCmd(cmd);
@@ -6330,6 +6492,8 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     apiKey,
     embedProvider,
     embedModel,
+    vectorSearchMultiplier: CODE_VECTOR_SEARCH_MULTIPLIER,
+    vectorSearchCap: CODE_VECTOR_SEARCH_CAP,
     telemetry: buildTelemetryContext({
       requestId: telemetryContext.requestId,
       tenantId,
@@ -7123,18 +7287,7 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   const chunkRows = buildChunkRows(namespaceId, chunks);
 
   await saveChunks(chunkRows, { batchSize: CHUNK_UPSERT_BATCH_SIZE });
-
-  const vectorResults = await runBatchedCommandSet(
-    chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
-    {
-      batchSize: VECTOR_WRITE_BATCH_SIZE,
-      concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
-    }
-  );
-  const failedWrites = countFailedBatchCommands(vectorResults);
-  if (failedWrites > 0) {
-    throw new Error(`Failed to store ${failedWrites} vector(s) for memory namespace ${namespaceId}`);
-  }
+  await writeNamespaceVectors(namespaceId, chunkRows, vectors);
 
   scheduleStorageUsageMeter(parsed?.tenantId, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
@@ -7172,6 +7325,39 @@ function scheduleRedundancyUpdate(item) {
 
 async function deleteVectorsForDoc(namespaceId, options = {}) {
   const strict = options.strict === true;
+  const vectorCleanup = await deleteNamespaceVectorsOnly(namespaceId, { strict });
+  if (strict && vectorCleanup.failed > 0) {
+    return { deleted: vectorCleanup.deleted, failed: vectorCleanup.failed, removedDoc: false };
+  }
+  await deleteDoc(namespaceId);
+  return {
+    deleted: vectorCleanup.deleted,
+    failed: vectorCleanup.failed,
+    removedDoc: true
+  };
+}
+
+async function deleteNamespaceVectorsOnly(namespaceId, options = {}) {
+  const strict = options.strict === true;
+  const cleanNamespaceId = String(namespaceId || "").trim();
+  const prefix = cleanNamespaceId ? `${cleanNamespaceId}#` : "";
+  if (prefix) {
+    try {
+      const reply = String(await sendCmd(buildVdelPrefix(prefix)) || "").trim();
+      if (!/^ERR unknown command\b/i.test(reply)) {
+        if (/^ERR\b/i.test(reply)) {
+          return { deleted: 0, failed: 1 };
+        }
+        const deleted = Number.parseInt(reply, 10);
+        return {
+          deleted: Number.isFinite(deleted) && deleted >= 0 ? deleted : 0,
+          failed: 0
+        };
+      }
+    } catch (err) {
+      if (strict) return { deleted: 0, failed: 1 };
+    }
+  }
   const rows = await getChunksByDocId(namespaceId);
   const results = await runBatchedCommandSet(
     rows.map((row) => buildVdel(row.chunk_id)),
@@ -7182,11 +7368,40 @@ async function deleteVectorsForDoc(namespaceId, options = {}) {
   );
   const deleted = results.reduce((total, item) => total + (item?.ok ? 1 : 0), 0);
   const failed = countFailedBatchCommands(results);
-  if (strict && failed > 0) {
-    return { deleted, failed, removedDoc: false };
+  return { deleted, failed };
+}
+
+async function writeNamespaceVectors(namespaceId, chunkRows, vectors) {
+  const maxAttempts = Number.isFinite(VECTOR_WRITE_RETRY_ATTEMPTS) && VECTOR_WRITE_RETRY_ATTEMPTS > 0
+    ? VECTOR_WRITE_RETRY_ATTEMPTS
+    : 2;
+  let lastFailedWrites = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const vectorResults = await runBatchedCommandSet(
+      chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
+      {
+        batchSize: VECTOR_WRITE_BATCH_SIZE,
+        concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
+      }
+    );
+    const failedWrites = countFailedBatchCommands(vectorResults);
+    if (failedWrites === 0) {
+      if (attempt > 1) {
+        console.warn(`[index] vector write recovered namespace=${namespaceId} attempt=${attempt}/${maxAttempts}`);
+      }
+      return { attempts: attempt, failed: 0 };
+    }
+
+    lastFailedWrites = failedWrites;
+    console.warn(`[index] vector write failed namespace=${namespaceId} attempt=${attempt}/${maxAttempts} failed=${failedWrites}; clearing partial vectors.`);
+    const cleanup = await deleteNamespaceVectorsOnly(namespaceId, { strict: false });
+    if (cleanup.failed > 0) {
+      console.warn(`[index] partial vector cleanup failed namespace=${namespaceId} failed=${cleanup.failed}`);
+    }
   }
-  await deleteDoc(namespaceId);
-  return { deleted, failed, removedDoc: true };
+
+  throw new Error(`Failed to store ${lastFailedWrites} vector(s) for memory namespace ${namespaceId}`);
 }
 
 async function memoryWriteCore(req) {
@@ -7316,6 +7531,10 @@ async function dispatchMemoryJob(jobId, tenantId, jobType) {
     await runDeleteReconcileJob(jobId, tenantId);
     return;
   }
+  if (type === "conversation_wiki_update") {
+    await runConversationWikiUpdateJob(jobId, tenantId);
+    return;
+  }
   if (!type) {
     const job = await getMemoryJobById(jobId, tenantId);
     if (!job) return;
@@ -7325,26 +7544,34 @@ async function dispatchMemoryJob(jobId, tenantId, jobType) {
   console.warn(`[jobs] Unknown job type ${type} for job ${jobId}`);
 }
 
-async function finalizeJobFailure(job, err, options = {}) {
+async function finalizeJobFailureWithDeps(deps, job, err, options = {}) {
   const retryable = options.retryable !== false;
   const message = String(err?.message || err);
   const maxAttempts = Number.isFinite(job.max_attempts) && job.max_attempts > 0
     ? job.max_attempts
     : (Number.isFinite(JOB_MAX_ATTEMPTS) && JOB_MAX_ATTEMPTS > 0 ? JOB_MAX_ATTEMPTS : 3);
   const attempts = Number.isFinite(job.attempts) ? job.attempts + 1 : 1;
+  const updateJob = deps.updateMemoryJob || updateMemoryJob;
+  const backoff = deps.computeJobBackoff || computeJobBackoff;
+  const scheduleRetry = deps.scheduleRetry || ((fn, delay) => setTimeout(fn, delay));
+  const dispatchJob = deps.dispatchMemoryJob || dispatchMemoryJob;
 
   if (!retryable || attempts >= maxAttempts) {
-    await updateMemoryJob({ id: job.id, status: "failed", error: message, attempts });
+    await updateJob({ id: job.id, status: "failed", error: message, attempts });
     return { retried: false, attempts };
   }
 
-  const delay = computeJobBackoff(attempts);
+  const delay = backoff(attempts);
   const nextRunAt = new Date(Date.now() + delay);
-  await updateMemoryJob({ id: job.id, status: "queued", error: message, attempts, nextRunAt });
-  setTimeout(() => {
-    dispatchMemoryJob(job.id, job.tenant_id, job.job_type).catch(() => {});
+  await updateJob({ id: job.id, status: "queued", error: message, attempts, nextRunAt });
+  scheduleRetry(() => {
+    Promise.resolve(dispatchJob(job.id, job.tenant_id, job.job_type)).catch(() => {});
   }, delay);
   return { retried: true, attempts, nextRunAt };
+}
+
+async function finalizeJobFailure(job, err, options = {}) {
+  return finalizeJobFailureWithDeps({}, job, err, options);
 }
 
 async function cleanupJobDerivedItems({ jobId, tenantId, collection, expectedExternalIds }) {
@@ -7992,6 +8219,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }
   }
 }
+
 async function runReflectionJob(jobId, tenantId) {
   const job = await claimMemoryJob({ id: jobId, tenantId });
   if (!job) return;
@@ -10836,7 +11064,19 @@ const metricsHandler = async (req, res) => {
     "# HELP supavector_request_errors_total Error responses (>=500) observed in rolling window.",
     "# TYPE supavector_request_errors_total gauge",
     "# HELP supavector_request_error_rate Error rate observed in rolling window.",
-    "# TYPE supavector_request_error_rate gauge"
+    "# TYPE supavector_request_error_rate gauge",
+    "# HELP supavector_conversation_wiki_jobs_total Conversation wiki jobs observed since process start.",
+    "# TYPE supavector_conversation_wiki_jobs_total counter",
+    "# HELP supavector_conversation_wiki_pages_updated_total Conversation wiki pages updated since process start.",
+    "# TYPE supavector_conversation_wiki_pages_updated_total counter",
+    "# HELP supavector_conversation_wiki_turns_pruned_total Conversation turns pruned after wiki checkpoints since process start.",
+    "# TYPE supavector_conversation_wiki_turns_pruned_total counter",
+    "# HELP supavector_conversation_wiki_queued_deletes_total Conversation wiki prune/delete operations queued for later cleanup since process start.",
+    "# TYPE supavector_conversation_wiki_queued_deletes_total counter",
+    "# HELP supavector_conversation_wiki_last_page_count Last observed conversation wiki page count.",
+    "# TYPE supavector_conversation_wiki_last_page_count gauge",
+    "# HELP supavector_conversation_wiki_last_update_timestamp_seconds Unix timestamp of the last observed wiki update.",
+    "# TYPE supavector_conversation_wiki_last_update_timestamp_seconds gauge"
   ];
 
   const emitGroup = (group, baseLabels) => {
@@ -10850,9 +11090,26 @@ const metricsHandler = async (req, res) => {
     emitGroup(getLatencyStats(), { tenant_id: "__all__" });
   }
 
+  const emitConversationWikiMetricsForTenant = (tid, bucket) => {
+    lines.push(`supavector_conversation_wiki_jobs_total{tenant_id="${tid}",status="succeeded"} ${Number(bucket?.succeeded || 0)}`);
+    lines.push(`supavector_conversation_wiki_jobs_total{tenant_id="${tid}",status="failed"} ${Number(bucket?.failed || 0)}`);
+    lines.push(`supavector_conversation_wiki_jobs_total{tenant_id="${tid}",status="skipped"} ${Number(bucket?.skipped || 0)}`);
+    lines.push(`supavector_conversation_wiki_pages_updated_total{tenant_id="${tid}"} ${Number(bucket?.pagesUpdated || 0)}`);
+    lines.push(`supavector_conversation_wiki_turns_pruned_total{tenant_id="${tid}"} ${Number(bucket?.turnsPruned || 0)}`);
+    lines.push(`supavector_conversation_wiki_queued_deletes_total{tenant_id="${tid}"} ${Number(bucket?.queuedDeletes || 0)}`);
+    lines.push(`supavector_conversation_wiki_last_page_count{tenant_id="${tid}"} ${Number(bucket?.lastPageCount || 0)}`);
+    const lastUpdateSeconds = bucket?.lastUpdatedAt ? Math.floor(Date.parse(bucket.lastUpdatedAt) / 1000) : 0;
+    lines.push(`supavector_conversation_wiki_last_update_timestamp_seconds{tenant_id="${tid}"} ${Number.isFinite(lastUpdateSeconds) && lastUpdateSeconds > 0 ? lastUpdateSeconds : 0}`);
+  };
+
+  if (isAdmin) {
+    emitConversationWikiMetricsForTenant("__all__", conversationWikiMetrics.overall);
+  }
+
   const tenantStats = isAdmin ? getAllTenantLatencyStats() : { [tenantId]: getLatencyStats(tenantId) };
   for (const [tid, stats] of Object.entries(tenantStats)) {
     emitGroup(stats, { tenant_id: tid });
+    emitConversationWikiMetricsForTenant(tid, getConversationWikiMetricsBucket(tid));
   }
 
   res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
@@ -12728,6 +12985,7 @@ app.delete("/v1/memory/conversation_wiki", requireJwt, requireRole("indexer"), a
     sendError(res, 400, e, "CONVERSATION_WIKI_DELETE_FAILED", tenantId, collection);
   }
 });
+
 app.post("/v1/feedback", requireJwt, requireRole("reader"), async (req, res) => {
   const { memoryId, feedback, eventValue } = req.body || {};
   if (!memoryId || !String(memoryId).trim()) {
@@ -13303,6 +13561,7 @@ async function start() {
         });
       }
       scheduleAutoReindex();
+      scheduleVectorStoreConsistencyAudit();
       scheduleTtlSweep();
       scheduleStorageBillingAccrualSweep();
       scheduleJobSweep();
@@ -13352,6 +13611,7 @@ module.exports = {
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
     parseConversationWikiResponse,
+    finalizeJobFailureWithDeps,
     enqueueConversationWikiUpdateJobWithDeps,
     pruneConversationTurnsForWikiWithDeps,
     resolveMemoryPolicyConfig,
