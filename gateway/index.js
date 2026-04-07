@@ -7504,16 +7504,19 @@ async function deleteConversationWikiPages({ tenantId, collection, conversationI
   return deleted;
 }
 
-async function pruneConversationTurnsForWiki({ tenantId, collection, conversationId, principalId, checkpointTurnExternalId, keepRecentTurns, requestId }) {
+async function pruneConversationTurnsForWikiWithDeps(deps, { tenantId, collection, conversationId, principalId, checkpointTurnExternalId, keepRecentTurns, requestId }) {
+  const getByExternalId = deps.getMemoryItemByExternalId || getMemoryItemByExternalId;
+  const listForPrune = deps.listConversationTurnItemsForPrune || listConversationTurnItemsForPrune;
+  const deleteItem = deps.deleteMemoryItemFully || deleteMemoryItemFully;
   if (!checkpointTurnExternalId) return { pruned: 0, queued: 0 };
-  const checkpoint = await getMemoryItemByExternalId({
+  const checkpoint = await getByExternalId({
     tenantId,
     collection,
     externalId: checkpointTurnExternalId,
     principalId
   });
   if (!checkpoint?.created_at) return { pruned: 0, queued: 0 };
-  const items = await listConversationTurnItemsForPrune({
+  const items = await listForPrune({
     tenantId,
     collection,
     conversationId,
@@ -7524,7 +7527,7 @@ async function pruneConversationTurnsForWiki({ tenantId, collection, conversatio
   let pruned = 0;
   let queued = 0;
   for (const item of items) {
-    const result = await deleteMemoryItemFully(item, {
+    const result = await deleteItem(item, {
       reason: "conversation_wiki_prune",
       requestId,
       source: "conversation_wiki"
@@ -7535,7 +7538,11 @@ async function pruneConversationTurnsForWiki({ tenantId, collection, conversatio
   return { pruned, queued };
 }
 
-async function enqueueConversationWikiUpdateJob({
+async function pruneConversationTurnsForWiki(args) {
+  return pruneConversationTurnsForWikiWithDeps({}, args);
+}
+
+async function enqueueConversationWikiUpdateJobWithDeps(deps, {
   tenantId,
   collection,
   conversationId,
@@ -7554,9 +7561,11 @@ async function enqueueConversationWikiUpdateJob({
   sourceType = "conversation_wiki",
   baseTags = []
 }) {
-  const active = await findActiveConversationWikiJob({ tenantId, collection, conversationId });
+  const findActiveJob = deps.findActiveConversationWikiJob || findActiveConversationWikiJob;
+  const createJob = deps.createMemoryJob || createMemoryJob;
+  const active = await findActiveJob({ tenantId, collection, conversationId });
   if (active) return active;
-  return createMemoryJob({
+  return createJob({
     tenantId,
     jobType: "conversation_wiki_update",
     status: "queued",
@@ -7581,6 +7590,10 @@ async function enqueueConversationWikiUpdateJob({
       baseTags: parseTagsInput(baseTags)
     }
   });
+}
+
+async function enqueueConversationWikiUpdateJob(args) {
+  return enqueueConversationWikiUpdateJobWithDeps({}, args);
 }
 
 async function runConversationWikiUpdateJob(jobId, tenantId) {
@@ -13224,6 +13237,9 @@ module.exports = {
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
     parseConversationWikiResponse,
+    finalizeJobFailureWithDeps,
+    enqueueConversationWikiUpdateJobWithDeps,
+    pruneConversationTurnsForWikiWithDeps,
     resolveMemoryPolicyConfig,
     resolveMemoryKnowledgeType,
     resolveMemoryFavorRecencyPreference,

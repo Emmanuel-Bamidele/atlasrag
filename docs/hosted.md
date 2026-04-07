@@ -149,6 +149,19 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/memories" \
 
 If you want bounded long-term conversation state, switch that `strategy` value to `hybrid_wiki` and optionally add wiki fields such as `wikiEnabled`, `wikiPages`, `wikiUpdateEveryTurns`, `wikiKeepRecentTurns`, `wikiRawRetentionDays`, or `wikiPageMaxChars`. If you do not want conversation wiki, leave the strategy at `turn_log` or omit it.
 
+When a hosted Memory uses `hybrid_wiki`, the Memory detail view in Studio exposes a **Conversation wiki** inspector where you can load a specific conversation id, inspect the bounded pages, queue a rebuild, delete stored pages, or manually edit a page. Those actions use the current Studio session token rather than the project service token.
+
+Studio-authenticated conversation wiki routes:
+
+```text
+GET    /portal/projects/:projectId/brains/:memoryId/conversations/:conversationId/wiki
+POST   /portal/projects/:projectId/brains/:memoryId/conversations/:conversationId/wiki/rebuild
+PUT    /portal/projects/:projectId/brains/:memoryId/conversations/:conversationId/wiki/:page
+DELETE /portal/projects/:projectId/brains/:memoryId/conversations/:conversationId/wiki
+```
+
+If you are self-hosting or automating outside the browser session, use the underlying gateway conversation wiki endpoints or the CLI memory commands instead of the Studio routes above.
+
 `/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Memory GitHub repo sync applies that automatically for matched repo files.
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
