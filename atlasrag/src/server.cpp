@@ -96,6 +96,7 @@ static std::atomic<long long> g_del_count{0};             // DEL commands
 // NEW vector command counters
 static std::atomic<long long> g_vset_count{0};            // VSET commands
 static std::atomic<long long> g_vdel_count{0};            // VDEL commands
+static std::atomic<long long> g_vdel_prefix_count{0};     // VDELPREFIX commands
 static std::atomic<long long> g_vclear_count{0};          // VCLEAR commands
 static std::atomic<long long> g_vsearch_count{0};         // VSEARCH commands
 
@@ -160,6 +161,7 @@ static std::string handle_command(
     json += "\"vector_dims\":" + std::to_string(vdb.dims()) + ",";
     json += "\"vset_count\":" + std::to_string(g_vset_count.load()) + ",";
     json += "\"vdel_count\":" + std::to_string(g_vdel_count.load()) + ",";
+    json += "\"vdel_prefix_count\":" + std::to_string(g_vdel_prefix_count.load()) + ",";
     json += "\"vclear_count\":" + std::to_string(g_vclear_count.load()) + ",";
     json += "\"vsearch_count\":" + std::to_string(g_vsearch_count.load());
 
@@ -305,6 +307,23 @@ static std::string handle_command(
   }
 
   // --------------------------------
+  // VDELPREFIX prefix
+  // --------------------------------
+  if (cmd == "VDELPREFIX" && parts.size() == 2) {
+
+    g_vdel_prefix_count.fetch_add(1);
+
+    const std::string& prefix = parts[1];
+    std::size_t removed = vdb.remove_prefix(prefix);
+
+    if (g_vector_wal_enabled) {
+      wal.append_line("VDELPREFIX " + prefix);
+    }
+
+    return std::to_string(removed) + "\n";
+  }
+
+  // --------------------------------
   // VCLEAR
   // --------------------------------
   if (cmd == "VCLEAR" && parts.size() == 1) {
@@ -441,6 +460,12 @@ static void replay_wal(DB& db, const WAL& wal, VectorDB& vdb)
     // VECTOR VDEL
     if (parts.size() == 2 && parts[0] == "VDEL") {
       vdb.remove(parts[1]);
+      continue;
+    }
+
+    // VECTOR VDELPREFIX
+    if (parts.size() == 2 && parts[0] == "VDELPREFIX") {
+      vdb.remove_prefix(parts[1]);
       continue;
     }
 

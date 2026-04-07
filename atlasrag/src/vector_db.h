@@ -75,6 +75,33 @@ public:
   }
 
   // -------------------------
+  // remove_prefix(prefix)
+  // -------------------------
+  // Removes every vector whose id starts with the provided prefix.
+  // Returns the number of removed vectors.
+  std::size_t remove_prefix(const std::string& prefix)
+  {
+    std::unique_lock lock(mu_);
+
+    if (prefix.empty() || vectors_.empty()) return 0;
+
+    std::size_t removed = 0;
+    for (auto it = vectors_.begin(); it != vectors_.end();) {
+      if (it->first.rfind(prefix, 0) == 0) {
+        it = vectors_.erase(it);
+        removed += 1;
+      } else {
+        ++it;
+      }
+    }
+
+    if (vectors_.empty()) {
+      dims_ = 0;
+    }
+    return removed;
+  }
+
+  // -------------------------
   // clear()
   // -------------------------
   void clear()

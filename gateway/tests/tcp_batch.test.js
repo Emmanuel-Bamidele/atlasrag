@@ -1,6 +1,6 @@
 const assert = require("assert/strict");
 
-const { __testHooks } = require("../tcp");
+const { buildVdelPrefix, __testHooks } = require("../tcp");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,9 +38,15 @@ async function testInactivityTimerExtendsDeadlineOnProgress() {
   timer.clear();
 }
 
+function testBuildVdelPrefix() {
+  assert.equal(buildVdelPrefix("doc-1#"), "VDELPREFIX doc-1#");
+  assert.equal(__testHooks.buildVdelPrefix("mem_1#"), "VDELPREFIX mem_1#");
+}
+
 async function main() {
   testExtractReplyLinesWithRemainder();
   testExtractReplyLinesHandlesMultipleChunks();
+  testBuildVdelPrefix();
   await testInactivityTimerExtendsDeadlineOnProgress();
   console.log("tcp batch tests passed");
 }
