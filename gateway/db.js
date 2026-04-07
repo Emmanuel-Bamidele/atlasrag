@@ -1430,6 +1430,70 @@ async function deleteMemoryItemsByCollection(tenantId, collection) {
   return res.rowCount || 0;
 }
 
+async function listMemoryItemsByCollection({ tenantId, collection }) {
+  const res = await pool.query(
+    `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
+     FROM memory_items
+     WHERE tenant_id = $1
+       AND collection = $2
+     ORDER BY created_at ASC, id ASC`,
+    [tenantId, collection]
+  );
+  return res.rows;
+}
+
+async function listMemoryJobsByCollection({ tenantId, collection, jobTypes, statuses }) {
+  const clauses = [
+    "tenant_id = $1",
+    "input->>'collection' = $2"
+  ];
+  const params = [tenantId, collection];
+
+  if (Array.isArray(jobTypes) && jobTypes.length) {
+    params.push(jobTypes.map((value) => String(value || "").trim()).filter(Boolean));
+    clauses.push(`job_type = ANY($${params.length})`);
+  }
+
+  if (Array.isArray(statuses) && statuses.length) {
+    params.push(statuses.map((value) => String(value || "").trim()).filter(Boolean));
+    clauses.push(`status = ANY($${params.length})`);
+  }
+
+  const res = await pool.query(
+    `SELECT id, tenant_id, job_type, status, input, output, error, attempts, max_attempts, next_run_at, created_at, updated_at
+     FROM memory_jobs
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at ASC, id ASC`,
+    params
+  );
+  return res.rows;
+}
+
+async function deleteMemoryJobsByCollection({ tenantId, collection, jobTypes, statuses }) {
+  const clauses = [
+    "tenant_id = $1",
+    "input->>'collection' = $2"
+  ];
+  const params = [tenantId, collection];
+
+  if (Array.isArray(jobTypes) && jobTypes.length) {
+    params.push(jobTypes.map((value) => String(value || "").trim()).filter(Boolean));
+    clauses.push(`job_type = ANY($${params.length})`);
+  }
+
+  if (Array.isArray(statuses) && statuses.length) {
+    params.push(statuses.map((value) => String(value || "").trim()).filter(Boolean));
+    clauses.push(`status = ANY($${params.length})`);
+  }
+
+  const res = await pool.query(
+    `DELETE FROM memory_jobs
+     WHERE ${clauses.join(" AND ")}`,
+    params
+  );
+  return res.rowCount || 0;
+}
+
 async function listMemoryJobs({ tenantId, limit, status, jobType }) {
   const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 20;
   let statusClause = "$2::text IS NULL OR status = $2";
@@ -3189,6 +3253,9 @@ module.exports = {
   recordServiceTokenUse,
   revokeServiceToken,
   deleteMemoryItemsByCollection,
+  listMemoryItemsByCollection,
+  listMemoryJobsByCollection,
+  deleteMemoryJobsByCollection,
   findActiveDeleteJob,
   listDueMemoryJobs,
   listMemoryJobs,
