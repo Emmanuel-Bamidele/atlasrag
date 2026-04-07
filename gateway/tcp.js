@@ -223,6 +223,10 @@ function buildVdel(id) {
   return `VDEL ${id}`;
 }
 
+function buildVdelPrefix(prefix) {
+  return `VDELPREFIX ${prefix}`;
+}
+
 function buildVclear() {
   return "VCLEAR";
 }
@@ -260,9 +264,11 @@ module.exports = {
   buildVsearch,
   buildVsearchIn,
   buildVdel,
+  buildVdelPrefix,
   buildVclear,
   parseVsearchReply,
   __testHooks: {
+    buildVdelPrefix,
     extractReplyLines,
     createInactivityTimer
   }

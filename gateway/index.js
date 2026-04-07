@@ -7,7 +7,7 @@ const net = require("net");
 
 const { embedTexts, resolveEmbedDimension } = require("./ai");
 const { chunkText } = require("./chunk");
-const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
+const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVdelPrefix, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
   saveChunks,
@@ -364,6 +364,8 @@ const REINDEX_SLEEP_MS = parseInt(process.env.REINDEX_SLEEP_MS || "0", 10);
 const REINDEX_LOG_EVERY = parseInt(process.env.REINDEX_LOG_EVERY || "500", 10);
 const REINDEX_TCP_ATTEMPTS = parseInt(process.env.REINDEX_TCP_ATTEMPTS || "12", 10);
 const REINDEX_TCP_DELAY_MS = parseInt(process.env.REINDEX_TCP_DELAY_MS || "2000", 10);
+const REINDEX_VERIFY_INTERVAL_MS = parseInt(process.env.REINDEX_VERIFY_INTERVAL_MS || "900000", 10);
+const VECTOR_WRITE_RETRY_ATTEMPTS = parseInt(process.env.VECTOR_WRITE_RETRY_ATTEMPTS || "2", 10);
 const TTL_SWEEP_ENABLED = process.env.TTL_SWEEP_ENABLED !== "0";
 const TTL_SWEEP_INTERVAL_MS = parseInt(process.env.TTL_SWEEP_INTERVAL_MS || "300000", 10);
 const TTL_SWEEP_BATCH_SIZE = parseInt(process.env.TTL_SWEEP_BATCH_SIZE || "200", 10);
@@ -423,6 +425,8 @@ const MEMORY_COMPACT_COOLDOWN_HOURS = parseInt(process.env.MEMORY_COMPACT_COOLDO
 const MEMORY_SNAPSHOT_INTERVAL_MS = parseInt(process.env.TELEMETRY_SNAPSHOT_INTERVAL_MS || "300000", 10);
 const BILLING_STORAGE_INCLUDED_GB_MONTH = parseFloat(process.env.BILLING_STORAGE_INCLUDED_GB_MONTH || "0");
 let reindexStarted = false;
+let reindexRunning = false;
+let reindexAuditStarted = false;
 let ttlSweepRunning = false;
 let storageBillingAccrualRunning = false;
 let jobSweepRunning = false;
@@ -3122,97 +3126,115 @@ async function resolveExpectedEmbedVectorDim() {
 }
 
 async function reindexAllChunks() {
-  const mode = normalizeReindexMode(REINDEX_MODE);
-  if (mode === "off") return;
-
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn("[reindex] OPENAI_API_KEY not set; skipping auto reindex.");
+  if (reindexRunning) {
+    console.log("[reindex] Already running; skipping duplicate request.");
     return;
   }
+  reindexRunning = true;
+  try {
+    const mode = normalizeReindexMode(REINDEX_MODE);
+    if (mode === "off") return;
 
-  const totalChunks = await countChunks();
-  if (!totalChunks) {
-    console.log("[reindex] No stored chunks found; skipping.");
-    return;
-  }
-
-  await waitForVectorStore();
-  const expectedVectorDim = await resolveExpectedEmbedVectorDim();
-  let decision = shouldReindexStoredVectors({
-    mode,
-    totalChunks,
-    vectorCount: 0,
-    vectorDims: 0,
-    expectedVectorDim
-  });
-
-  if (mode === "auto") {
-    try {
-      const { vectors, vectorDims } = await getVectorStats();
-      decision = shouldReindexStoredVectors({
-        mode,
-        totalChunks,
-        vectorCount: vectors,
-        vectorDims,
-        expectedVectorDim
-      });
-      if (!decision.shouldReindex) {
-        console.log(`[reindex] Vector store already has ${vectors} vectors with dim ${vectorDims}; skipping auto reindex.`);
-        return;
-      }
-      if (decision.reason === "dimension_mismatch") {
-        console.log(`[reindex] Vector dimension mismatch detected (store=${vectorDims}, expected=${expectedVectorDim}); rebuilding vectors.`);
-      } else if (decision.reason === "count_mismatch") {
-        console.log(`[reindex] Vector count mismatch detected (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
-      }
-    } catch (err) {
-      console.warn("[reindex] Failed to read vector stats; continuing with reindex.");
-      decision = { shouldReindex: true, clearFirst: true, reason: "stats_unavailable" };
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[reindex] OPENAI_API_KEY not set; skipping auto reindex.");
+      return;
     }
-  }
 
-  const batchSize = Number.isFinite(REINDEX_BATCH_SIZE) && REINDEX_BATCH_SIZE > 0 ? REINDEX_BATCH_SIZE : 64;
-  const fetchSize = Number.isFinite(REINDEX_FETCH_SIZE) && REINDEX_FETCH_SIZE > 0 ? REINDEX_FETCH_SIZE : 256;
-  const logEvery = Number.isFinite(REINDEX_LOG_EVERY) && REINDEX_LOG_EVERY > 0 ? REINDEX_LOG_EVERY : 500;
-  const sleepMs = Number.isFinite(REINDEX_SLEEP_MS) && REINDEX_SLEEP_MS > 0 ? REINDEX_SLEEP_MS : 0;
-
-  if (decision.clearFirst) {
-    console.log("[reindex] Clearing vector store before rebuild...");
-    await clearVectorStore();
-  }
-
-  console.log(`[reindex] Starting reindex of ${totalChunks} chunks...`);
-  let processed = 0;
-  let lastId = null;
-  let buffer = [];
-
-  while (true) {
-    const rows = await listChunksAfter({ afterId: lastId, limit: fetchSize });
-    if (!rows.length) break;
-
-    for (const row of rows) {
-      buffer.push(row);
-      if (buffer.length >= batchSize) {
-        await reindexChunkBatch(buffer);
-        processed += buffer.length;
-        buffer = [];
-        if (processed % logEvery === 0 || processed >= totalChunks) {
-          console.log(`[reindex] Progress ${processed}/${totalChunks} chunks`);
+    await waitForVectorStore();
+    const totalChunks = await countChunks();
+    if (!totalChunks) {
+      try {
+        const { vectors } = await getVectorStats();
+        if (vectors > 0) {
+          console.log(`[reindex] No stored chunks found but vector store has ${vectors} vectors; clearing stale vectors.`);
+          await clearVectorStore();
         }
-        if (sleepMs) {
-          await sleep(sleepMs);
+      } catch (err) {
+        console.warn("[reindex] Failed to read vector stats while checking for stale vectors.");
+      }
+      console.log("[reindex] No stored chunks found; skipping.");
+      return;
+    }
+
+    const expectedVectorDim = await resolveExpectedEmbedVectorDim();
+    let decision = shouldReindexStoredVectors({
+      mode,
+      totalChunks,
+      vectorCount: 0,
+      vectorDims: 0,
+      expectedVectorDim
+    });
+
+    if (mode === "auto") {
+      try {
+        const { vectors, vectorDims } = await getVectorStats();
+        decision = shouldReindexStoredVectors({
+          mode,
+          totalChunks,
+          vectorCount: vectors,
+          vectorDims,
+          expectedVectorDim
+        });
+        if (!decision.shouldReindex) {
+          console.log(`[reindex] Vector store already has ${vectors} vectors with dim ${vectorDims}; skipping auto reindex.`);
+          return;
         }
+        if (decision.reason === "dimension_mismatch") {
+          console.log(`[reindex] Vector dimension mismatch detected (store=${vectorDims}, expected=${expectedVectorDim}); rebuilding vectors.`);
+        } else if (decision.reason === "count_mismatch") {
+          console.log(`[reindex] Vector count mismatch detected (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
+        }
+      } catch (err) {
+        console.warn("[reindex] Failed to read vector stats; continuing with reindex.");
+        decision = { shouldReindex: true, clearFirst: true, reason: "stats_unavailable" };
       }
     }
-    lastId = rows[rows.length - 1].chunk_id;
-  }
 
-  if (buffer.length) {
-    await reindexChunkBatch(buffer);
-    processed += buffer.length;
-  }
+    const batchSize = Number.isFinite(REINDEX_BATCH_SIZE) && REINDEX_BATCH_SIZE > 0 ? REINDEX_BATCH_SIZE : 64;
+    const fetchSize = Number.isFinite(REINDEX_FETCH_SIZE) && REINDEX_FETCH_SIZE > 0 ? REINDEX_FETCH_SIZE : 256;
+    const logEvery = Number.isFinite(REINDEX_LOG_EVERY) && REINDEX_LOG_EVERY > 0 ? REINDEX_LOG_EVERY : 500;
+    const sleepMs = Number.isFinite(REINDEX_SLEEP_MS) && REINDEX_SLEEP_MS > 0 ? REINDEX_SLEEP_MS : 0;
 
-  console.log(`[reindex] Completed: ${processed}/${totalChunks} chunks indexed.`);
+    if (decision.clearFirst) {
+      console.log("[reindex] Clearing vector store before rebuild...");
+      await clearVectorStore();
+    }
+
+    console.log(`[reindex] Starting reindex of ${totalChunks} chunks...`);
+    let processed = 0;
+    let lastId = null;
+    let buffer = [];
+
+    while (true) {
+      const rows = await listChunksAfter({ afterId: lastId, limit: fetchSize });
+      if (!rows.length) break;
+
+      for (const row of rows) {
+        buffer.push(row);
+        if (buffer.length >= batchSize) {
+          await reindexChunkBatch(buffer);
+          processed += buffer.length;
+          buffer = [];
+          if (processed % logEvery === 0 || processed >= totalChunks) {
+            console.log(`[reindex] Progress ${processed}/${totalChunks} chunks`);
+          }
+          if (sleepMs) {
+            await sleep(sleepMs);
+          }
+        }
+      }
+      lastId = rows[rows.length - 1].chunk_id;
+    }
+
+    if (buffer.length) {
+      await reindexChunkBatch(buffer);
+      processed += buffer.length;
+    }
+
+    console.log(`[reindex] Completed: ${processed}/${totalChunks} chunks indexed.`);
+  } finally {
+    reindexRunning = false;
+  }
 }
 
 function scheduleAutoReindex() {
@@ -3223,6 +3245,45 @@ function scheduleAutoReindex() {
       console.warn("[reindex] Failed:", err?.message || err);
     });
   }, 1500);
+}
+
+async function runVectorStoreConsistencyAuditOnce() {
+  const mode = normalizeReindexMode(REINDEX_MODE);
+  if (mode === "off") return;
+  if (reindexRunning) return;
+
+  try {
+    const totalChunks = await countChunks();
+    await waitForVectorStore();
+    const { vectors } = await getVectorStats();
+    if (totalChunks === 0) {
+      if (vectors > 0) {
+        console.warn(`[reindex] Periodic consistency check found ${vectors} stale vectors with no stored chunks; clearing vector store.`);
+        await clearVectorStore();
+      }
+      return;
+    }
+    if (vectors === totalChunks) return;
+    console.warn(`[reindex] Periodic consistency check detected vector count mismatch (store=${vectors}, chunks=${totalChunks}); rebuilding vectors.`);
+    await reindexAllChunks();
+  } catch (err) {
+    console.warn("[reindex] Periodic consistency check failed:", err?.message || err);
+  }
+}
+
+function scheduleVectorStoreConsistencyAudit() {
+  if (reindexAuditStarted) return;
+  const intervalMs = Number.isFinite(REINDEX_VERIFY_INTERVAL_MS) && REINDEX_VERIFY_INTERVAL_MS > 0
+    ? REINDEX_VERIFY_INTERVAL_MS
+    : 0;
+  if (!intervalMs) return;
+  reindexAuditStarted = true;
+  setTimeout(() => {
+    runVectorStoreConsistencyAuditOnce().catch(() => {});
+    setInterval(() => {
+      runVectorStoreConsistencyAuditOnce().catch(() => {});
+    }, intervalMs);
+  }, Math.min(intervalMs, 30000));
 }
 
 async function runTtlSweepOnce() {
@@ -6609,18 +6670,7 @@ async function indexMemoryText(namespaceId, text, options = {}) {
   const chunkRows = buildChunkRows(namespaceId, chunks);
 
   await saveChunks(chunkRows, { batchSize: CHUNK_UPSERT_BATCH_SIZE });
-
-  const vectorResults = await runBatchedCommandSet(
-    chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
-    {
-      batchSize: VECTOR_WRITE_BATCH_SIZE,
-      concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
-    }
-  );
-  const failedWrites = countFailedBatchCommands(vectorResults);
-  if (failedWrites > 0) {
-    throw new Error(`Failed to store ${failedWrites} vector(s) for memory namespace ${namespaceId}`);
-  }
+  await writeNamespaceVectors(namespaceId, chunkRows, vectors);
 
   scheduleStorageUsageMeter(parsed?.tenantId, buildTelemetryContext({
     requestId: options?.telemetry?.requestId,
@@ -6658,6 +6708,39 @@ function scheduleRedundancyUpdate(item) {
 
 async function deleteVectorsForDoc(namespaceId, options = {}) {
   const strict = options.strict === true;
+  const vectorCleanup = await deleteNamespaceVectorsOnly(namespaceId, { strict });
+  if (strict && vectorCleanup.failed > 0) {
+    return { deleted: vectorCleanup.deleted, failed: vectorCleanup.failed, removedDoc: false };
+  }
+  await deleteDoc(namespaceId);
+  return {
+    deleted: vectorCleanup.deleted,
+    failed: vectorCleanup.failed,
+    removedDoc: true
+  };
+}
+
+async function deleteNamespaceVectorsOnly(namespaceId, options = {}) {
+  const strict = options.strict === true;
+  const cleanNamespaceId = String(namespaceId || "").trim();
+  const prefix = cleanNamespaceId ? `${cleanNamespaceId}#` : "";
+  if (prefix) {
+    try {
+      const reply = String(await sendCmd(buildVdelPrefix(prefix)) || "").trim();
+      if (!/^ERR unknown command\b/i.test(reply)) {
+        if (/^ERR\b/i.test(reply)) {
+          return { deleted: 0, failed: 1 };
+        }
+        const deleted = Number.parseInt(reply, 10);
+        return {
+          deleted: Number.isFinite(deleted) && deleted >= 0 ? deleted : 0,
+          failed: 0
+        };
+      }
+    } catch (err) {
+      if (strict) return { deleted: 0, failed: 1 };
+    }
+  }
   const rows = await getChunksByDocId(namespaceId);
   const results = await runBatchedCommandSet(
     rows.map((row) => buildVdel(row.chunk_id)),
@@ -6668,11 +6751,40 @@ async function deleteVectorsForDoc(namespaceId, options = {}) {
   );
   const deleted = results.reduce((total, item) => total + (item?.ok ? 1 : 0), 0);
   const failed = countFailedBatchCommands(results);
-  if (strict && failed > 0) {
-    return { deleted, failed, removedDoc: false };
+  return { deleted, failed };
+}
+
+async function writeNamespaceVectors(namespaceId, chunkRows, vectors) {
+  const maxAttempts = Number.isFinite(VECTOR_WRITE_RETRY_ATTEMPTS) && VECTOR_WRITE_RETRY_ATTEMPTS > 0
+    ? VECTOR_WRITE_RETRY_ATTEMPTS
+    : 2;
+  let lastFailedWrites = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const vectorResults = await runBatchedCommandSet(
+      chunkRows.map((row, index) => buildVset(row.chunkId, vectors[index])),
+      {
+        batchSize: VECTOR_WRITE_BATCH_SIZE,
+        concurrency: VECTOR_WRITE_BATCH_CONCURRENCY
+      }
+    );
+    const failedWrites = countFailedBatchCommands(vectorResults);
+    if (failedWrites === 0) {
+      if (attempt > 1) {
+        console.warn(`[index] vector write recovered namespace=${namespaceId} attempt=${attempt}/${maxAttempts}`);
+      }
+      return { attempts: attempt, failed: 0 };
+    }
+
+    lastFailedWrites = failedWrites;
+    console.warn(`[index] vector write failed namespace=${namespaceId} attempt=${attempt}/${maxAttempts} failed=${failedWrites}; clearing partial vectors.`);
+    const cleanup = await deleteNamespaceVectorsOnly(namespaceId, { strict: false });
+    if (cleanup.failed > 0) {
+      console.warn(`[index] partial vector cleanup failed namespace=${namespaceId} failed=${cleanup.failed}`);
+    }
   }
-  await deleteDoc(namespaceId);
-  return { deleted, failed, removedDoc: true };
+
+  throw new Error(`Failed to store ${lastFailedWrites} vector(s) for memory namespace ${namespaceId}`);
 }
 
 async function memoryWriteCore(req) {
@@ -11992,6 +12104,7 @@ async function start() {
         });
       }
       scheduleAutoReindex();
+      scheduleVectorStoreConsistencyAudit();
       scheduleTtlSweep();
       scheduleStorageBillingAccrualSweep();
       scheduleJobSweep();

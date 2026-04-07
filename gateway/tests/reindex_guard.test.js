@@ -47,10 +47,25 @@ function testReindexesOnPartialVectorStore() {
   assert.equal(decision.reason, "count_mismatch");
 }
 
+function testReindexesWhenStaleVectorsExistWithoutChunks() {
+  const decision = __testHooks.shouldReindexStoredVectors({
+    mode: "auto",
+    totalChunks: 0,
+    vectorCount: 12,
+    vectorDims: 1536,
+    expectedVectorDim: 1536
+  });
+
+  assert.equal(decision.shouldReindex, true);
+  assert.equal(decision.clearFirst, true);
+  assert.equal(decision.reason, "count_mismatch");
+}
+
 function main() {
   testSkipsWhenVectorStoreMatchesCurrentChunksAndDims();
   testReindexesOnDimensionMismatch();
   testReindexesOnPartialVectorStore();
+  testReindexesWhenStaleVectorsExistWithoutChunks();
   console.log("reindex guard tests passed");
 }
 
