@@ -6124,6 +6124,14 @@ function buildCodeCandidateFileKey(candidate) {
   ].join("::");
 }
 
+function resolveVectorSearchWindow(topK, { hasDocFilter = false, multiplier = null, cap = null } = {}) {
+  const fallbackMultiplier = Number.isFinite(TENANT_SEARCH_MULTIPLIER) && TENANT_SEARCH_MULTIPLIER > 0 ? TENANT_SEARCH_MULTIPLIER : 5;
+  const fallbackCap = Number.isFinite(TENANT_SEARCH_CAP) && TENANT_SEARCH_CAP > 0 ? TENANT_SEARCH_CAP : 50;
+  const effectiveMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : fallbackMultiplier;
+  const effectiveCap = Number.isFinite(cap) && cap > 0 ? cap : fallbackCap;
+  return Math.min(topK * effectiveMultiplier * (hasDocFilter ? 2 : 1), effectiveCap);
+}
+
 function resolveCodeSelectionSize(topK, task) {
   const base = Number.isFinite(topK) && topK > 0 ? Math.floor(topK) : 5;
   const mode = normalizeCodeTask(task, "general");
