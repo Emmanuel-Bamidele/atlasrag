@@ -386,12 +386,17 @@ const JOB_RETRY_BASE_MS = parseInt(process.env.JOB_RETRY_BASE_MS || "2000", 10);
 const JOB_RETRY_MAX_MS = parseInt(process.env.JOB_RETRY_MAX_MS || "30000", 10);
 const JOB_SWEEP_INTERVAL_MS = parseInt(process.env.JOB_SWEEP_INTERVAL_MS || "5000", 10);
 const JOB_SWEEP_BATCH_SIZE = parseInt(process.env.JOB_SWEEP_BATCH_SIZE || "20", 10);
-const CONVERSATION_WIKI_PAGES = ["facts", "preferences", "decisions", "open_loops"];
-const CONVERSATION_WIKI_PAGE_SET = new Set(CONVERSATION_WIKI_PAGES);
+const CONVERSATION_WIKI_PAGES = [];
+const CONVERSATION_WIKI_ARTICLE_PAGE = "article";
+const CONVERSATION_WIKI_PAGE_SET = new Set([CONVERSATION_WIKI_ARTICLE_PAGE]);
 const CONVERSATION_WIKI_SECTION_KEYS = ["confirmed", "uncertain", "open"];
-const CONVERSATION_WIKI_MAX_PAGE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PAGE_CHARS || "1600", 10);
-const CONVERSATION_WIKI_MAX_SOURCE_TURNS = parseInt(process.env.CONVERSATION_WIKI_MAX_SOURCE_TURNS || "24", 10);
-const CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION = parseInt(process.env.CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION || "8", 10);
+const CONVERSATION_WIKI_MAX_PAGE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PAGE_CHARS || "5600", 10);
+const CONVERSATION_WIKI_MAX_SOURCE_TURNS = parseInt(process.env.CONVERSATION_WIKI_MAX_SOURCE_TURNS || "32", 10);
+const CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION = parseInt(process.env.CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION || "14", 10);
+const CONVERSATION_WIKI_MAX_TITLE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_TITLE_CHARS || "120", 10);
+const CONVERSATION_WIKI_MAX_NOTE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_NOTE_CHARS || "240", 10);
+const CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS || "1200", 10);
+const CONVERSATION_WIKI_MAX_SECTIONS = parseInt(process.env.CONVERSATION_WIKI_MAX_SECTIONS || "8", 10);
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
 const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
@@ -2244,6 +2249,29 @@ function stableJson(value) {
   }
 }
 
+function normalizeConversationWikiInlineText(value, max = 240) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, Math.max(0, max));
+}
+
+function normalizeConversationWikiParagraphText(value, max = CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS) {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+    .slice(0, Math.max(0, max));
+}
+
+function slugifyConversationWiki(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
 function normalizeConversationWikiPagesInput(raw) {
   const source = raw === undefined || raw === null || raw === ""
     ? CONVERSATION_WIKI_PAGES
@@ -2251,15 +2279,14 @@ function normalizeConversationWikiPagesInput(raw) {
   const pages = [];
   const seen = new Set();
   for (const value of source) {
-    const clean = String(value || "").trim();
-    if (!clean || seen.has(clean)) continue;
-    if (!CONVERSATION_WIKI_PAGE_SET.has(clean)) {
-      throw new Error(`pages must be limited to: ${CONVERSATION_WIKI_PAGES.join(", ")}`);
-    }
-    seen.add(clean);
+    const clean = normalizeConversationWikiInlineText(value, CONVERSATION_WIKI_MAX_TITLE_CHARS);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     pages.push(clean);
   }
-  return pages.length ? pages : CONVERSATION_WIKI_PAGES.slice();
+  return pages;
 }
 
 function buildConversationWikiExternalId(conversationId, page) {
@@ -2267,6 +2294,9 @@ function buildConversationWikiExternalId(conversationId, page) {
 }
 
 function buildConversationWikiPageTitle(page) {
+  if (String(page || "").trim() === CONVERSATION_WIKI_ARTICLE_PAGE) {
+    return "Conversation wiki";
+  }
   const label = String(page || "")
     .trim()
     .split(/[_\s-]+/)
@@ -2281,10 +2311,10 @@ function normalizeConversationWikiSectionItems(raw) {
   const items = [];
   const seen = new Set();
   for (const value of source) {
-    const clean = String(value || "").trim();
+    const clean = normalizeConversationWikiInlineText(value, 320);
     if (!clean || seen.has(clean)) continue;
     seen.add(clean);
-    items.push(clean.slice(0, 320));
+    items.push(clean);
     if (items.length >= CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION) break;
   }
   return items;
@@ -2299,52 +2329,274 @@ function normalizeConversationWikiSections(raw) {
   return sections;
 }
 
-function trimConversationWikiSections(sections, maxChars = CONVERSATION_WIKI_MAX_PAGE_CHARS) {
-  const next = {};
-  let budget = Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : CONVERSATION_WIKI_MAX_PAGE_CHARS;
-  for (const key of CONVERSATION_WIKI_SECTION_KEYS) {
-    const output = [];
-    for (const item of Array.isArray(sections?.[key]) ? sections[key] : []) {
-      const clean = String(item || "").trim();
-      if (!clean) continue;
-      const cost = clean.length + 4;
-      if (output.length && budget - cost < 0) break;
-      output.push(clean);
-      budget -= cost;
+function buildConversationWikiKnowledgeGapParagraph(items = []) {
+  const gaps = Array.isArray(items)
+    ? items.map((item) => normalizeConversationWikiInlineText(item, 320).replace(/[.?!]+$/g, "")).filter(Boolean)
+    : [];
+  if (!gaps.length) return null;
+  const label = gaps.length === 1
+    ? "Additional knowledge base coverage could help answer this unresolved point"
+    : "Additional knowledge base coverage could help answer these unresolved points";
+  return `${label}: ${gaps.join("; ")}.`;
+}
+
+function buildConversationWikiNarrativeParagraphs(sections = {}) {
+  const confirmed = Array.isArray(sections.confirmed) ? sections.confirmed : [];
+  const uncertain = Array.isArray(sections.uncertain) ? sections.uncertain : [];
+  const knowledgeGap = buildConversationWikiKnowledgeGapParagraph(sections.open);
+  const paragraphs = [
+    ...confirmed.map((item) => normalizeConversationWikiParagraphText(item)).filter(Boolean),
+    ...uncertain.map((item) => normalizeConversationWikiParagraphText(item)).filter(Boolean)
+  ];
+  if (knowledgeGap) paragraphs.push(knowledgeGap);
+  return paragraphs;
+}
+
+function normalizeConversationWikiParagraphs(value, { label = "conversationWiki.article.paragraphs" } = {}) {
+  const raw = Array.isArray(value)
+    ? value
+    : (typeof value === "string" ? value.split(/\n\s*\n+/) : []);
+  const paragraphs = [];
+  const seen = new Set();
+  for (let index = 0; index < raw.length; index += 1) {
+    const paragraph = normalizeConversationWikiParagraphText(raw[index], CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS);
+    if (!paragraph) continue;
+    const key = paragraph.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    paragraphs.push(paragraph);
+    if (paragraphs.length >= CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION) break;
+  }
+  return paragraphs;
+}
+
+function normalizeConversationWikiNote(value) {
+  const note = normalizeConversationWikiInlineText(value, CONVERSATION_WIKI_MAX_NOTE_CHARS);
+  return note || null;
+}
+
+function normalizeConversationWikiArticleSection(value, fallbackId = "", fallbackTitle = "") {
+  const rawSection = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : { paragraphs: value };
+  const title = normalizeConversationWikiInlineText(
+    rawSection.title ?? rawSection.heading ?? fallbackTitle,
+    CONVERSATION_WIKI_MAX_TITLE_CHARS
+  ) || buildConversationWikiPageTitle(fallbackId || fallbackTitle || "section");
+  const cleanId = normalizeConversationWikiInlineText(
+    rawSection.id ?? rawSection.page ?? rawSection.slug ?? fallbackId,
+    80
+  );
+  const note = normalizeConversationWikiNote(
+    rawSection.note ?? rawSection.summary ?? rawSection.updatedAtNote ?? rawSection.subtitle
+  );
+  const directParagraphs = normalizeConversationWikiParagraphs(
+    rawSection.paragraphs ?? rawSection.body ?? rawSection.content ?? rawSection.text
+  );
+  const legacySections = rawSection.sections && typeof rawSection.sections === "object"
+    ? normalizeConversationWikiSections(rawSection.sections)
+    : (CONVERSATION_WIKI_SECTION_KEYS.some((key) => key in rawSection)
+      ? normalizeConversationWikiSections(rawSection)
+      : null);
+  const paragraphs = directParagraphs.length
+    ? directParagraphs
+    : buildConversationWikiNarrativeParagraphs(legacySections || {});
+  return {
+    id: slugifyConversationWiki(cleanId || title || fallbackId || "section") || "section",
+    title,
+    note,
+    paragraphs
+  };
+}
+
+function normalizeConversationWikiArticleSections(value, { fallbackPages = CONVERSATION_WIKI_PAGES } = {}) {
+  let rawSections = null;
+  if (Array.isArray(value)) {
+    rawSections = value;
+  } else if (value && typeof value === "object") {
+    if (Array.isArray(value.sections)) {
+      rawSections = value.sections;
+    } else if (Array.isArray(value.pages)) {
+      rawSections = value.pages;
+    } else {
+      const source = value.pages && typeof value.pages === "object" && !Array.isArray(value.pages)
+        ? value.pages
+        : value.sections && typeof value.sections === "object" && !Array.isArray(value.sections)
+          ? value.sections
+          : value;
+      const orderedKeys = [];
+      const seen = new Set();
+      for (const key of Array.isArray(fallbackPages) ? fallbackPages : []) {
+        const cleanKey = String(key || "").trim();
+        if (!cleanKey || !(cleanKey in source) || seen.has(cleanKey)) continue;
+        seen.add(cleanKey);
+        orderedKeys.push(cleanKey);
+      }
+      for (const key of Object.keys(source)) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+        orderedKeys.push(key);
+      }
+      rawSections = orderedKeys.map((key) => ({
+        id: key,
+        ...(source[key] && typeof source[key] === "object" && !Array.isArray(source[key])
+          ? source[key]
+          : { paragraphs: source[key] })
+      }));
     }
-    next[key] = output;
+  }
+  const output = [];
+  const seenIds = new Set();
+  for (let index = 0; index < (Array.isArray(rawSections) ? rawSections.length : 0); index += 1) {
+    const rawSection = rawSections[index];
+    const fallbackId = Array.isArray(fallbackPages) && fallbackPages[index] ? fallbackPages[index] : `section-${index + 1}`;
+    const section = normalizeConversationWikiArticleSection(rawSection, fallbackId);
+    if (!section.paragraphs.length && !section.note) continue;
+    let sectionId = section.id || slugifyConversationWiki(section.title) || `section-${index + 1}`;
+    let suffix = 2;
+    while (seenIds.has(sectionId)) {
+      sectionId = `${section.id || slugifyConversationWiki(section.title) || "section"}-${suffix}`;
+      suffix += 1;
+    }
+    seenIds.add(sectionId);
+    output.push({
+      ...section,
+      id: sectionId
+    });
+    if (output.length >= CONVERSATION_WIKI_MAX_SECTIONS) break;
+  }
+  return output;
+}
+
+function buildConversationWikiArticle(records = []) {
+  const normalizedRecords = Array.isArray(records)
+    ? records.map((record) => normalizeConversationWikiArticleSection({
+      id: record?.page,
+      title: record?.title ?? record?.metadata?.title ?? null,
+      note: record?.note ?? record?.metadata?.note ?? record?.metadata?.summary,
+      paragraphs: record?.paragraphs ?? record?.metadata?.paragraphs,
+      sections: record?.sections ?? record?.metadata?.sections
+    }, record?.page || CONVERSATION_WIKI_ARTICLE_PAGE))
+      .filter((record) => record.paragraphs.length || record.note)
+    : [];
+  const articleRecord = normalizedRecords.find((record) => record.id === CONVERSATION_WIKI_ARTICLE_PAGE) || null;
+  if (articleRecord) {
+    return {
+      page: CONVERSATION_WIKI_ARTICLE_PAGE,
+      title: articleRecord.title || "Conversation wiki",
+      note: articleRecord.note || null,
+      paragraphs: articleRecord.paragraphs
+    };
+  }
+  const paragraphs = [];
+  for (const record of normalizedRecords) {
+    for (const paragraph of record.paragraphs) {
+      const cleanParagraph = normalizeConversationWikiParagraphText(paragraph);
+      if (cleanParagraph) paragraphs.push(cleanParagraph);
+    }
+  }
+  return {
+    page: CONVERSATION_WIKI_ARTICLE_PAGE,
+    title: "Conversation wiki",
+    note: normalizedRecords.length > 1
+      ? "Merged from the previous wiki version so durable context is preserved across rebuilds."
+      : normalizedRecords[0]?.note || null,
+    paragraphs
+  };
+}
+
+function buildConversationWikiTurnExchanges(recentTurns = []) {
+  const exchanges = [];
+  let current = null;
+  for (const turn of Array.isArray(recentTurns) ? recentTurns : []) {
+    const role = String(turn?.role || turn?.metadata?.role || "").trim().toLowerCase();
+    const text = extractConversationMessageBody(turn?.text);
+    if (!text) continue;
+    if (role === "user") {
+      current = {
+        question: text,
+        askedAt: turn?.createdAt || null,
+        questionExternalId: turn?.externalId || null,
+        responses: []
+      };
+      exchanges.push(current);
+      continue;
+    }
+    if (!current) {
+      current = {
+        question: null,
+        askedAt: null,
+        questionExternalId: null,
+        responses: []
+      };
+      exchanges.push(current);
+    }
+    current.responses.push({
+      role: role || "assistant",
+      text,
+      createdAt: turn?.createdAt || null,
+      externalId: turn?.externalId || null
+    });
+  }
+  return exchanges.map((exchange, index) => ({
+    index: index + 1,
+    question: exchange.question || null,
+    askedAt: exchange.askedAt || null,
+    questionExternalId: exchange.questionExternalId || null,
+    responseCount: Array.isArray(exchange.responses) ? exchange.responses.length : 0,
+    responses: Array.isArray(exchange.responses) ? exchange.responses : []
+  }));
+}
+
+function countConversationWikiItems(section = {}) {
+  return Array.isArray(section.paragraphs) ? section.paragraphs.length : 0;
+}
+
+function trimConversationWikiParagraphs(paragraphs, maxChars) {
+  const safeMaxChars = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0
+    ? Math.floor(Number(maxChars))
+    : CONVERSATION_WIKI_MAX_PAGE_CHARS;
+  const next = [];
+  let budget = safeMaxChars;
+  for (const paragraph of Array.isArray(paragraphs) ? paragraphs : []) {
+    const cleanParagraph = normalizeConversationWikiParagraphText(paragraph);
+    if (!cleanParagraph) continue;
+    const cost = cleanParagraph.length + 4;
+    if (next.length && budget - cost < 0) break;
+    next.push(cleanParagraph);
+    budget -= cost;
   }
   return next;
 }
 
-function countConversationWikiItems(sections = {}) {
-  return CONVERSATION_WIKI_SECTION_KEYS.reduce((sum, key) => sum + (Array.isArray(sections[key]) ? sections[key].length : 0), 0);
-}
-
-function buildConversationWikiPageText(page, sections, maxChars = CONVERSATION_WIKI_MAX_PAGE_CHARS) {
-  const normalized = trimConversationWikiSections(normalizeConversationWikiSections(sections), maxChars);
-  const lines = [buildConversationWikiPageTitle(page), "Confirmed:"];
-  if (normalized.confirmed.length) {
-    for (const item of normalized.confirmed) lines.push(`- ${item}`);
-  } else {
-    lines.push("- None recorded.");
+function buildConversationWikiPageText(page, section, maxChars = CONVERSATION_WIKI_MAX_PAGE_CHARS) {
+  const normalized = normalizeConversationWikiArticleSection(section || {}, page, buildConversationWikiPageTitle(page));
+  const titleBudget = normalized.title.length + (normalized.note ? normalized.note.length + 8 : 0);
+  const trimmedParagraphs = trimConversationWikiParagraphs(
+    normalized.paragraphs,
+    Math.max(120, maxChars - titleBudget)
+  );
+  const lines = [normalized.title];
+  if (normalized.note) {
+    lines.push("");
+    lines.push(`Note: ${normalized.note}`);
   }
-  lines.push("Uncertain:");
-  if (normalized.uncertain.length) {
-    for (const item of normalized.uncertain) lines.push(`- ${item}`);
+  if (!trimmedParagraphs.length) {
+    lines.push("");
+    lines.push("No durable narrative has been captured for this section yet.");
   } else {
-    lines.push("- None recorded.");
-  }
-  lines.push("Open:");
-  if (normalized.open.length) {
-    for (const item of normalized.open) lines.push(`- ${item}`);
-  } else {
-    lines.push("- None recorded.");
+    for (const paragraph of trimmedParagraphs) {
+      lines.push("");
+      lines.push(paragraph);
+    }
   }
   return {
-    sections: normalized,
-    itemCount: countConversationWikiItems(normalized),
-    text: lines.join("\n").slice(0, maxChars)
+    text: lines.join("\n").slice(0, maxChars),
+    page: normalized.id,
+    title: normalized.title,
+    note: normalized.note,
+    paragraphs: trimmedParagraphs,
+    itemCount: countConversationWikiItems({ paragraphs: trimmedParagraphs })
   };
 }
 
@@ -2355,9 +2607,30 @@ function stripJsonFences(text) {
   return match ? String(match[1] || "").trim() : raw;
 }
 
+function normalizeConversationWikiArticle(value, { fallbackId = CONVERSATION_WIKI_ARTICLE_PAGE, fallbackTitle = "Conversation wiki" } = {}) {
+  if (value && typeof value === "object" && !Array.isArray(value) && value.article && typeof value.article === "object" && !Array.isArray(value.article)) {
+    return normalizeConversationWikiArticleSection(value.article, fallbackId, fallbackTitle);
+  }
+  if (Array.isArray(value?.sections) || Array.isArray(value?.pages)) {
+    const merged = buildConversationWikiArticle(normalizeConversationWikiArticleSections(value, { fallbackPages: [fallbackId] }));
+    return normalizeConversationWikiArticleSection(merged, fallbackId, fallbackTitle);
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const legacyKeys = Object.keys(value);
+    if (legacyKeys.some((key) => value[key] && typeof value[key] === "object" && !Array.isArray(value[key]) && CONVERSATION_WIKI_SECTION_KEYS.some((sectionKey) => sectionKey in value[key]))) {
+      const merged = buildConversationWikiArticle(normalizeConversationWikiArticleSections(value, { fallbackPages: [fallbackId] }));
+      return normalizeConversationWikiArticleSection(merged, fallbackId, fallbackTitle);
+    }
+  }
+  return normalizeConversationWikiArticleSection(value, fallbackId, fallbackTitle);
+}
+
 function parseConversationWikiResponse(text, pages = CONVERSATION_WIKI_PAGES) {
   const raw = stripJsonFences(text);
-  if (!raw) return {};
+  if (!raw) return normalizeConversationWikiArticle({}, {
+    fallbackId: CONVERSATION_WIKI_ARTICLE_PAGE,
+    fallbackTitle: "Conversation wiki"
+  });
   const candidates = [raw];
   const firstBrace = raw.indexOf("{");
   const lastBrace = raw.lastIndexOf("}");
@@ -2374,14 +2647,13 @@ function parseConversationWikiResponse(text, pages = CONVERSATION_WIKI_PAGES) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("conversation wiki generator did not return a JSON object");
   }
-  const source = parsed.pages && typeof parsed.pages === "object" && !Array.isArray(parsed.pages)
-    ? parsed.pages
-    : parsed;
-  const output = {};
-  for (const page of pages) {
-    output[page] = normalizeConversationWikiSections(source[page]);
-  }
-  return output;
+  const fallbackTitle = Array.isArray(pages) && pages.length
+    ? normalizeConversationWikiInlineText(pages[0], CONVERSATION_WIKI_MAX_TITLE_CHARS) || "Conversation wiki"
+    : "Conversation wiki";
+  return normalizeConversationWikiArticle(parsed, {
+    fallbackId: CONVERSATION_WIKI_ARTICLE_PAGE,
+    fallbackTitle
+  });
 }
 
 function extractConversationMessageBody(text) {
@@ -2396,13 +2668,23 @@ function extractConversationMessageBody(text) {
 
 function formatConversationWikiItem(memory, text) {
   const metadata = memory?.metadata && typeof memory.metadata === "object" ? memory.metadata : {};
+  const normalized = normalizeConversationWikiArticleSection({
+    id: metadata.page || null,
+    title: metadata.title || null,
+    note: metadata.note ?? metadata.summary,
+    paragraphs: metadata.paragraphs,
+    sections: metadata.sections
+  }, metadata.page || CONVERSATION_WIKI_ARTICLE_PAGE);
   return {
-    page: metadata.page || null,
+    page: metadata.page || normalized.id || null,
     checkpointTurnExternalId: metadata.checkpointTurnExternalId || null,
     revision: Number(metadata.revision || 0),
-    itemCount: Number(metadata.itemCount || 0),
+    itemCount: Number(metadata.itemCount || normalized.paragraphs.length || 0),
     updatedAt: metadata.updatedAt || memory?.created_at || null,
     updatedBySource: metadata.updatedBySource || memory?.source_type || null,
+    title: normalized.title,
+    note: normalized.note,
+    paragraphs: normalized.paragraphs,
     sections: normalizeConversationWikiSections(metadata.sections),
     text: String(text || "").trim(),
     memory: formatMemoryItem(memory)
@@ -2430,40 +2712,61 @@ function formatConversationWikiJob(job) {
 }
 
 function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWikiState, recentTurns }) {
-  const orderedPages = Array.isArray(pages) && pages.length ? pages : CONVERSATION_WIKI_PAGES;
+  const articleHints = Array.isArray(pages) ? pages.map((page) => normalizeConversationWikiInlineText(page, CONVERSATION_WIKI_MAX_TITLE_CHARS)).filter(Boolean) : [];
   const turnPayload = Array.isArray(recentTurns)
-    ? recentTurns.map((turn) => ({
+    ? recentTurns.map((turn, index) => ({
+      index: index + 1,
       externalId: turn.externalId || null,
       role: turn.role || null,
+      kind: String(turn?.role || "").trim().toLowerCase() === "user" ? "question" : "response",
       createdAt: turn.createdAt || null,
       text: extractConversationMessageBody(turn.text)
     }))
     : [];
+  const turnExchanges = buildConversationWikiTurnExchanges(recentTurns);
   return {
     system: [
-      "You maintain a bounded conversation wiki for one conversation.",
+      "You maintain one living conversation wiki article for one conversation.",
       "Return JSON only.",
       "Use exactly this schema:",
       stableJson({
-        facts: { confirmed: [], uncertain: [], open: [] },
-        preferences: { confirmed: [], uncertain: [], open: [] },
-        decisions: { confirmed: [], uncertain: [], open: [] },
-        open_loops: { confirmed: [], uncertain: [], open: [] }
+        article: {
+          id: "article",
+          title: "Living conversation article",
+          note: "Optional one-line editorial note or null.",
+          paragraphs: [
+            "Long, information-dense paragraph one.",
+            "Long, information-dense paragraph two."
+          ]
+        }
       }),
       "Rules:",
-      "- Only include information grounded in the provided wiki state and recent turns.",
-      "- Prefer newer turns when they contradict older wiki entries.",
-      "- Remove contradicted facts or preferences instead of keeping both as current truth.",
-      "- Keep unresolved or ambiguous items under uncertain or open.",
-      "- Never invent stable preferences, facts, or decisions.",
-      "- Keep each bullet concise and specific."
+      "- Only include information grounded in the previous wiki article and the provided turns.",
+      "- Prefer newer turns when they contradict older wiki material, but preserve still-relevant earlier context.",
+      "- Write one continuous article, not sections, not lists, not dashboards, and not bucket labels.",
+      "- Make it clear what the user asked, what the assistant answered, and how understanding changed over time.",
+      "- Treat answered questions as answered. Do not rewrite answered exchanges as generic knowledge gaps just because the answer was broad, advisory, or not user-specific.",
+      "- If there are multiple user questions or question-response exchanges, cover each exchange with its own substantial paragraph before any concluding synthesis.",
+      "- Preserve the substance of assistant answers in the article. Summaries should retain what was actually advised, explained, corrected, or recommended.",
+      "- Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information, deferred the answer, or clearly identified missing source material.",
+      "- Avoid filler like 'no user-specific context provided' unless that absence materially changed the answer.",
+      "- Use the previous wiki article to avoid losing durable information unless the newer turns clearly supersede it.",
+      "- If something is still missing or unresolved, explain in normal prose what knowledge should be added to the knowledge base; do not create open-loop sections.",
+      "- Write substantial paragraphs with multiple sentences. Avoid tiny summary paragraphs.",
+      "- Aim for 6 to 12 dense paragraphs when the material supports it. If there is less material, still prefer fewer substantial paragraphs over many short ones.",
+      "- Use lightweight formatting inside paragraphs when it improves readability: **bold**, *italics*, > blockquotes, inline code, markdown links, and tone callouts like {accent|important}, {muted|context}, {success|resolved}, {warning|caution}, or {danger|critical}.",
+      "- Use formatting sparingly but intentionally. Emphasize genuinely important shifts, caveats, or cited phrasing from the conversation so the article does not read like a flat wall of text.",
+      "- If article hints are provided, treat them as loose editorial guidance, not a required outline.",
+      "- Never invent durable knowledge, preferences, or conclusions."
     ].join("\n"),
     user: [
       `Conversation ID: ${conversationId || ""}`,
-      `Pages to update: ${orderedPages.join(", ")}`,
-      "Existing wiki JSON:",
+      `Article hints: ${articleHints.length ? articleHints.join(", ") : "none"}`,
+      "Previous wiki JSON:",
       stableJson(existingWikiState || {}),
-      "Recent turns JSON:",
+      "Question and response exchanges JSON:",
+      stableJson(turnExchanges),
+      "Recent turn transcript JSON:",
       stableJson(turnPayload)
     ].join("\n\n")
   };
@@ -7337,13 +7640,23 @@ async function loadConversationWikiPageRecords({ tenantId, collection, conversat
   return items.map((item, index) => formatConversationWikiItem(item, texts[index]));
 }
 
-function buildConversationWikiPromptState(records = [], pages = CONVERSATION_WIKI_PAGES) {
-  const state = {};
-  for (const page of pages) {
-    const record = records.find((item) => item.page === page) || null;
-    state[page] = normalizeConversationWikiSections(record?.sections);
-  }
-  return state;
+function buildConversationWikiPromptState(records = []) {
+  const previousArticle = buildConversationWikiArticle(records);
+  return {
+    previousWiki: {
+      title: previousArticle.title,
+      note: previousArticle.note,
+      paragraphs: previousArticle.paragraphs
+    },
+    previousWikiPages: Array.isArray(records)
+      ? records.map((record) => ({
+        page: record?.page || null,
+        title: record?.title ?? record?.metadata?.title ?? null,
+        note: record?.note ?? record?.metadata?.note ?? record?.metadata?.summary ?? null,
+        paragraphs: Array.isArray(record?.paragraphs) ? record.paragraphs : []
+      })).filter((record) => record.page || record.paragraphs.length)
+      : []
+  };
 }
 
 function getConversationWikiCheckpoint(records = []) {
@@ -7417,6 +7730,9 @@ async function upsertConversationWikiPage({
   collection,
   conversationId,
   page,
+  title,
+  note,
+  paragraphs,
   sections,
   checkpointTurnExternalId,
   revision,
@@ -7429,10 +7745,19 @@ async function upsertConversationWikiPage({
   policy,
   baseTags
 }) {
-  const built = buildConversationWikiPageText(page, sections, pageMaxChars);
+  const built = buildConversationWikiPageText(page, {
+    id: page,
+    title,
+    note,
+    paragraphs,
+    sections
+  }, pageMaxChars);
   const memoryId = crypto.randomUUID();
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
   const updatedAt = new Date().toISOString();
+  const normalizedSections = sections && typeof sections === "object"
+    ? normalizeConversationWikiSections(sections)
+    : undefined;
   const memory = await upsertMemoryItem({
     tenantId,
     collection,
@@ -7440,19 +7765,23 @@ async function upsertConversationWikiPage({
     externalId: buildConversationWikiExternalId(conversationId, page),
     namespaceId,
     itemId: memoryId,
-    title: buildConversationWikiPageTitle(page),
+    title: built.title,
     sourceType: sourceType || "conversation_wiki",
     sourceUrl: null,
     metadata: buildStoredMemoryMetadata({
       kind: "conversation_wiki_page",
       conversationId,
       page,
+      title: built.title,
+      note: built.note,
+      paragraphs: built.paragraphs,
+      position: 0,
       revision,
       checkpointTurnExternalId: checkpointTurnExternalId || null,
       updatedAt,
       updatedBySource: sourceType || "conversation_wiki",
       itemCount: built.itemCount,
-      sections: built.sections
+      sections: normalizedSections
     }, built.text, policy),
     principalId: principalId || null,
     agentId: agentId || null,
@@ -7714,7 +8043,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       return;
     }
 
-    const existingWikiState = buildConversationWikiPromptState(existingPages, pages);
+    const existingWikiState = buildConversationWikiPromptState(existingPages);
     const prompt = buildConversationWikiUpdatePrompt({
       conversationId,
       pages,
@@ -7734,7 +8063,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       input: prompt,
       temperature: 0,
       jsonMode: true,
-      maxTokens: 1600
+      maxTokens: 2400
     });
     recordGenerationUsage(tenantId, generated?.usage, buildTelemetryContext({
       requestId: `job:${jobId}`,
@@ -7742,7 +8071,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       collection,
       source: "job_conversation_wiki_generation"
     }));
-    const draftPages = parseConversationWikiResponse(generated?.text, pages);
+    const draftArticle = parseConversationWikiResponse(generated?.text, pages);
     const revision = getConversationWikiRevision(existingPages) + 1;
     const nextCheckpoint = recentTurns[recentTurns.length - 1]?.externalId || checkpointTurnExternalId || null;
     const visibility = input.visibility ? normalizeVisibility(input.visibility) : (existingPages[0]?.memory?.visibility || "tenant");
@@ -7751,19 +8080,34 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       : [];
     const policy = resolveRequestedMemoryPolicy(input, existingPages[0]?.memory?.policy || DEFAULT_MEMORY_POLICY);
     const writes = [];
-    for (const page of pages) {
-      const existing = existingPages.find((item) => item.page === page) || null;
-      const built = buildConversationWikiPageText(page, draftPages[page], pageMaxChars);
-      const sameSections = stableJson(existing?.sections || {}) === stableJson(built.sections);
-      const sameText = String(existing?.text || "").trim() === built.text;
-      const sameCheckpoint = String(existing?.checkpointTurnExternalId || "") === String(nextCheckpoint || "");
-      if (sameSections && sameText && sameCheckpoint) continue;
+    const currentRecordMap = new Map(existingPages.map((record) => [record.page, record]));
+    const nextPageIds = new Set();
+    const built = buildConversationWikiPageText(CONVERSATION_WIKI_ARTICLE_PAGE, draftArticle, pageMaxChars);
+    const existing = currentRecordMap.get(built.page) || null;
+    nextPageIds.add(built.page);
+    const currentPageState = stableJson({
+      title: existing?.title ?? existing?.metadata?.title ?? null,
+      note: existing?.note ?? existing?.metadata?.note ?? existing?.metadata?.summary ?? null,
+      paragraphs: existing?.paragraphs ?? existing?.metadata?.paragraphs ?? []
+    });
+    const nextPageState = stableJson({
+      title: built.title,
+      note: built.note,
+      paragraphs: built.paragraphs
+    });
+    const sameText = String(existing?.text || "").trim() === built.text;
+    const sameCheckpoint = String(existing?.checkpointTurnExternalId || "") === String(nextCheckpoint || "");
+    if (
+      !(sameText && sameCheckpoint && currentPageState === nextPageState && Number(existing?.metadata?.position) === 0)
+    ) {
       writes.push(await upsertConversationWikiPage({
         tenantId,
         collection,
         conversationId,
-        page,
-        sections: draftPages[page],
+        page: built.page,
+        title: built.title,
+        note: built.note,
+        paragraphs: built.paragraphs,
         checkpointTurnExternalId: nextCheckpoint,
         revision,
         pageMaxChars,
@@ -7774,6 +8118,23 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
         sourceType: input.sourceType || "conversation_wiki",
         policy,
         baseTags
+      }));
+    }
+    const staleRecords = existingPages.filter((record) => !nextPageIds.has(record.page));
+    if (staleRecords.length) {
+      await Promise.all(staleRecords.map(async (record) => {
+        const rawItem = await getMemoryItemByExternalId({
+          tenantId,
+          collection,
+          externalId: buildConversationWikiExternalId(conversationId, record.page),
+          principalId
+        });
+        if (!rawItem) return null;
+        return deleteMemoryItemFully(rawItem, {
+          reason: "conversation_wiki_rebuild_cleanup",
+          requestId: `job:${jobId}`,
+          source: "conversation_wiki_job"
+        });
       }));
     }
 
@@ -7787,7 +8148,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       requestId: `job:${jobId}`
     });
 
-    const effectivePageCount = writes.length > 0 ? Math.max(existingPages.length, writes.length) : existingPages.length;
+    const effectivePageCount = nextPageIds.size;
     const writtenLastUpdatedAt = writes.reduce((latest, page) => {
       const timestamp = page?.updatedAt || page?.memory?.createdAt || null;
       if (!timestamp) return latest;
@@ -12445,12 +12806,12 @@ app.put("/v1/memory/conversation_wiki", requireJwt, requireRole("indexer"), asyn
     collection = resolveCollection(req);
     const principalId = resolvePrincipalId(req);
     const conversationId = String(req.body?.conversationId || req.body?.conversation_id || "").trim();
-    const page = String(req.body?.page || "").trim();
+    const page = String(req.body?.page || CONVERSATION_WIKI_ARTICLE_PAGE).trim() || CONVERSATION_WIKI_ARTICLE_PAGE;
     if (!conversationId) {
       return sendError(res, 400, "conversationId is required", "INVALID_INPUT", tenantId, collection);
     }
     if (!CONVERSATION_WIKI_PAGE_SET.has(page)) {
-      return sendError(res, 400, `page must be one of: ${CONVERSATION_WIKI_PAGES.join(", ")}`, "INVALID_INPUT", tenantId, collection);
+      return sendError(res, 400, `page must be one of: ${Array.from(CONVERSATION_WIKI_PAGE_SET).join(", ")}`, "INVALID_INPUT", tenantId, collection);
     }
     const wikiLock = await acquireConversationWikiLock({ tenantId, collection, conversationId });
     if (!wikiLock) {
@@ -12470,14 +12831,17 @@ app.put("/v1/memory/conversation_wiki", requireJwt, requireRole("indexer"), asyn
       : [];
     const policy = resolveRequestedMemoryPolicy(req.body, existing[0]?.memory?.policy || DEFAULT_MEMORY_POLICY);
     const revision = getConversationWikiRevision(existing) + 1;
-    const updated = await upsertConversationWikiPage({
-      tenantId,
-      collection,
-      conversationId,
-      page,
-      sections: req.body?.sections || {},
-      checkpointTurnExternalId: req.body?.checkpointTurnExternalId || req.body?.checkpoint_turn_external_id || existing[0]?.checkpointTurnExternalId || null,
-      revision,
+      const updated = await upsertConversationWikiPage({
+        tenantId,
+        collection,
+        conversationId,
+        page,
+        title: req.body?.title,
+        note: req.body?.note,
+        paragraphs: req.body?.paragraphs ?? req.body?.body ?? req.body?.text,
+        sections: req.body?.sections || {},
+        checkpointTurnExternalId: req.body?.checkpointTurnExternalId || req.body?.checkpoint_turn_external_id || existing[0]?.checkpointTurnExternalId || null,
+        revision,
       pageMaxChars: Number(req.body?.pageMaxChars || req.body?.page_max_chars || CONVERSATION_WIKI_MAX_PAGE_CHARS),
       principalId,
       visibility,
@@ -13233,6 +13597,8 @@ module.exports = {
     buildConversationWikiExternalId,
     buildConversationWikiPageTitle,
     buildConversationWikiPageText,
+    buildConversationWikiTurnExchanges,
+    buildConversationWikiUpdatePrompt,
     formatConversationWikiItem,
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
