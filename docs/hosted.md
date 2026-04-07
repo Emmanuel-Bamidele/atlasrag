@@ -147,17 +147,17 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/memories" \
   }'
 ```
 
-If you want bounded long-term conversation state, switch that `strategy` value to `hybrid_wiki` and optionally add wiki fields such as `wikiEnabled`, `wikiPages`, `wikiUpdateEveryTurns`, `wikiKeepRecentTurns`, `wikiRawRetentionDays`, or `wikiPageMaxChars`. If you do not want conversation wiki, leave the strategy at `turn_log` or omit it.
+If you want long-term conversation state that compounds over time into a readable article, switch that `strategy` value to `hybrid_wiki` and optionally add wiki fields such as `wikiEnabled`, `wikiPages`, `wikiUpdateEveryTurns`, `wikiKeepRecentTurns`, `wikiRawRetentionDays`, or `wikiPageMaxChars`. If you do not want conversation wiki, leave the strategy at `turn_log` or omit it.
 
 ### How Structured Memory Works
 
 - Each chat still writes raw conversation turns to the Memory-owned conversation collection.
 - Recent turns stay available as short-term context for follow-up replies.
-- A background updater condenses durable state into bounded pages such as facts, preferences, decisions, and open loops.
-- Those pages are rewritten in place instead of appending forever, which keeps long-term conversation state bounded.
+- A background updater rewrites one living wiki article from the previous wiki version plus the latest question and response turns.
+- The article is rewritten in place instead of appending forever, which keeps long-term conversation state bounded without discarding durable context.
 - If you do not want that behavior, use `turn_log` and the Memory will keep relying on the longer raw turn history instead.
 
-When a hosted Memory uses `hybrid_wiki`, the Memory detail view in Studio exposes a **Conversation wiki** inspector where you can load a specific conversation id, inspect the bounded pages, queue a rebuild, delete stored pages, or manually edit a page. Those actions use the current Studio session token rather than the project service token.
+When a hosted Memory uses `hybrid_wiki`, the Memory detail view in Studio exposes a **Conversation wiki** inspector where you can load a specific conversation id, read the current article, queue a rebuild, delete stored wiki state, or manually overwrite the article. Those actions use the current Studio session token rather than the project service token.
 
 Studio-authenticated conversation wiki routes:
 
@@ -169,7 +169,6 @@ DELETE /portal/projects/:projectId/brains/:memoryId/conversations/:conversationI
 ```
 
 If you are self-hosting or automating outside the browser session, use the underlying gateway conversation wiki endpoints or the CLI memory commands instead of the Studio routes above.
-
 `/v1/docs` remains text-first on hosted deployments too. If you send source code directly, you can include optional `sourceType`, `title`, `sourceUrl`, and `metadata` fields. Set `"sourceType":"code"` only for actual code payloads; hosted Memory GitHub repo sync applies that automatically for matched repo files.
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
