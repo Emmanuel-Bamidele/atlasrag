@@ -27,6 +27,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+pdf = ["pypdf>=4.0"]
+
 [project.urls]
 Homepage = "https://github.com/Emmanuel-Bamidele/supavector"
 Documentation = "https://github.com/Emmanuel-Bamidele/supavector/tree/main/sdk/python"

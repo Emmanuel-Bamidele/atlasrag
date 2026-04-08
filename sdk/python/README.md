@@ -28,6 +28,13 @@ cd sdk/python
 python3 -m pip install -e .
 ```
 
+Optional PDF ingest support:
+
+```bash
+cd sdk/python
+python3 -m pip install --no-build-isolation ".[pdf]"
+```
+
 ## Runtime Model
 
 Use this SDK when you already have one of these:
@@ -126,6 +133,8 @@ client.login("admin", "change_me")
 - `list_collections(params=None)`
 - `index_text(doc_id, text, params=None)`
 - `index_url(doc_id, url, params=None)`
+- `index_file(file_path, doc_id=None, params=None, base_dir=None)`
+- `index_folder(folder_path, params=None, recursive=True, include_hidden=False, continue_on_error=True)`
 - `delete_doc(doc_id, params=None)`
 - `delete_collection(collection, params=None)`
 - `search(query, params=None)`
@@ -181,11 +190,60 @@ Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
 Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `supavector changemodel`.
 
+## Local File And Folder Ingest
+
+The Python SDK can ingest local files and folders before sending them to SupaVector:
+
+- text and code-like files are read directly
+- `.docx` files are extracted locally with the Python standard library
+- `.pdf` files work when the optional `pypdf` dependency is installed
+- code-like files automatically set `sourceType="code"` and attach path/language metadata
+- folder ingest defaults the collection to the folder name when neither `params["collection"]` nor `client.collection` is set
+- noisy paths such as `node_modules`, `.git`, `dist`, `build`, and `__pycache__` are skipped during folder ingest
+
+Single file example:
+
+```python
+from supavector import Client
+
+client = Client.from_env()
+
+client.index_file(
+    "./src/refunds.ts",
+    params={
+        "collection": "support-code",
+        "idempotencyKey": "file-idx-001",
+    },
+    base_dir=".",
+)
+```
+
+Folder example:
+
+```python
+from supavector import Client
+
+client = Client.from_env()
+
+result = client.index_folder(
+    "./customer-support",
+    params={
+        "idempotencyKey": "folder-idx-001",
+    },
+)
+
+print(result["indexedCount"])
+print(result["errors"])
+```
+
+For folder ingest, a provided `idempotencyKey` acts as a stable batch prefix. The SDK derives one per-file key from that prefix plus the generated file doc id, so repeated folder ingests stay deterministic without reusing the exact same idempotency key across different files.
+
 ## Examples
 
 Run the samples from the repository root or from `sdk/python`:
 
 ```bash
 python3 sdk/python/examples/basic.py
+python3 sdk/python/examples/ingest_folder.py
 python3 sdk/python/examples/memory.py
 ```
