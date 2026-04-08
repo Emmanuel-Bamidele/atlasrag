@@ -8,20 +8,57 @@
                     <div class="settings-panel-hero settings-panel-hero-split">
                       <div>
                         <div class="settings-kicker">Register</div>
-                        <h2>Create access and mint a service token</h2>
-                        <p id="registerPanelBody">Create your first hosted account here. After that, use Sign In &amp; Token when you want to sign in again or reuse the latest token in this browser.</p>
+                        <h2>Create your account and get the first token</h2>
+                        <p id="registerPanelBody">Start here for a new hosted workspace. Registration creates the first admin, the default project, and the first service token you will use from your backend, worker, or agent.</p>
                       </div>
                       <div class="actions settings-hero-actions">
                         <button class="btn secondary" id="registerRefreshBtn">Refresh availability</button>
                       </div>
                     </div>
 
-                    <div class="settings-section-card">
-                      <div class="settings-section-head">
+                    <div class="settings-journey" aria-label="Registration flow">
+                      <div class="settings-journey-step">
+                        <span>1</span>
                         <div>
-                          <div class="doc-label">Availability</div>
-                          <div class="hint" id="registerAvailability">Checking registration availability...</div>
+                          <strong>Register</strong>
+                          <small>Create your account, password, and project.</small>
                         </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>2</span>
+                        <div>
+                          <strong>Copy token</strong>
+                          <small>The first service token is revealed during setup.</small>
+                        </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>3</span>
+                        <div>
+                          <strong>Store it safely</strong>
+                          <small>Keep it in env vars or a secret manager.</small>
+                        </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>4</span>
+                        <div>
+                          <strong>Call SupaVector</strong>
+                          <small>Use the token from your server, agent, or worker.</small>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="settings-callouts-grid settings-callouts-grid-wide">
+                      <div class="settings-callout">
+                        <div class="doc-label">Availability</div>
+                        <p class="settings-callout-copy" id="registerAvailability">Checking registration availability...</p>
+                      </div>
+                      <div class="settings-callout settings-callout-accent">
+                        <div class="doc-label">What registration creates</div>
+                        <ul class="settings-list-compact">
+                          <li>Your first hosted project / tenant.</li>
+                          <li>The first admin user for that project.</li>
+                          <li>The first service token for server-to-server API use.</li>
+                        </ul>
                       </div>
                     </div>
 
@@ -30,7 +67,7 @@
                         <div class="settings-section-head">
                           <div>
                             <div class="doc-label">Create a new account</div>
-                            <div class="hint">This creates a default project, an admin user for that project, and the first service token for it.</div>
+                            <div class="hint">Fill this once for a brand-new hosted workspace. This is the only step needed before you can copy a token and start calling the API.</div>
                           </div>
                         </div>
 
@@ -75,8 +112,8 @@
                       <div class="settings-section-card">
                         <div class="settings-section-head">
                           <div>
-                            <div class="doc-label">Basic usage</div>
-                            <div class="hint">Use the copied service token in your app, SDK, or environment. The project below is your default project / tenant.</div>
+                            <div class="doc-label">After registration: use the token</div>
+                            <div class="hint">The project below becomes your default project / tenant. Copy the token and wire it into your runtime, not into browser code.</div>
                           </div>
                         </div>
 
@@ -89,6 +126,11 @@
                             <label for="registerProjectId">Project ID</label>
                             <input id="registerProjectId" readonly placeholder="Created after registration">
                           </div>
+                        </div>
+
+                        <div class="settings-inline-note settings-inline-note-success">
+                          <strong>Use this token from:</strong>
+                          <span>Your backend, worker, agent runtime, or local SDK environment.</span>
                         </div>
 
                         <pre class="doc-code" id="registerTokenInstructions">python3 -m pip install supavector
@@ -111,50 +153,83 @@ result = client.search(query="hello", collection="default")</pre>
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
-                        <div class="settings-kicker" id="settingsAuthKicker">Access</div>
-                        <h2 id="settingsAuthTitle">Sign in and browser token</h2>
-                        <p id="settingsAuthBody">Sign in with an existing account to mint a fresh service token for this browser, then copy or save the latest token here.</p>
+                        <div class="settings-kicker" id="settingsAuthKicker">Service tokens</div>
+                        <h2 id="settingsAuthTitle">Sign in and manage browser tokens</h2>
+                        <p id="settingsAuthBody">Start with Overview, use Create to sign in and mint a fresh service token for this browser, then use Latest token to copy or re-save the newest token created here.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-callouts-grid" data-settings-scope="hosted">
+                      <div class="settings-callout">
+                        <div class="doc-label">Overview</div>
+                        <p class="settings-callout-copy">Quick explanation of what this page does locally versus what still belongs in Dashboard.</p>
+                      </div>
+                      <div class="settings-callout">
+                        <div class="doc-label">Create token</div>
+                        <p class="settings-callout-copy">Sign in with an existing account and mint a fresh browser-local service token.</p>
+                      </div>
+                      <div class="settings-callout">
+                        <div class="doc-label">Latest token</div>
+                        <p class="settings-callout-copy">Copy or re-save the newest token created in this browser session.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-callouts-grid" data-settings-scope="self_hosted">
+                      <div class="settings-callout">
+                        <div class="doc-label">Saved token</div>
+                        <p class="settings-callout-copy">Fastest path when you already have a service token or admin JWT.</p>
+                      </div>
+                      <div class="settings-callout">
+                        <div class="doc-label">Password login</div>
+                        <p class="settings-callout-copy">Use human admin login when you need a short-lived browser JWT for admin work.</p>
+                      </div>
+                      <div class="settings-callout">
+                        <div class="doc-label">SSO login</div>
+                        <p class="settings-callout-copy">Use this for enterprise tenants that authenticate through Google, Azure, or Okta.</p>
                       </div>
                     </div>
 
                     <div data-settings-scope="hosted">
-                      <div class="settings-surface-note" id="settingsHostedNotice">
-                        <div>
-                          <div class="doc-label">Hosted control plane</div>
-                          <p id="settingsHostedNoticeBody">Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings.</p>
-                        </div>
-                        <div class="actions">
-                          <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
-                        </div>
-                      </div>
-
-                      <div class="settings-section-card">
-                        <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">How to use this page</div>
-                            <div class="hint">Register creates the first project admin and first token. This section is for signing in later and reusing the latest token in this browser.</div>
-                          </div>
-                        </div>
-
-                        <ul>
-                          <li>Use <strong>Sign in</strong> when you already have an account and need a fresh browser token.</li>
-                          <li>Use <strong>Latest token</strong> to copy the newest token created in this browser session.</li>
-                          <li>Use <strong>Provider Keys</strong> only when requests from this browser should use your own OpenAI, Gemini, or Anthropic key.</li>
-                        </ul>
-                      </div>
-
                       <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsHostedTokenSections">
-                        <button class="doc-tab active" data-doc-tab="hostedSignIn" type="button">Sign in</button>
+                        <button class="doc-tab active" data-doc-tab="hostedOverview" type="button">Overview</button>
+                        <button class="doc-tab" data-doc-tab="hostedCreateToken" type="button">Create</button>
                         <button class="doc-tab" data-doc-tab="hostedLatestToken" type="button">Latest token</button>
                       </div>
 
                       <div class="doc-panels" data-doc-panels="settingsHostedTokenSections">
-                        <div class="doc-panel active" data-doc-panel="hostedSignIn">
+                        <div class="doc-panel active" data-doc-panel="hostedOverview">
+                          <div class="settings-surface-note" id="settingsHostedNotice">
+                            <div>
+                              <div class="doc-label">Hosted control plane</div>
+                              <p id="settingsHostedNoticeBody">Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings.</p>
+                            </div>
+                            <div class="actions">
+                              <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
+                            </div>
+                          </div>
+
                           <div class="settings-section-card">
                             <div class="settings-section-head">
                               <div>
-                                <div class="doc-label">Sign in with an existing account</div>
-                                <div class="hint">Enter your username and password, then mint a fresh service token for this project and save it in this browser.</div>
+                                <div class="doc-label">How to use this page</div>
+                                <div class="hint">Register is only for the very first setup. Hosted projects, users, billing, and long-lived service-token lifecycle still live in Dashboard.</div>
+                              </div>
+                            </div>
+
+                            <ul class="settings-list-compact">
+                              <li>Use <strong>Create</strong> here when you want to sign in and mint a fresh service token for this browser.</li>
+                              <li>Use <strong>Latest token</strong> to copy the newest service token created in this browser session.</li>
+                              <li>Use <strong>Provider Keys</strong> only when requests from this browser should use your own OpenAI, Gemini, or Anthropic key.</li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div class="doc-panel" data-doc-panel="hostedCreateToken">
+                          <div class="settings-section-card">
+                            <div class="settings-section-head">
+                              <div>
+                                <div class="doc-label">Create from an existing account</div>
+                                <div class="hint">Sign in with username and password, then mint a fresh service token for this project and save it in this browser for gateway use.</div>
                               </div>
                             </div>
 
@@ -178,6 +253,11 @@ result = client.search(query="hello", collection="default")</pre>
                             <div class="actions" style="margin-top:14px;">
                               <button class="btn secondary" id="registerLoginBtn">Sign in and create token</button>
                             </div>
+
+                            <div class="settings-inline-note">
+                              <strong>Result:</strong>
+                              <span>A new browser-local token you can save here or copy for your server-side runtime.</span>
+                            </div>
                           </div>
                         </div>
 
@@ -196,14 +276,19 @@ result = client.search(query="hello", collection="default")</pre>
                               <button class="btn" id="useRegisterTokenBtn" disabled>Save in this browser</button>
                               <button class="btn secondary" id="copyRegisterTokenBtn" disabled>Copy service token</button>
                             </div>
+
+                            <ul class="settings-list-compact settings-list-compact-spaced">
+                              <li>Use <strong>Save in this browser</strong> if you want the gateway UI to keep using this token.</li>
+                              <li>Use <strong>Copy service token</strong> if you want to place it in an env var or secret manager.</li>
+                            </ul>
                           </div>
                         </div>
                       </div>
                     </div>
 
                     <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsAuthSections" data-settings-scope="self_hosted">
-                      <button class="doc-tab active" data-doc-tab="serviceToken" type="button" data-settings-scope="self_hosted">Service token</button>
-                      <button class="doc-tab" data-doc-tab="adminLogin" type="button" data-settings-scope="self_hosted">Admin login</button>
+                      <button class="doc-tab active" data-doc-tab="serviceToken" type="button" data-settings-scope="self_hosted">Saved token</button>
+                      <button class="doc-tab" data-doc-tab="adminLogin" type="button" data-settings-scope="self_hosted">Password login</button>
                       <button class="doc-tab" data-doc-tab="ssoLogin" type="button" data-settings-scope="self_hosted">SSO login</button>
                     </div>
 
@@ -213,7 +298,7 @@ result = client.search(query="hello", collection="default")</pre>
                           <div class="settings-section-head">
                             <div>
                               <div class="doc-label">Current browser credential</div>
-                              <div class="hint">Stored in <span class="mono">localStorage</span>. This can be either a service token or a human JWT, and it is only sent to your own SupaVector deployment. On the local CLI path, run <span class="mono">supavector config show --show-secrets</span> to print the saved base URL and service token again.</div>
+                              <div class="hint">Paste the token or JWT this browser should use. It is stored in <span class="mono">localStorage</span> and sent only to your own SupaVector deployment. On the local CLI path, run <span class="mono">supavector config show --show-secrets</span> to print the saved base URL and service token again.</div>
                             </div>
                           </div>
 
@@ -232,6 +317,11 @@ result = client.search(query="hello", collection="default")</pre>
                             <button class="btn danger" id="clearKeyBtn">Forget saved token</button>
                           </div>
 
+                          <div class="settings-inline-note">
+                            <strong>Use this first:</strong>
+                            <span>If you already have a service token, pasting it here is faster than signing in again.</span>
+                          </div>
+
                           <select id="authType" style="display:none;">
                             <option value="bearer">JWT (Bearer)</option>
                             <option value="api_key">Service token (API key)</option>
@@ -243,8 +333,8 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="settings-section-card">
                           <div class="settings-section-head">
                             <div>
-                              <div class="doc-label">Username and password login</div>
-                              <div class="hint">Use this when you want a short-lived human admin JWT saved into the browser.</div>
+                                <div class="doc-label">Username and password login</div>
+                              <div class="hint">Use this when you want a short-lived human admin JWT saved into the browser for tenant controls and other admin actions.</div>
                             </div>
                           </div>
 
@@ -262,6 +352,11 @@ result = client.search(query="hello", collection="default")</pre>
                           <div class="actions" style="margin-top:14px;">
                             <button class="btn secondary" id="loginBtn">Login and save token</button>
                           </div>
+
+                          <div class="settings-inline-note">
+                            <strong>Best for:</strong>
+                            <span>Interactive admin work in the UI. For apps and agents, create or paste a service token instead.</span>
+                          </div>
                         </div>
                       </div>
 
@@ -270,7 +365,7 @@ result = client.search(query="hello", collection="default")</pre>
                           <div class="settings-section-head">
                             <div>
                               <div class="doc-label">Enterprise SSO sign-in</div>
-                              <div class="hint">Use the tenant id configured for your enterprise tenant. Leave it blank only if your SSO flow resolves tenant from IdP claims.</div>
+                              <div class="hint">Use the tenant id configured for your enterprise tenant. Leave it blank only when your SSO flow resolves tenant from IdP claims.</div>
                             </div>
                           </div>
 
@@ -289,6 +384,11 @@ result = client.search(query="hello", collection="default")</pre>
                           </div>
 
                           <div class="hint" id="ssoProvidersStatus" style="margin-top:10px;">No SSO provider status loaded yet.</div>
+
+                          <div class="settings-inline-note">
+                            <strong>Start here when:</strong>
+                            <span>Your organization has already enabled Google, Azure, or Okta for this tenant.</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -350,8 +450,50 @@ result = client.search(query="hello", collection="default")</pre>
                     <div class="settings-panel-hero">
                       <div>
                         <div class="settings-kicker">Machine auth</div>
-                        <h2>Issue service tokens</h2>
-                        <p>Create tenant-scoped machine credentials for apps, backends, workers, CI, and agents. This requires an admin-scoped saved token or JWT. Plain token values are shown only once.</p>
+                        <h2>Create service tokens for apps and agents</h2>
+                        <p>Create tenant-scoped machine credentials for apps, backends, workers, CI, and agents. This requires an admin-scoped saved token or JWT, and the plain token value is shown only once.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-journey" aria-label="Service token creation flow">
+                      <div class="settings-journey-step">
+                        <span>1</span>
+                        <div>
+                          <strong>Authenticate as admin</strong>
+                          <small>Use a saved admin token or human admin login.</small>
+                        </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>2</span>
+                        <div>
+                          <strong>Create token</strong>
+                          <small>Name it for the app, environment, or worker.</small>
+                        </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>3</span>
+                        <div>
+                          <strong>Copy it now</strong>
+                          <small>The plain value is only available at creation time.</small>
+                        </div>
+                      </div>
+                      <div class="settings-journey-step">
+                        <span>4</span>
+                        <div>
+                          <strong>Use server-side</strong>
+                          <small>Keep long-lived tokens out of the browser.</small>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="settings-callouts-grid">
+                      <div class="settings-callout">
+                        <div class="doc-label">Before you create one</div>
+                        <p class="settings-callout-copy">Make sure this browser already has an admin-scoped token or JWT saved in the Access section.</p>
+                      </div>
+                      <div class="settings-callout settings-callout-accent">
+                        <div class="doc-label">How to structure tokens</div>
+                        <p class="settings-callout-copy">Create separate tokens for production, staging, CI, and internal tools so you can rotate or revoke them independently.</p>
                       </div>
                     </div>
 
@@ -360,7 +502,7 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="settings-section-head">
                           <div>
                             <div class="doc-label">Create service token</div>
-                            <div class="hint">Admins can issue runtime credentials without leaving the Settings page.</div>
+                            <div class="hint">This creates a machine credential for a specific runtime. Use the name to reflect where it will live.</div>
                           </div>
                         </div>
 
@@ -396,7 +538,7 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="settings-section-head">
                           <div>
                             <div class="doc-label">Latest token output</div>
-                            <div class="hint">Mask shown in the browser. Copy or switch immediately if you want to use the new token here.</div>
+                            <div class="hint">The browser shows only a mask here. Copy or switch immediately if you want to use the new token in this browser.</div>
                           </div>
                         </div>
 
@@ -405,6 +547,39 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="actions" style="margin-top:14px;">
                           <button class="btn" id="useCreatedApiKeyBtn" disabled>Use this service token</button>
                           <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy service token</button>
+                        </div>
+
+                        <ul class="settings-list-compact settings-list-compact-spaced">
+                          <li><strong>Use this service token</strong> switches the gateway UI to the new token.</li>
+                          <li><strong>Copy service token</strong> is the normal path for backends, workers, CI, and agents.</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-card settings-section-card-wide">
+                      <div class="settings-section-head">
+                        <div>
+                          <div class="doc-label">Use the token in your runtime</div>
+                          <div class="hint">Store the copied token as a secret, then send it as <span class="mono">X-API-Key</span> from your runtime. Do not ship long-lived service tokens to frontend code.</div>
+                        </div>
+                      </div>
+
+                      <div class="settings-callouts-grid">
+                        <div class="settings-callout">
+                          <div class="doc-label">Runtime rules</div>
+                          <ul class="settings-list-compact">
+                            <li>Keep service tokens server-side only.</li>
+                            <li>Use separate tokens per environment or app.</li>
+                            <li>Rotate or revoke tokens when an environment is retired.</li>
+                          </ul>
+                        </div>
+                        <div class="settings-callout settings-callout-code">
+                          <div class="doc-label">Quick example</div>
+                          <pre class="doc-code">export SUPAVECTOR_BASE_URL=http://localhost:3000
+export SUPAVECTOR_API_KEY=&lt;copy-the-new-service-token&gt;
+
+curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
+  "$SUPAVECTOR_BASE_URL/v1/collections"</pre>
                         </div>
                       </div>
                     </div>
@@ -420,6 +595,21 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="settings-kicker" id="settingsProvidersKicker">Provider keys</div>
                         <h2 id="settingsProvidersTitle">Optional AI keys for this browser</h2>
                         <p id="settingsProvidersBody">Save an OpenAI, Gemini, or Anthropic key here only if you want requests from this browser to use your own provider account.</p>
+                      </div>
+                    </div>
+
+                    <div class="settings-callouts-grid">
+                      <div class="settings-callout">
+                        <div class="doc-label">Use this when</div>
+                        <p class="settings-callout-copy">Requests from this browser should use your own OpenAI, Gemini, or Anthropic account for supported sync routes.</p>
+                      </div>
+                      <div class="settings-callout">
+                        <div class="doc-label">Do not use this for</div>
+                        <p class="settings-callout-copy">Authentication. Provider keys do not replace your SupaVector service token or admin JWT.</p>
+                      </div>
+                      <div class="settings-callout settings-callout-accent">
+                        <div class="doc-label">Scope</div>
+                        <p class="settings-callout-copy">These keys stay in this browser only and affect only requests made from this browser session.</p>
                       </div>
                     </div>
 
@@ -951,8 +1141,62 @@ result = client.search(query="hello", collection="default")</pre>
             <aside class="settings-sidebar">
               <div class="settings-sidebar-card">
                 <div class="settings-kicker" id="settingsSidebarKicker">Settings</div>
-                <h3 id="settingsSidebarTitle">Manage this workspace</h3>
-                <p id="settingsSidebarBody">Start with Register for first access. Use Sign In &amp; Token when you already have an account and need a browser token, Billing &amp; Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys.</p>
+                <h3 id="settingsSidebarTitle">Start in the right place</h3>
+                <p id="settingsSidebarBody">Use the flow below to decide where to go first, then jump directly into the section that matches the job you need to do.</p>
+
+                <div class="settings-sidebar-flow" data-settings-scope="hosted">
+                  <div class="settings-sidebar-flow-title">Hosted quick path</div>
+                  <div class="settings-flow-list">
+                    <div class="settings-flow-item">
+                      <span>1</span>
+                      <div>
+                        <strong>Register</strong>
+                        <small>Create your account, project, and first token.</small>
+                      </div>
+                    </div>
+                    <div class="settings-flow-item">
+                      <span>2</span>
+                      <div>
+                        <strong>Sign in later</strong>
+                        <small>Mint a fresh browser token whenever you return.</small>
+                      </div>
+                    </div>
+                    <div class="settings-flow-item">
+                      <span>3</span>
+                      <div>
+                        <strong>Copy latest token</strong>
+                        <small>Move it into your backend or agent secrets.</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-sidebar-flow" data-settings-scope="self_hosted">
+                  <div class="settings-sidebar-flow-title">Self-hosted quick path</div>
+                  <div class="settings-flow-list">
+                    <div class="settings-flow-item">
+                      <span>1</span>
+                      <div>
+                        <strong>Authenticate this browser</strong>
+                        <small>Paste a service token, sign in, or use SSO.</small>
+                      </div>
+                    </div>
+                    <div class="settings-flow-item">
+                      <span>2</span>
+                      <div>
+                        <strong>Create service tokens</strong>
+                        <small>Issue separate tokens for apps, CI, and workers.</small>
+                      </div>
+                    </div>
+                    <div class="settings-flow-item">
+                      <span>3</span>
+                      <div>
+                        <strong>Manage tenant controls</strong>
+                        <small>Adjust auth rules, models, and users when needed.</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <div class="doc-tabs settings-nav" data-doc-tabs="settings">
                   <button class="doc-tab active" data-doc-tab="register" type="button" data-settings-scope="hosted">
@@ -965,8 +1209,8 @@ result = client.search(query="hello", collection="default")</pre>
                   <button class="doc-tab" data-doc-tab="auth" type="button">
                     <span class="settings-nav-index">02</span>
                     <span>
-                      <strong id="settingsNavAuthTitle">Sign In &amp; Token</strong>
-                      <small id="settingsNavAuthBody">Sign in, latest token</small>
+                      <strong id="settingsNavAuthTitle">Service Tokens</strong>
+                      <small id="settingsNavAuthBody">Overview, create, latest token</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="billing" type="button" data-settings-scope="hosted">
@@ -979,15 +1223,15 @@ result = client.search(query="hello", collection="default")</pre>
                   <button class="doc-tab" data-doc-tab="keys" type="button" data-settings-scope="self_hosted">
                     <span class="settings-nav-index">04</span>
                     <span>
-                      <strong>Service Tokens</strong>
-                      <small>Issue machine credentials</small>
+                      <strong>Create Tokens</strong>
+                      <small>Machine auth for apps and agents</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="providers" type="button">
                     <span class="settings-nav-index">05</span>
                     <span>
-                      <strong id="settingsNavProvidersTitle">Providers</strong>
-                      <small id="settingsNavProvidersBody">Request-scoped provider overrides</small>
+                      <strong id="settingsNavProvidersTitle">Provider Keys</strong>
+                      <small id="settingsNavProvidersBody">Browser-only AI billing overrides</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="tenant" type="button" data-settings-scope="self_hosted">
@@ -997,6 +1241,11 @@ result = client.search(query="hello", collection="default")</pre>
                       <small>Auth rules, models, users</small>
                     </span>
                   </button>
+                </div>
+
+                <div class="settings-sidebar-note">
+                  <strong>Rule of thumb:</strong>
+                  <span>Human logins are for browser admin work. Service tokens are for apps, agents, backends, workers, and CI.</span>
                 </div>
               </div>
             </aside>
