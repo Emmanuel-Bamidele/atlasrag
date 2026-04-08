@@ -1649,20 +1649,6 @@ function getDocPanels(panelWrap){
   return Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
 }
 
-function getDocsDefaultHash(panelName){
-  const routes = {
-    core: "#start",
-    cli: "#install",
-    setup: "#setup",
-    database: "#database",
-    rbac: "#rbac",
-    platform: "#manage",
-    amv: "#memory-policies",
-    reference: "#reference"
-  };
-  return routes[String(panelName || "").trim()] || "";
-}
-
 function getActiveDocsMenuName(){
   return String(document.querySelector('.doc-tabs[data-doc-tabs="docs"] .doc-tab.active')?.dataset.docTab || "").trim();
 }
@@ -1825,6 +1811,18 @@ function syncDocsMenuLinksFromHash(rawHash){
   });
 }
 
+function resetDocsHashToLanding(options = {}){
+  const landingHash = "#pageDocsTop";
+  const nextUrl = `${window.location.pathname}${window.location.search}${landingHash}`;
+  if (window.location.hash !== landingHash) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+  syncDocsMenuLinksFromHash(landingHash);
+  if (options.scroll !== false) {
+    scrollToHashTarget(landingHash, { smooth: options.smooth === true });
+  }
+}
+
 function syncDocPanelsToTarget(target){
   if (!target) return false;
 
@@ -1971,11 +1969,9 @@ function initDocTabs(){
       btn.addEventListener("click", () => {
         if (groupId === "docs") {
           docsSubmenuVisible = true;
-          const defaultHash = getDocsDefaultHash(btn.dataset.docTab);
-          if (defaultHash) {
-            navigateToHash(defaultHash, { smooth: true });
-            return;
-          }
+          activateDocPanel(groupId, btn.dataset.docTab);
+          resetDocsHashToLanding({ smooth: true });
+          return;
         }
         activate(btn.dataset.docTab);
       });
