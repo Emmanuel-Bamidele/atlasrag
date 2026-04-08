@@ -180,6 +180,30 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.match(prompt.user, /Question and response exchanges JSON:/);
 }
 
+function testConversationWikiMetricsHelpers() {
+  const snapshot = __testHooks.recordConversationWikiMetrics("tenant-1", {
+    succeeded: 1,
+    pagesUpdated: 2,
+    queuedDeletes: 1,
+    lastPageCount: 4,
+    lastUpdatedAt: "2026-04-07T12:00:00.000Z"
+  });
+  assert.equal(snapshot.succeeded, 1);
+  assert.equal(snapshot.pagesUpdated, 2);
+  assert.equal(snapshot.queuedDeletes, 1);
+  assert.equal(snapshot.lastPageCount, 4);
+  assert.equal(snapshot.lastUpdatedAt, "2026-04-07T12:00:00.000Z");
+  assert.doesNotThrow(() => {
+    __testHooks.emitConversationWikiTelemetry("succeeded", {
+      tenantId: "tenant-1",
+      collection: "__brain_conv_test",
+      source: "conversation_wiki_job"
+    }, {
+      page_count: 4
+    });
+  });
+}
+
 {
   assert.equal(__testHooks.resolveConversationWikiSourceCheckpoint([
     { checkpointTurnExternalId: "turn-42" }
@@ -382,6 +406,101 @@ async function testClearsConversationMemoryCollection() {
   assert.equal(result.deletedVectors, 4);
 }
 
+async function testEnqueuesConversationMemoryClearJob() {
+  let createCalls = 0;
+  const activeJob = { id: "job-clear-active", status: "running" };
+  const first = await __testHooks.enqueueConversationMemoryClearJobWithDeps({
+    listMemoryJobsByCollection: async ({ jobTypes, statuses }) => {
+      assert.deepEqual(jobTypes, ["conversation_wiki_clear_collection"]);
+      assert.deepEqual(statuses, ["queued", "running"]);
+      return [activeJob];
+    },
+    createMemoryJob: async () => {
+      createCalls += 1;
+      return { id: "job-created", status: "queued" };
+    }
+  }, {
+    tenantId: "tenant-1",
+    collection: "__brain_conv_test"
+  });
+  assert.equal(first, activeJob);
+  assert.equal(createCalls, 0);
+
+  const second = await __testHooks.enqueueConversationMemoryClearJobWithDeps({
+    listMemoryJobsByCollection: async () => [],
+    createMemoryJob: async (payload) => {
+      createCalls += 1;
+      return {
+        id: "job-created",
+        status: payload.status,
+        input: payload.input
+      };
+    }
+  }, {
+    tenantId: "tenant-1",
+    collection: "__brain_conv_test",
+    requestId: "req-1",
+    source: "conversation_wiki_api"
+  });
+  assert.equal(second.id, "job-created");
+  assert.equal(second.status, "queued");
+  assert.equal(second.input.collection, "__brain_conv_test");
+  assert.equal(second.input.requestId, "req-1");
+  assert.equal(second.input.source, "conversation_wiki_api");
+  assert.equal(createCalls, 1);
+}
+
+async function testRunsConversationMemoryClearJob() {
+  const updates = [];
+  const audits = [];
+  const finalizations = [];
+  await __testHooks.runConversationMemoryClearJobWithDeps({
+    claimMemoryJob: async ({ id, tenantId }) => ({
+      id,
+      tenant_id: tenantId,
+      input: JSON.stringify({
+        collection: "__brain_conv_test",
+        requestId: "req-clear",
+        source: "conversation_wiki_api"
+      })
+    }),
+    clearConversationMemoryCollection: async ({ tenantId, collection, requestId, source }) => {
+      assert.equal(tenantId, "tenant-1");
+      assert.equal(collection, "__brain_conv_test");
+      assert.equal(requestId, "req-clear");
+      assert.equal(source, "conversation_wiki_api");
+      return {
+        collection,
+        conversationCount: 3,
+        memoryItemCount: 10,
+        deletedCount: 8,
+        queuedCount: 2,
+        deletedJobCount: 4,
+        deletedVectors: 22
+      };
+    },
+    updateMemoryJob: async (payload) => {
+      updates.push(payload);
+      return payload;
+    },
+    createAuditLog: async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    finalizeJobFailure: async (...args) => {
+      finalizations.push(args);
+    }
+  }, "job-clear", "tenant-1");
+
+  assert.equal(finalizations.length, 0);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, "succeeded");
+  assert.equal(updates[0].output.deletedCount, 8);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "conversation_wiki.cleared");
+  assert.equal(audits[0].metadata.deletedVectors, 22);
+}
+
 async function main() {
   testNormalizesWikiPages();
   testBuildsConversationWikiPageText();
@@ -389,12 +508,15 @@ async function main() {
   testParsesLegacyConversationWikiResponse();
   testFormatsConversationWikiAuditFields();
   testBuildsTurnExchangesAndPrompt();
+  testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
     await testConversationWikiJobRetryableFailureRequeues();
   }
   await testConversationWikiEnqueueDedupesConcurrentRequests();
   await testPrunesConversationTailAndCountsQueuedDeletes();
   await testClearsConversationMemoryCollection();
+  await testEnqueuesConversationMemoryClearJob();
+  await testRunsConversationMemoryClearJob();
   console.log("conversation wiki tests passed");
 }
 
