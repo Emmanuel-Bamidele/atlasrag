@@ -1180,25 +1180,25 @@ function applyRuntimeUiConfig(config){
   setTextById(
     "settingsSidebarBody",
     hosted
-      ? "Start with Register for first access. Use Service Tokens for browser-local token work, Billing & Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys."
+      ? "Start with Register for first access. Use Sign In & Token when you already have an account and need a browser token, Billing & Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys."
       : "Pick a section on the right. The left pane stays focused on one setup flow at a time."
   );
   setTextById(
     "registerPanelBody",
     hosted
-      ? "Create your first hosted account here. After that, use Service Tokens for token overview, existing-account sign-in, and latest-token actions."
+      ? "Create your first hosted account here. After that, use Sign In & Token when you want to sign in again or reuse the latest token in this browser."
       : "Create the first self-hosted account when browser registration is available, or authenticate an existing admin and mint a service token."
   );
-  setTextById("settingsAuthKicker", hosted ? "Service Tokens" : "Access");
-  setTextById("settingsAuthTitle", hosted ? "Service tokens for this browser" : "Authenticate this browser");
+  setTextById("settingsAuthKicker", hosted ? "Access" : "Access");
+  setTextById("settingsAuthTitle", hosted ? "Sign in and browser token" : "Authenticate this browser");
   setTextById(
     "settingsAuthBody",
     hosted
-      ? "Start with Overview, use Create to mint a fresh service token from an existing account, and use Latest token to copy or save the newest token created in this browser."
+      ? "Sign in with an existing account to mint a fresh service token for this browser, then copy or save the latest token here."
       : "Choose how this browser authenticates to SupaVector. Save a service token, or sign in for a human admin JWT when you need admin actions."
   );
-  setTextById("settingsNavAuthTitle", hosted ? "Service Tokens" : "Authenticate");
-  setTextById("settingsNavAuthBody", hosted ? "Overview, create, latest token" : "Saved token, admin login, SSO");
+  setTextById("settingsNavAuthTitle", hosted ? "Sign In & Token" : "Authenticate");
+  setTextById("settingsNavAuthBody", hosted ? "Sign in, latest token" : "Saved token, admin login, SSO");
   setTextById("settingsNavProvidersTitle", hosted ? "Provider Keys" : "Providers");
   setTextById("settingsNavProvidersBody", hosted ? "Save AI keys for this browser" : "Save browser-only AI keys");
   setTextById("settingsProvidersKicker", "Provider keys");
@@ -1649,20 +1649,6 @@ function getDocPanels(panelWrap){
   return Array.from(panelWrap.children).filter((node) => node.classList?.contains("doc-panel"));
 }
 
-function getDocsDefaultHash(panelName){
-  const routes = {
-    core: "#start",
-    cli: "#install",
-    setup: "#setup",
-    database: "#database",
-    rbac: "#rbac",
-    platform: "#manage",
-    amv: "#memory-policies",
-    reference: "#reference"
-  };
-  return routes[String(panelName || "").trim()] || "";
-}
-
 function getActiveDocsMenuName(){
   return String(document.querySelector('.doc-tabs[data-doc-tabs="docs"] .doc-tab.active')?.dataset.docTab || "").trim();
 }
@@ -1825,6 +1811,18 @@ function syncDocsMenuLinksFromHash(rawHash){
   });
 }
 
+function resetDocsHashToLanding(options = {}){
+  const landingHash = "#pageDocsTop";
+  const nextUrl = `${window.location.pathname}${window.location.search}${landingHash}`;
+  if (window.location.hash !== landingHash) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+  syncDocsMenuLinksFromHash(landingHash);
+  if (options.scroll !== false) {
+    scrollToHashTarget(landingHash, { smooth: options.smooth === true });
+  }
+}
+
 function syncDocPanelsToTarget(target){
   if (!target) return false;
 
@@ -1971,11 +1969,9 @@ function initDocTabs(){
       btn.addEventListener("click", () => {
         if (groupId === "docs") {
           docsSubmenuVisible = true;
-          const defaultHash = getDocsDefaultHash(btn.dataset.docTab);
-          if (defaultHash) {
-            navigateToHash(defaultHash, { smooth: true });
-            return;
-          }
+          activateDocPanel(groupId, btn.dataset.docTab);
+          resetDocsHashToLanding({ smooth: true });
+          return;
         }
         activate(btn.dataset.docTab);
       });

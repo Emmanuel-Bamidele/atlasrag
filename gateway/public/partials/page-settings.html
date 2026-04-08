@@ -9,7 +9,7 @@
                       <div>
                         <div class="settings-kicker">Register</div>
                         <h2>Create access and mint a service token</h2>
-                        <p id="registerPanelBody">Create your first hosted account here. After that, use Service Tokens for token overview, existing-account sign-in, and latest-token actions.</p>
+                        <p id="registerPanelBody">Create your first hosted account here. After that, use Sign In &amp; Token when you want to sign in again or reuse the latest token in this browser.</p>
                       </div>
                       <div class="actions settings-hero-actions">
                         <button class="btn secondary" id="registerRefreshBtn">Refresh availability</button>
@@ -111,53 +111,50 @@ result = client.search(query="hello", collection="default")</pre>
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
-                        <div class="settings-kicker" id="settingsAuthKicker">Service Tokens</div>
-                        <h2 id="settingsAuthTitle">Service tokens for this browser</h2>
-                        <p id="settingsAuthBody">Start with Overview, use Create to mint a fresh service token from an existing account, and use Latest token to copy or save the newest token created in this browser.</p>
+                        <div class="settings-kicker" id="settingsAuthKicker">Access</div>
+                        <h2 id="settingsAuthTitle">Sign in and browser token</h2>
+                        <p id="settingsAuthBody">Sign in with an existing account to mint a fresh service token for this browser, then copy or save the latest token here.</p>
                       </div>
                     </div>
 
                     <div data-settings-scope="hosted">
+                      <div class="settings-surface-note" id="settingsHostedNotice">
+                        <div>
+                          <div class="doc-label">Hosted control plane</div>
+                          <p id="settingsHostedNoticeBody">Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings.</p>
+                        </div>
+                        <div class="actions">
+                          <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
+                        </div>
+                      </div>
+
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">How to use this page</div>
+                            <div class="hint">Register creates the first project admin and first token. This section is for signing in later and reusing the latest token in this browser.</div>
+                          </div>
+                        </div>
+
+                        <ul>
+                          <li>Use <strong>Sign in</strong> when you already have an account and need a fresh browser token.</li>
+                          <li>Use <strong>Latest token</strong> to copy the newest token created in this browser session.</li>
+                          <li>Use <strong>Provider Keys</strong> only when requests from this browser should use your own OpenAI, Gemini, or Anthropic key.</li>
+                        </ul>
+                      </div>
+
                       <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsHostedTokenSections">
-                        <button class="doc-tab active" data-doc-tab="hostedOverview" type="button">Overview</button>
-                        <button class="doc-tab" data-doc-tab="hostedCreateToken" type="button">Create</button>
+                        <button class="doc-tab active" data-doc-tab="hostedSignIn" type="button">Sign in</button>
                         <button class="doc-tab" data-doc-tab="hostedLatestToken" type="button">Latest token</button>
                       </div>
 
                       <div class="doc-panels" data-doc-panels="settingsHostedTokenSections">
-                        <div class="doc-panel active" data-doc-panel="hostedOverview">
-                          <div class="settings-surface-note" id="settingsHostedNotice">
-                            <div>
-                              <div class="doc-label">Hosted control plane</div>
-                              <p id="settingsHostedNoticeBody">Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings.</p>
-                            </div>
-                            <div class="actions">
-                              <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
-                            </div>
-                          </div>
-
+                        <div class="doc-panel active" data-doc-panel="hostedSignIn">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
                               <div>
-                                <div class="doc-label">How to use this page</div>
-                                <div class="hint">Hosted projects, users, billing, and service-token lifecycle still live in Dashboard.</div>
-                              </div>
-                            </div>
-
-                            <ul>
-                              <li>Use <strong>Create</strong> here when you want to sign in and mint a fresh service token for this browser.</li>
-                              <li>Use <strong>Latest token</strong> to copy the newest service token created in this browser session.</li>
-                              <li>Use <strong>Provider Keys</strong> only when requests from this browser should use your own OpenAI, Gemini, or Anthropic key.</li>
-                            </ul>
-                          </div>
-                        </div>
-
-                        <div class="doc-panel" data-doc-panel="hostedCreateToken">
-                          <div class="settings-section-card">
-                            <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Create from an existing account</div>
-                                <div class="hint">Signs in with username and password, then creates a fresh service token for this project and saves it for this browser.</div>
+                                <div class="doc-label">Sign in with an existing account</div>
+                                <div class="hint">Enter your username and password, then mint a fresh service token for this project and save it in this browser.</div>
                               </div>
                             </div>
 
@@ -955,7 +952,7 @@ result = client.search(query="hello", collection="default")</pre>
               <div class="settings-sidebar-card">
                 <div class="settings-kicker" id="settingsSidebarKicker">Settings</div>
                 <h3 id="settingsSidebarTitle">Manage this workspace</h3>
-                <p id="settingsSidebarBody">Start with Register for first access. Use Service Tokens for browser-local token work, Billing &amp; Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys.</p>
+                <p id="settingsSidebarBody">Start with Register for first access. Use Sign In &amp; Token when you already have an account and need a browser token, Billing &amp; Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys.</p>
 
                 <div class="doc-tabs settings-nav" data-doc-tabs="settings">
                   <button class="doc-tab active" data-doc-tab="register" type="button" data-settings-scope="hosted">
@@ -968,8 +965,8 @@ result = client.search(query="hello", collection="default")</pre>
                   <button class="doc-tab" data-doc-tab="auth" type="button">
                     <span class="settings-nav-index">02</span>
                     <span>
-                      <strong id="settingsNavAuthTitle">Service Tokens</strong>
-                      <small id="settingsNavAuthBody">Overview, create, latest token</small>
+                      <strong id="settingsNavAuthTitle">Sign In &amp; Token</strong>
+                      <small id="settingsNavAuthBody">Sign in, latest token</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="billing" type="button" data-settings-scope="hosted">
