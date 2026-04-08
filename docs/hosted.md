@@ -14,6 +14,17 @@ What you are not setting up:
 - `.env` files or bootstrap scripts
 - your own Postgres database for SupaVector
 
+## 5-Minute Path
+
+If you want the shortest path:
+
+1. Sign in
+2. Create a project
+3. Copy the `supav_...` service token
+4. Run `python3 -m pip install supavector`
+5. Set `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`
+6. Start calling the API from your backend, worker, notebook, or agent runtime
+
 ## Step 1 — Sign Up
 
 Go to the SupaVector hosted instance and sign up with Google, GitHub, or email.
@@ -93,11 +104,30 @@ No real charge is made.
 Set two environment variables in your app, agent, or script:
 
 ```bash
+python3 -m pip install supavector
+
 SUPAVECTOR_BASE_URL=https://YOUR_HOSTED_DOMAIN
 SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Then call the API the same way as any SupaVector deployment:
+Then call the API the same way as any SupaVector deployment. Python example:
+
+```python
+from supavector import Client
+
+client = Client.from_env(collection="default")
+
+client.index_text(
+    "welcome",
+    "SupaVector stores memory for agents.",
+    params={"idempotencyKey": "doc-001"},
+)
+
+answer = client.ask("What does SupaVector store?", {"k": 7})
+print(answer["data"]["answer"])
+```
+
+Raw HTTP example:
 
 ```bash
 # Health check (no token needed)

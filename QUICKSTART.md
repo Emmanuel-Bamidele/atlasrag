@@ -10,6 +10,14 @@ This guide shows the **recommended first path** for a developer who wants to:
 
 It focuses on the cleanest production pattern first. Other deployment approaches become much easier once you understand this one.
 
+If you do not want to self-host SupaVector and only need a Python client for an existing deployment, stop here and use:
+
+```bash
+python3 -m pip install supavector
+```
+
+Then read [`docs/hosted.md`](docs/hosted.md) or [`docs/agents.md`](docs/agents.md).
+
 ---
 
 ## 1) Choose the right mode first

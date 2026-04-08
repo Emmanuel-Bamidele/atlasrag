@@ -124,49 +124,42 @@
       <section class="hero">
         <h1>Supavector API Documentation</h1>
         <p>
-          This page is focused on API consumers building apps and agents.
-          The recommended model is: bootstrap once, store a service token, then let your backend or agent call Supavector directly.
+          This page is for developers building apps and agents. The simple model is: get a service token once, store
+          <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code>, then call SupaVector from your backend, worker, or agent runtime.
         </p>
         <div class="meta-grid">
           <article class="meta-card">
             <h2>Recommended Flow</h2>
             <ol>
-              <li>Run <code>node scripts/bootstrap_instance.js</code> once to create an admin and service token.</li>
-              <li>Store <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> in your app or agent env.</li>
-              <li>Index content via <code>/v1/docs</code> or <code>/v1/docs/url</code>.</li>
-              <li>Retrieve context with <code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/code</code>, <code>/v1/boolean_ask</code>, and the memory endpoints.</li>
+              <li>If you self-host, run <code>supavector onboard</code> once. If SupaVector already exists, ask the operator for a base URL and service token.</li>
+              <li>If you are in Python, run <code>python3 -m pip install supavector</code>.</li>
+              <li>Store <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> in your runtime env.</li>
+              <li>Index with <code>/v1/docs</code>, then retrieve with <code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/code</code>, <code>/v1/boolean_ask</code>, or memory endpoints.</li>
             </ol>
           </article>
           <article class="meta-card">
             <h2>Usage Modes</h2>
             <ul>
-              <li>Fork and self-deploy with the bundled stack for the fastest start.</li>
-              <li>Fork and self-deploy with your own Postgres and OpenAI key if you already have infra in place.</li>
-              <li>Use a shared Supavector deployment if your app or agent just needs to call an existing instance.</li>
-              <li>Use a shared Supavector deployment with your own OpenAI key when the request should use your provider key.</li>
-              <li>Keep your own product auth in front when Supavector should sit behind your backend.</li>
+              <li>Self-host with the bundled stack when you want to run SupaVector yourself.</li>
+              <li>Use your own Postgres when you already have database and secret-management infrastructure.</li>
+              <li>Use a shared or hosted deployment when your app just needs a running API and a token.</li>
+              <li>Keep your own product auth in front when SupaVector should sit behind your backend.</li>
             </ul>
           </article>
           <article class="meta-card">
             <h2>Important Notes</h2>
             <ul>
-              <li>JWTs are best for human admin sessions. Service tokens are best for apps, agents, workers, and CI.</li>
-              <li>Supavector can use your existing Postgres. Set <code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, and <code>PGPASSWORD</code>.</li>
-              <li>If you want Supavector to keep its own Postgres/auth but use your OpenAI key for a request, also send <code>X-OpenAI-API-Key</code>.</li>
+              <li>JWTs are for human admin sessions. Service tokens are for apps, agents, workers, and CI.</li>
+              <li>If you want SupaVector to keep its own auth/runtime but use your provider key for a request, send the matching request-scoped provider-key header.</li>
               <li><code>Idempotency-Key</code> is required for <code>/v1/docs</code>, <code>/v1/docs/url</code>, <code>/v1/memory/write</code>, <code>/v1/memory/reflect</code>.</li>
               <li><code>/v1/docs/url</code> only indexes reachable public URLs. Private/local hosts are blocked.</li>
-              <li>Use <code>/v1/jobs/{id}</code> until status becomes <code>succeeded</code> or <code>failed</code>.</li>
-              <li>AMV-L retrieval is tier-gated: default retrieval uses HOT + sampled WARM; COLD is excluded unless explicitly enabled.</li>
-              <li>Memory, ask, code, and <code>boolean_ask</code> requests can set <code>policy</code> to <code>amvl</code>, <code>ttl</code>, or <code>lru</code>. The default is <code>amvl</code>.</li>
-              <li><code>X-OpenAI-API-Key</code> is request-scoped and is currently rejected by async <code>/v1/memory/reflect</code> and <code>/v1/memory/compact</code>.</li>
-              <li><code>/v1/ask</code> supports <code>answerLength</code>: <code>auto</code>, <code>short</code>, <code>medium</code>, <code>long</code>.</li>
-              <li><code>/v1/search</code>, <code>/v1/ask</code>, <code>/v1/code</code>, <code>/v1/boolean_ask</code>, and <code>/v1/memory/recall</code> accept <code>favorRecency=true</code> when fresher matches should outrank older evidence.</li>
+              <li>Use <code>/v1/jobs/{id}</code> until the job status becomes <code>succeeded</code> or <code>failed</code>.</li>
               <li><code>/v1/boolean_ask</code> returns only <code>true</code>, <code>false</code>, or <code>invalid</code>, plus <code>supportingChunks</code>.</li>
             </ul>
           </article>
         </div>
         <div class="controls">
-          Bootstrap once, then use the returned <code>SUPAVECTOR_BASE_URL</code> and <code>SUPAVECTOR_API_KEY</code> everywhere else. Add <code>X-OpenAI-API-Key</code> only when you want request-scoped provider override.
+          Self-host once or get a token from an existing deployment, then reuse that base URL and service token everywhere else.
         </div>
       </section>
       <div id="swagger-ui"></div>

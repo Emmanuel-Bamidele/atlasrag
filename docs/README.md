@@ -2,6 +2,16 @@
 
 This directory is the detailed documentation set for teams using SupaVector in hosted, self-hosted, and enterprise setups.
 
+## Beginner Routes
+
+Use the shortest route that matches what you are actually doing:
+
+- I want the hosted service and a token fast: open [`hosted.md`](hosted.md).
+- I want to run SupaVector myself: open [`self-hosting.md`](self-hosting.md).
+- I already have a running deployment and just need to call it from code: open [`agents.md`](agents.md).
+- I am not sure which mode I am in yet: open [`setup-modes.md`](setup-modes.md).
+- I am in Python and only need a client: run `python3 -m pip install supavector`, then read [`agents.md`](agents.md) or [`hosted.md`](hosted.md).
+
 ## Decision Matrix
 
 If you are not sure which guide to open first, use this table.
