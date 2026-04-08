@@ -10,6 +10,14 @@ This guide is for developers building:
 
 The goal is simple: make SupaVector feel like a service your runtime can depend on, not a manual UI-only tool.
 
+## Fast Start For Developers
+
+Use the smallest setup that matches your situation:
+
+- Hosted or shared deployment: run `python3 -m pip install supavector`, store `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`, then call SupaVector from your backend, worker, or agent.
+- Self-hosted local/server deployment: install the CLI and run `supavector onboard` once, then reuse the saved base URL and service token.
+- Backend-as-caller: keep the service token on your server side. Do not ship it to the browser.
+
 ## Decision Matrix
 
 Use this if you need to choose the right usage mode quickly.
@@ -70,6 +78,12 @@ For most runtimes, this is enough:
 ```bash
 SUPAVECTOR_BASE_URL=http://localhost:3000
 SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN
+```
+
+If you are in Python, install the SDK first:
+
+```bash
+python3 -m pip install supavector
 ```
 
 Optional app-level defaults you may also keep:

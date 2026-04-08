@@ -127,25 +127,25 @@
             <details class="details section" id="doc-start-overview" open>
               <summary>What SupaVector is</summary>
               <div class="section-body">
-                <p>SupaVector is a retrieval and memory platform for AI applications, agents, assistants, backends, and internal tools. It combines chunked document indexing, search, grounded answer generation, boolean decision support, long-lived memory storage, tenant-aware security, and operational tooling in one runtime.</p>
+                <p>SupaVector is the retrieval and memory backend behind your app, agent, or internal tool. It stores data, retrieves the right context, and gives you grounded answers through one API instead of spreading that logic across your product.</p>
                 <div class="doc-block">
                   <div class="doc-label">What makes SupaVector different</div>
                   <div class="doc-grid">
                     <div class="doc-card">
                       <h3>Built for runtime use</h3>
-                      <p>SupaVector is not only a document search API. It supports write, search, ask, boolean_ask, memory write, memory recall, reflection, compaction, tenant controls, and admin automation as one platform.</p>
+                      <p>Index, search, ask, boolean_ask, and memory APIs live behind the same service instead of separate tools.</p>
                     </div>
                     <div class="doc-card">
                       <h3>Clear separation by mode</h3>
-                      <p>Hosted, shared-deployment, and self-hosted paths are different on purpose. The docs try to keep readers from mixing “call an existing server” steps with “run the server yourself” steps.</p>
+                      <p>Hosted, shared-deployment, and self-hosted paths are kept separate on purpose so you do not mix client instructions with operator setup.</p>
                     </div>
                     <div class="doc-card">
-                      <h3>Operationally opinionated</h3>
-                      <p>It includes auth, tenant isolation, service tokens, SSO support, audit history, usage metering, storage tracking, and CLI workflows instead of leaving those as separate glue work.</p>
+                      <h3>Service-token first</h3>
+                      <p>Apps and agents use a service token. Human admins use login or SSO for management workflows.</p>
                     </div>
                     <div class="doc-card">
                       <h3>Memory-aware</h3>
-                      <p>TTL, LRU, and AMVL policies let you treat memory like more than a static index. SupaVector can optimize for fixed expiry, recency, or longer-term usefulness depending on the workload.</p>
+                      <p>TTL, LRU, and AMVL let you decide whether memory should expire, stay recent, or be kept for longer-term usefulness.</p>
                     </div>
                   </div>
                 </div>
@@ -235,21 +235,21 @@
             <details class="details section" id="doc-start-quick-paths">
               <summary>Quick-start paths</summary>
               <div class="section-body">
-                <p>Pick the path that matches who runs SupaVector and where your first credentials come from.</p>
+                <p>Pick the path that matches who runs SupaVector and where your first token comes from.</p>
                 <div class="doc-grid">
                   <div class="doc-card">
                     <h3>Hosted quick path</h3>
-                    <p>Create a project in the Dashboard, copy the project token, store <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span> on your server, and start sending HTTPS requests.</p>
+                    <p>Create a project, copy the token, run <span class="mono">python3 -m pip install supavector</span> if you are in Python, then store <span class="mono">SUPAVECTOR_BASE_URL</span> and <span class="mono">SUPAVECTOR_API_KEY</span> in your runtime.</p>
                     <p><a href="#setup">Continue in Setup</a> or <a href="#reference">jump to Reference</a>.</p>
                   </div>
                   <div class="doc-card">
                     <h3>Self-host quick path</h3>
-                    <p>Install the CLI, run <span class="mono">supavector onboard</span>, let it create the first admin and service token, then connect your app or worker to the local server.</p>
+                    <p>Install the CLI, run <span class="mono">supavector onboard</span>, let it create the first admin and service token, then connect your app or worker to that deployment.</p>
                     <p><a href="#install">Continue in Install</a> or <a href="#setup">see full mode guidance</a>.</p>
                   </div>
                   <div class="doc-card">
                     <h3>Existing deployment quick path</h3>
-                    <p>If SupaVector already exists, ask the operator for a base URL and a token. Do not clone the repo just to consume the API from a client machine.</p>
+                    <p>If SupaVector already exists, ask the operator for a base URL and a token. Do not clone the repo or run onboarding on a client machine just to consume the API.</p>
                     <p><a href="#setup">Continue in Setup</a> or <a href="#reference">jump to API Reference</a>.</p>
                   </div>
                 </div>
@@ -320,20 +320,23 @@
               <summary>Quickstart</summary>
               <div class="section-body">
                 <p>
-                  Recommended quickstart: use the CLI. On the self-hosted path,
-                  <span class="mono">supavector onboard</span> handles the first local bootstrap for you, including the first admin
-                  and the first service token. You do not need to run a separate human bootstrap command first unless you intentionally
-                  want the raw manual Docker path.
+                  There are two common starting points. If you are running SupaVector yourself, use the CLI. If SupaVector already exists and you just need a client, install the SDK or call the HTTP API directly.
                 </p>
                 <div class="doc-block">
-                  <div class="doc-label">Recommended path: CLI</div>
+                  <div class="doc-label">Self-hosted: fastest path</div>
                   <pre class="doc-code">./scripts/install.sh
 supavector onboard
 supavector write --doc-id welcome --collection local-demo --text "Supavector stores memory for agents."
-supavector ask --question "What does Supavector store?" --collection local-demo
-supavector code --question "Explain the main retrieval path." --collection local-demo
-supavector boolean_ask --question "Does Supavector store memory for agents?" --collection local-demo</pre>
-                  <p class="hint">Use <strong>Install</strong> if you want the full install matrix, Windows command, one-line remote install, and the full CLI command reference.</p>
+supavector ask --question "What does Supavector store?" --collection local-demo</pre>
+                  <p class="hint">Use <strong>Install</strong> when you want the full CLI install matrix and operational commands.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">Hosted or existing deployment: fastest path</div>
+                  <pre class="doc-code">python3 -m pip install supavector
+
+export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
+                  <p class="hint">Then use the Python SDK, Node SDK, or plain HTTP. Do not run <span class="mono">supavector onboard</span> from a client machine that is only consuming an already running deployment.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">What <span class="mono">supavector onboard</span> does</div>
@@ -348,7 +351,7 @@ supavector boolean_ask --question "Does Supavector store memory for agents?" --c
                 <div class="doc-block">
                   <div class="doc-label">How the first service token is obtained</div>
                   <p>On the recommended CLI path, the first service token is created automatically during <span class="mono">supavector onboard</span>. The CLI runs the same bootstrap logic for you and stores the returned token locally.</p>
-                  <p class="hint">If you self-host manually instead of using the CLI, the same first token comes from <span class="mono">scripts/bootstrap_instance.js</span>. If someone else runs Supavector for you, ask that admin for <span class="mono">SUPAVECTOR_BASE_URL</span> and a tenant-scoped service token.</p>
+                  <p class="hint">If you self-host manually instead of using the CLI, the same first token comes from <span class="mono">scripts/bootstrap_instance.js</span>. If someone else runs SupaVector for you, ask that admin for <span class="mono">SUPAVECTOR_BASE_URL</span> and a tenant-scoped service token instead.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Open source repository</div>
@@ -1154,133 +1157,71 @@ curl -X POST http://localhost:3000/v1/memory/recall \
                   <button class="doc-tab" data-doc-tab="node" type="button">Node.js</button>
                 </div>
                 <div class="doc-panels" data-doc-panels="clients">
-                  <div class="doc-panel active" data-doc-panel="python">
+                <div class="doc-panel active" data-doc-panel="python">
                 <div class="doc-block">
                   <div class="doc-label">Install + env</div>
-                  <pre class="doc-code">pip install requests
+                  <pre class="doc-code">python3 -m pip install supavector
 export SUPAVECTOR_BASE_URL="http://localhost:3000"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">End-to-end flow</div>
-                  <pre class="doc-code">import os
-import time
-import requests
+                  <pre class="doc-code">from supavector import Client
 
-BASE = os.getenv("SUPAVECTOR_BASE_URL") or os.getenv("SUPAVECTOR_URL", "http://localhost:3000")
-API_KEY = os.getenv("SUPAVECTOR_API_KEY")
+client = Client.from_env(collection="default")
 
-headers = {
-  "Content-Type": "application/json",
-  "X-API-Key": API_KEY
-}
+client.index_text(
+  "swe_notes",
+  "WAL keeps vectors durable across restarts.",
+  params={"idempotencyKey": "idx-001"},
+)
 
-# 1) Index
-doc = {
-  "docId": "swe_notes",
-  "collection": "default",
-  "text": "WAL keeps vectors durable across restarts."
-}
-res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "idx-001"}, json=doc)
-res.raise_for_status()
-print(res.json())
+search = client.search("durability", {"k": 5})
+print(search["data"]["hits"][0]["text"])
 
-# 2) Search
-res = requests.get(f"{BASE}/v1/search", headers=headers, params={
-  "q": "durability",
-  "k": 40,
-  "collection": "default"
-})
-res.raise_for_status()
-print(res.json())
+answer = client.ask("How do we persist vectors?", {"k": 7})
+print(answer["data"]["answer"])
 
-# 3) Ask
-res = requests.post(f"{BASE}/v1/ask", headers=headers, json={
-  "question": "How do we persist vectors?",
-  "k": 7,
-  "answerLength": "short",
-  "policy": "amvl"
-})
-res.raise_for_status()
-print(res.json())
+decision = client.boolean_ask("Does WAL keep vectors durable across restarts?", {"k": 7})
+print(decision["data"]["answer"])
 
-# 4) Boolean ask
-res = requests.post(f"{BASE}/v1/boolean_ask", headers=headers, json={
-  "question": "Does WAL keep vectors durable across restarts?",
-  "k": 7,
-  "policy": "amvl"
-})
-res.raise_for_status()
-print(res.json())
-
-# 5) Memory write
-res = requests.post(f"{BASE}/v1/memory/write", headers={**headers, "Idempotency-Key": "mem-001"}, json={
+memory = client.memory_write({
+  "idempotencyKey": "mem-001",
   "type": "semantic",
   "policy": "amvl",
   "collection": "default",
   "text": "Vector WAL is enabled in production.",
   "agentId": "agent:ops-bot",
-  "tags": ["infra", "wal"],
-  "importanceHint": 0.6,
-  "pinned": false
+  "tags": ["infra", "wal"]
 })
-res.raise_for_status()
 
-# 6) Recall
-res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
+recalled = client.memory_recall({
   "query": "WAL enabled",
   "policy": "amvl",
   "types": ["semantic"],
   "tags": ["infra"],
   "k": 5
 })
-res.raise_for_status()
-print(res.json())
-
-# 5b) Feedback
-res = requests.post(f"{BASE}/v1/feedback", headers=headers, json={
-  "memoryId": "mem_123",
-  "feedback": "positive",
-  "eventValue": 0.8
-})
-res.raise_for_status()
-
-# 6) Reflect (async job)
-res = requests.post(f"{BASE}/v1/memory/reflect", headers={**headers, "Idempotency-Key": "reflect-001"}, json={
-  "docId": "swe_notes",
-  "policy": "amvl",
-  "types": ["semantic", "summary"],
-  "collection": "default"
-})
-res.raise_for_status()
-job_id = res.json()["data"]["job"]["id"]
-#
-# You can also reflect from a conversation memory item via "conversationId".
-
-# 7) Poll job
-while True:
-  job = requests.get(f"{BASE}/v1/jobs/{job_id}", headers=headers).json()
-  status = job["data"]["job"]["status"]
-  if status in ("succeeded", "failed"):
-    print(job)
-    break
-  time.sleep(2)</pre>
+print(recalled["data"]["memories"])</pre>
+                  <p class="hint">If you prefer raw HTTP instead of the SDK, the same API routes are available in the reference sections below.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Collections + ACL visibility</div>
-                  <pre class="doc-code"># Restrict a document to an ACL list (inside the tenant)
-res = requests.post(f"{BASE}/v1/docs", headers={**headers, "Idempotency-Key": "idx-002"}, json={
-  "docId": "private_notes",
-  "collection": "finance",
-  "text": "Confidential budget details...",
-  "visibility": "acl",
-  "acl": ["user:alice", "user:bob"]
-})</pre>
+                  <pre class="doc-code">client.index_text(
+  "private_notes",
+  "Confidential budget details...",
+  params={
+    "collection": "finance",
+    "visibility": "acl",
+    "acl": ["user:alice", "user:bob"],
+    "idempotencyKey": "idx-002"
+  },
+)</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Server-side privileges (no end-user login)</div>
                   <pre class="doc-code"># Requires ALLOW_PRINCIPAL_OVERRIDE=1 and an admin service token
-res = requests.post(f"{BASE}/v1/memory/recall", headers=headers, json={
+client.memory_recall({
   "query": "policy details",
   "policy": "amvl",
   "collection": "internal",

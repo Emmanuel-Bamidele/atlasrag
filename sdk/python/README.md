@@ -7,6 +7,12 @@ It is not a replacement for the `supavector` Node CLI that manages local onboard
 
 ## Install
 
+From PyPI:
+
+```bash
+python3 -m pip install supavector
+```
+
 From this repository:
 
 ```bash

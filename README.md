@@ -1,12 +1,27 @@
 # SupaVector
 
-SupaVector is a self-hosted memory and retrieval platform for AI agents. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest documents, search them, ask grounded questions, and manage long-term memory with tenant-aware controls.
+SupaVector is the retrieval and memory backend behind AI apps, agents, and internal tools. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest data, search it, ask grounded questions, and manage long-term memory through one API.
 
-Current public scope: single-node self-hosted deployment. You run it in your own environment and bring your own model provider credentials.
+Open-source repo scope: self-hosted runtime, CLI, and SDKs. If you are using a running SupaVector deployment instead of operating the server yourself, start with the hosted/shared-deployment guides and the SDKs.
 
 License: MIT
 
 [Quickstart](QUICKSTART.md) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Good First Issues](docs/good-first-issues.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Support](SUPPORT.md)
+
+## Start Here
+
+Choose one path first:
+
+- I want to run SupaVector myself: install the CLI and run `supavector onboard`.
+- I already have a running SupaVector deployment: store `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY`, then call it from Python, Node, or plain HTTP.
+- I am building in Python and just need a client: run `python3 -m pip install supavector`.
+
+Read next:
+
+- Self-hosted runtime: [Quickstart](QUICKSTART.md)
+- Setup mode guide: [docs/setup-modes.md](docs/setup-modes.md)
+- Hosted service: [docs/hosted.md](docs/hosted.md)
+- App/backend/agent integration: [docs/agents.md](docs/agents.md)
 
 ## Main Surfaces
 
@@ -61,7 +76,24 @@ If you are still deciding what you are actually setting up, start with [Setup Mo
 
 `OPENAI_API_KEY` is the default quickstart path. `GEMINI_API_KEY` and `ANTHROPIC_API_KEY` are also supported, and `GEMINI_API` is accepted as an alias for `GEMINI_API_KEY`.
 
-### SupaVector CLI (recommended)
+### Python SDK
+
+If SupaVector is already running and your Python app only needs a client, install the SDK from PyPI:
+
+```bash
+python3 -m pip install supavector
+```
+
+Then set:
+
+```bash
+export SUPAVECTOR_BASE_URL="https://YOUR_DOMAIN"
+export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"
+```
+
+Use this path for hosted deployments, existing shared deployments, notebooks, workers, and backend integrations that do not need to operate the SupaVector server itself.
+
+### SupaVector CLI (recommended for self-hosting)
 
 SupaVector ships with a CLI for onboarding, stack operations, and basic API usage.
 

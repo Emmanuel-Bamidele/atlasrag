@@ -4,20 +4,20 @@
             <section class="product-showcase">
               <div class="product-showcase-copy">
                 <p class="product-showcase-kicker">Product</p>
-                <h2>Supavector is a memory layer for AI Agents</h2>
+                <h2>One backend for search, grounded answers, and agent memory.</h2>
                 <p class="product-showcase-lead">
-                  Put retrieval, memory retention, access control, and feedback loops behind one backend surface
-                  instead of spreading them across your app.
+                  Use SupaVector as the retrieval and memory layer behind your app. Self-host it with the CLI,
+                  or call a running deployment from Python, Node, or plain HTTP.
                 </p>
                 <div class="product-showcase-actions">
-                  <a class="btn product-cta-start" href="#" role="button">Start your project</a>
-                  <a class="btn secondary" href="#" role="button">Watch a demo</a>
+                  <a class="btn product-cta-start" href="#product-hosted-sdk" role="button">Use the API</a>
+                  <a class="btn secondary" href="#product-self-host" role="button">Self-host it</a>
                   <a class="btn secondary" href="#" role="button" onclick="event.preventDefault();document.getElementById('tabDocs').click()">View Docs</a>
                 </div>
                 <div class="product-showcase-notes" aria-label="Supavector product highlights">
-                  <span class="product-showcase-note">Self-hosted</span>
-                  <span class="product-showcase-note">Tenant-aware</span>
-                  <span class="product-showcase-note">Policy-driven recall</span>
+                  <span class="product-showcase-note">Hosted or self-hosted</span>
+                  <span class="product-showcase-note">Service-token based</span>
+                  <span class="product-showcase-note">Python and Node friendly</span>
                 </div>
               </div>
 
@@ -77,21 +77,29 @@
 
             <section class="product-installer" id="product-installer" aria-label="Install Supavector in one line">
               <div class="product-installer-copy">
-                <p class="product-card-eyebrow">One-Line Installer</p>
-                <h3>Install SupaVector on your machine in one command.</h3>
+                <p class="product-card-eyebrow">Start Here</p>
+                <h3>Choose the path that matches how you want to use SupaVector.</h3>
                 <p>
-                  Pick the environment you want to run from, copy the command, and get a working
-                  <span class="mono">supavector</span> CLI without stepping through setup docs first.
+                  If you want to run SupaVector yourself, install the CLI and use
+                  <span class="mono">supavector onboard</span>. If SupaVector is already running, install the
+                  Python SDK and call it from your app.
                 </p>
                 <div class="product-installer-pills" aria-label="Installer highlights">
-                  <span class="product-installer-pill">User install</span>
-                  <span class="product-installer-pill">System install with sudo</span>
-                  <span class="product-installer-pill">npm global option</span>
+                  <span class="product-installer-pill">CLI for self-hosting</span>
+                  <span class="product-installer-pill">pip for Python apps</span>
+                  <span class="product-installer-pill">Hosted or OSS</span>
                 </div>
                 <p class="product-installer-note">
-                  Requires <span class="mono">Node.js 18+</span>, <span class="mono">npm</span>, and <span class="mono">git</span>.
-                  Docker is only needed if you want to self-host locally after install.
+                  The CLI path needs <span class="mono">Node.js 18+</span>, <span class="mono">npm</span>, and <span class="mono">git</span>.
+                  Docker is only needed when you want to self-host locally.
                 </p>
+                <div class="product-installer-panel">
+                  <div class="product-installer-panel-label">Python SDK for hosted or existing deployments</div>
+                  <div class="doc-copy-wrap">
+                    <pre class="doc-code" id="productInstallPython">python3 -m pip install supavector</pre>
+                  </div>
+                  <p class="product-installer-panel-note">Use this when your Python app, worker, or notebook only needs to call an existing SupaVector server.</p>
+                </div>
               </div>
 
               <div class="product-installer-shell">
@@ -165,65 +173,54 @@
 
             <section class="product-agents" aria-label="Build and use hosted Agent Memory">
               <div class="product-agents-copy">
-                <p class="product-card-eyebrow">Hosted Agent Memory</p>
-                <h3>Build Agent Memory once, then use it in your app or in Supavector Agents Memory.</h3>
+                <p class="product-card-eyebrow">Agent Memory</p>
+                <h3>Need hosted source sync and long-term memory? Start in Agent Memory.</h3>
                 <p>
-                  Agent Memory is the hosted layer for connecting sources, syncing knowledge, testing grounded behavior,
-                  and shipping the same Memory through your own application or through our hosted UI.
+                  Agent Memory is the hosted workflow for building a memory from docs, code, and conversations,
+                  then using that same memory in the hosted studio or from your application.
                 </p>
                 <div class="product-agents-pills" aria-label="Agent Memory highlights">
-                  <span class="product-agents-pill">Hosted only</span>
-                  <span class="product-agents-pill">Use in your app</span>
-                  <span class="product-agents-pill">Use in our UI</span>
-                  <span class="product-agents-pill">Chat, Boolean Ask, Code</span>
+                  <span class="product-agents-pill">Hosted workflow</span>
+                  <span class="product-agents-pill">Source sync</span>
+                  <span class="product-agents-pill">Playground</span>
+                  <span class="product-agents-pill">App-ready memory</span>
                 </div>
                 <div class="product-agents-actions">
-                  <a class="btn product-agents-cta" href="/memory">Open Agents Memory</a>
-                  <a class="btn secondary" href="/docs">Agent Memory Docs</a>
+                  <a class="btn product-agents-cta" href="/memory">Open Agent Memory</a>
+                  <a class="btn secondary" href="/docs">Learn more</a>
                 </div>
                 <p class="product-agents-note">
-                  Opening Agents Memory takes you to <span class="mono">/memory</span>. If you're not signed in,
-                  you'll be taken through login first and then into the hosted Memory workspace.
+                  If you only need the core API or the OSS runtime, you can skip Agent Memory and stay with the Hosted API
+                  or Self-Host paths on this page.
                 </p>
               </div>
 
               <div class="product-agents-stage" aria-hidden="true">
                 <div class="product-agents-shell">
                   <div class="product-agents-shell-head">
-                    <span class="product-agents-kicker">Same Memory, two entrypoints</span>
-                    <h4>One hosted Memory object, two ways to work with it.</h4>
-                    <p>The sources, sync state, memory, and runtime stay aligned whether you call Memory from code or operate it in the hosted studio.</p>
+                    <span class="product-agents-kicker">Hosted add-on</span>
+                    <h4>A smaller workflow on top of SupaVector.</h4>
+                    <p>Use it when you want a hosted UI for memory creation, sync, inspection, and testing without building those surfaces yourself.</p>
                   </div>
 
                   <div class="product-agents-grid">
                     <article class="product-agents-card product-agents-card--app">
-                      <span class="product-agents-card-label">In your application</span>
-                      <h5>Call the Memory API from your backend.</h5>
-                      <p>Use your project service token and Memory ID to wire the same hosted Memory into your own product.</p>
-                      <div class="product-agents-code">
-                        <pre class="doc-code">POST /v1/memories/:memoryId/chat
-POST /v1/memories/:memoryId/code
-POST /v1/memories/:memoryId/ask</pre>
-                      </div>
+                      <span class="product-agents-card-label">Use it in the hosted studio</span>
+                      <h5>Create and manage memory without building a control plane.</h5>
+                      <p>Connect sources, sync them, inspect memory behavior, and test grounded responses from one hosted workspace.</p>
                     </article>
 
                     <article class="product-agents-card product-agents-card--ui">
-                      <span class="product-agents-card-label">In Supavector Agents Memory</span>
-                      <h5>Create, connect, sync, and test it in the hosted UI.</h5>
-                      <p>Use the same Memory through a guided library with source management, Playground, and copy-ready integration snippets.</p>
-                      <div class="product-agents-routes">
-                        <span class="product-agents-route">/memory</span>
-                        <span class="product-agents-route">/memory/new</span>
-                        <span class="product-agents-route">/memory/:id</span>
-                        <span class="product-agents-route">/memory/:id/playground</span>
-                      </div>
+                      <span class="product-agents-card-label">Use it in your application</span>
+                      <h5>Call the same memory from your backend when your app needs it.</h5>
+                      <p>The hosted studio and your app share the same underlying memory, so the integration and the managed workflow stay aligned.</p>
                     </article>
                   </div>
 
                   <div class="product-agents-footer">
-                    <span>Same Memory object</span>
-                    <span>Same hosted runtime</span>
-                    <span>Same grounded answers and sources</span>
+                    <span>Hosted only</span>
+                    <span>Same memory in UI and API</span>
+                    <span>Quick start at /memory</span>
                   </div>
                 </div>
               </div>
@@ -256,11 +253,11 @@ POST /v1/memories/:memoryId/ask</pre>
             <!-- ── END OPEN SOURCE SECTION ────────────────────────────────────────── -->
 
             <!-- ── HOSTED API SECTION ───────────────────────────────────────────── -->
-            <section class="product-hosted" aria-label="Use the hosted API">
+            <section class="product-hosted" id="product-hosted-sdk" aria-label="Use the hosted API">
               <div class="product-hosted-head">
                 <p class="product-card-eyebrow">Hosted API</p>
                 <h3>Get a token, start calling.</h3>
-                <p>No servers to run? we got you. Sign up, create a project in the Dashboard, and you're calling the API in minutes.</p>
+                <p>No servers to run. Create a project, copy the token, and call SupaVector from your backend or agent in minutes.</p>
                 <p class="product-hosted-selfhost-nudge">Prefer zero cost and full control? Supavector is fully open source — <a href="#product-self-host" class="product-hosted-nudge-link">run it yourself, free forever ↓</a></p>
               </div>
 
@@ -268,15 +265,15 @@ POST /v1/memories/:memoryId/ask</pre>
                 <div class="product-hosted-step">
                   <span class="product-flow-number">01</span>
                   <h4>Sign up &amp; create a project</h4>
-                  <p>Sign in with Google, GitHub, or email. Click <strong>Dashboard → New Project</strong>. Copy the token shown — it's only displayed once.</p>
+                  <p>Sign in, create a project, and copy the token shown. Treat it like any other server-side secret.</p>
                   <div class="product-hosted-token-preview">
                     <span class="product-hosted-token-prefix">supav_</span><span class="product-hosted-token-body">••••••••••••••••••••••••••••••••</span>
                   </div>
                 </div>
                 <div class="product-hosted-step">
                   <span class="product-flow-number">02</span>
-                  <h4>Set up hosted billing</h4>
-                  <p>Dashboard → <strong>+ Add Credit</strong> for hosted AI generation. Hosted storage is billed separately each month from retained <code class="mono">GB-month</code> usage, so keep a payment method on file in the Billing Portal too.</p>
+                  <h4>Choose hosted AI or your own provider key</h4>
+                  <p>Add hosted credit if you want SupaVector-hosted generation, or send your own provider key on supported requests. Hosted storage is tracked separately.</p>
                   <div class="product-hosted-credit-badges">
                     <span class="product-hosted-badge free">Indexing — no credit gate</span>
                     <span class="product-hosted-badge free">Search — no credit gate</span>
@@ -285,10 +282,12 @@ POST /v1/memories/:memoryId/ask</pre>
                 </div>
                 <div class="product-hosted-step">
                   <span class="product-flow-number">03</span>
-                  <h4>Wire up your environment</h4>
-                  <p>Set two env vars in your app, agent, or script. That's the entire setup — no Docker, no Postgres, no config files.</p>
+                  <h4>Install the SDK and set your env</h4>
+                  <p>For Python, install the SDK, set two env vars, and start calling the API. No Docker, no Postgres, and no local bootstrap.</p>
                   <div class="product-qs-code" style="margin-top:auto;">
-                    <pre class="doc-code" id="hostedEnvVars">SUPAVECTOR_BASE_URL=https://your-host
+                    <pre class="doc-code" id="hostedEnvVars">python3 -m pip install supavector
+
+SUPAVECTOR_BASE_URL=https://your-host
 SUPAVECTOR_API_KEY=supav_your_token</pre>
                   </div>
                 </div>
@@ -349,42 +348,26 @@ SUPAVECTOR_API_KEY=supav_your_token</pre>
                   <div class="doc-panel" data-doc-panel="python">
                     <div class="product-hosted-code-grid">
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Index a document</div>
+                        <div class="product-hosted-code-label">Install and create a client</div>
                         <div class="doc-copy-wrap">
-                          <pre class="doc-code" id="hostedPyIndex">import os, requests
+                          <pre class="doc-code" id="hostedPyIndex">python3 -m pip install supavector
 
-BASE = os.environ["SUPAVECTOR_BASE_URL"]
-KEY  = os.environ["SUPAVECTOR_API_KEY"]
-HDR  = {
-    "Authorization": f"Bearer {KEY}",
-    "Content-Type":  "application/json",
-}
+from supavector import Client
 
-requests.post(
-    f"{BASE}/v1/docs",
-    headers={**HDR, "Idempotency-Key": "doc-001"},
-    json={
-        "docId":      "welcome",
-        "collection": "default",
-        "text":       "Supavector stores memory for agents.",
-    },
-).raise_for_status()</pre>
+client = Client.from_env(collection="default")</pre>
                         </div>
                       </div>
                       <div class="product-hosted-code-block">
-                        <div class="product-hosted-code-label">Ask a question <span class="product-hosted-credit-tag">uses credit unless you send your own provider key</span></div>
+                        <div class="product-hosted-code-label">Index and ask <span class="product-hosted-credit-tag">ask uses credit unless you send your own provider key</span></div>
                         <div class="doc-copy-wrap">
-                          <pre class="doc-code" id="hostedPyAsk">r = requests.post(
-    f"{BASE}/v1/ask",
-    headers=HDR,
-    json={
-        "question": "What does Supavector store?",
-        "k":        7,
-        "policy":   "amvl",
-    },
+                          <pre class="doc-code" id="hostedPyAsk">client.index_text(
+    "welcome",
+    "SupaVector stores memory for agents.",
+    params={"idempotencyKey": "doc-001"},
 )
-r.raise_for_status()
-print(r.json()["data"]["answer"])</pre>
+
+answer = client.ask("What does SupaVector store?", {"k": 7})
+print(answer["data"]["answer"])</pre>
                         </div>
                       </div>
                     </div>
@@ -493,25 +476,24 @@ console.log(data.answer);</pre>
               <div class="product-quickstart-head">
                 <p class="product-card-eyebrow">Self-Host And Build On Top</p>
                 <h3>Up and running in minutes.</h3>
-                <p>Install the CLI, onboard the stack, and write your first memory in under five minutes. Full control — your infra, your data.</p>
+                <p>Use the CLI when you want to run SupaVector yourself. Install it, onboard once, and then point your app at the local or server deployment.</p>
               </div>
               <div class="product-quickstart-steps">
                 <div class="product-qs-step">
                   <span class="product-flow-number">01</span>
                   <h4>Install the CLI</h4>
-                  <p>Use the one-line installer to get started fast. If you prefer working from a checkout, you can also clone the repo and run <span class="mono">./scripts/install.sh</span>.</p>
+                  <p>Use the one-line installer to get the <span class="mono">supavector</span> command on your machine.</p>
                   <div class="product-qs-code">
                     <div class="doc-copy-wrap">
                       <pre class="doc-code" id="productSelfHostStep01">curl -fsSL https://raw.githubusercontent.com/Emmanuel-Bamidele/supavector/main/scripts/install.sh | bash</pre>
                       <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep01" data-copy-label="Copy install command" aria-label="Copy install command" title="Copy install command"></button>
                     </div>
                   </div>
-                  <p>Need a machine-wide install? <a href="#product-installer" class="product-hosted-nudge-link">Click here</a>.</p>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">02</span>
                   <h4>Onboard the stack</h4>
-                  <p>If you used the one-line installer, onboarding brings up the vector core, gateway, and Postgres locally. If you cloned the repo instead, run the install script first, then onboard.</p>
+                  <p>This starts the local stack, creates the first admin, and saves the first service token for later CLI use.</p>
                   <div class="product-qs-code">
                     <div class="doc-copy-wrap">
                       <pre class="doc-code" id="productSelfHostStep02">supavector onboard</pre>
@@ -521,48 +503,25 @@ console.log(data.answer);</pre>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">03</span>
-                  <h4>Write your first memory</h4>
-                  <p>Use the CLI or call the API directly with your service token.</p>
+                  <h4>Store something and ask a question</h4>
+                  <p>Use the CLI first. That gives you a quick proof that retrieval and answer generation are working.</p>
                   <div class="product-qs-code">
                     <div class="doc-copy-wrap">
-                      <pre class="doc-code" id="productSelfHostStep03">supavector write --text "Hello, memory"</pre>
+                      <pre class="doc-code" id="productSelfHostStep03">supavector write --text "Hello, memory"
+supavector ask --question "What did I store?"</pre>
                       <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep03" data-copy-label="Copy write command" aria-label="Copy write command" title="Copy write command"></button>
                     </div>
                   </div>
                 </div>
                 <div class="product-qs-step">
                   <span class="product-flow-number">04</span>
-                  <h4>Ask a question</h4>
-                  <p>Query the memory you just wrote. Supavector retrieves and answers grounded in your data.</p>
-                  <div class="product-qs-code">
-                    <div class="doc-copy-wrap">
-                      <pre class="doc-code" id="productSelfHostStep04">supavector ask --question "What did I store?"</pre>
-                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep04" data-copy-label="Copy ask command" aria-label="Copy ask command" title="Copy ask command"></button>
-                    </div>
-                  </div>
-                </div>
-                <div class="product-qs-step">
-                  <span class="product-flow-number">05</span>
                   <h4>Add to your app env</h4>
-                  <p>Export the base URL and service token so your backend can reach Supavector.</p>
+                  <p>When your app is ready, export the base URL and service token and call SupaVector server-to-server.</p>
                   <div class="product-qs-code">
                     <div class="doc-copy-wrap">
                       <pre class="doc-code" id="productSelfHostStep05">export SUPAVECTOR_BASE_URL="http://localhost:3000"
 export SUPAVECTOR_API_KEY="YOUR_SERVICE_TOKEN"</pre>
                       <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep05" data-copy-label="Copy env snippet" aria-label="Copy env snippet" title="Copy env snippet"></button>
-                    </div>
-                  </div>
-                </div>
-                <div class="product-qs-step">
-                  <span class="product-flow-number">06</span>
-                  <h4>Call server-to-server</h4>
-                  <p>Your backend calls Supavector directly. No browser, no end-user login needed.</p>
-                  <div class="product-qs-code">
-                    <div class="doc-copy-wrap">
-                      <pre class="doc-code" id="productSelfHostStep06">curl -X POST "$SUPAVECTOR_BASE_URL/v1/ask" \
-  -H "X-API-Key: $SUPAVECTOR_API_KEY" \
-  -d '{"question":"What did I store?","k":7}'</pre>
-                      <button type="button" class="copy-inline-btn" data-copy-target="productSelfHostStep06" data-copy-label="Copy server-to-server example" aria-label="Copy server-to-server example" title="Copy server-to-server example"></button>
                     </div>
                   </div>
                 </div>
