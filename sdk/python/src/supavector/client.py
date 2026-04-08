@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
+import random
+import re
+import string
+import zipfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
+from xml.etree import ElementTree
 
 
 class SupaVectorError(Exception):
@@ -33,6 +40,305 @@ def _stringify_query_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+INGESTIBLE_TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".json",
+    ".csv",
+    ".log",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".toml",
+    ".sql",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".py",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".sh",
+    ".bash",
+    ".zsh",
+}
+
+CODEBASE_SKIP_DIR_NAMES = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".cache",
+    ".pnpm-store",
+    ".yarn",
+    ".gradle",
+    ".idea",
+    ".vscode",
+    ".venv",
+    "venv",
+    "env",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    "out",
+    "target",
+    "vendor",
+    "Pods",
+    "DerivedData",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".serverless",
+    ".aws-sam",
+}
+
+CODE_LANGUAGE_BY_BASENAME = {
+    "dockerfile": "docker",
+    "makefile": "makefile",
+    "jenkinsfile": "groovy",
+    "procfile": "procfile",
+    "gemfile": "ruby",
+    "rakefile": "ruby",
+    "podfile": "ruby",
+    "brewfile": "ruby",
+    "package.json": "json",
+    "package-lock.json": "json",
+    "pnpm-lock.yaml": "yaml",
+    "yarn.lock": "yaml",
+    "tsconfig.json": "json",
+    "jsconfig.json": "json",
+    "pyproject.toml": "toml",
+    "requirements.txt": "text",
+    "pipfile": "toml",
+    "cargo.toml": "toml",
+    "cargo.lock": "toml",
+    "go.mod": "go",
+    "go.sum": "go",
+    "pom.xml": "xml",
+    "build.gradle": "groovy",
+    "build.gradle.kts": "kotlin",
+    "settings.gradle": "groovy",
+    "settings.gradle.kts": "kotlin",
+    "gradle.properties": "properties",
+    "composer.json": "json",
+    "composer.lock": "json",
+    "mix.exs": "elixir",
+    "mix.lock": "elixir",
+}
+
+CODE_LANGUAGE_BY_EXTENSION = {
+    ".c": "c",
+    ".cc": "cpp",
+    ".conf": "conf",
+    ".cpp": "cpp",
+    ".cs": "csharp",
+    ".css": "css",
+    ".cxx": "cpp",
+    ".go": "go",
+    ".gradle": "groovy",
+    ".groovy": "groovy",
+    ".h": "c",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".htm": "html",
+    ".html": "html",
+    ".ini": "ini",
+    ".java": "java",
+    ".js": "javascript",
+    ".json": "json",
+    ".jsx": "jsx",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".less": "less",
+    ".mjs": "javascript",
+    ".mdx": "mdx",
+    ".php": "php",
+    ".ps1": "powershell",
+    ".py": "python",
+    ".rb": "ruby",
+    ".rs": "rust",
+    ".sass": "sass",
+    ".scala": "scala",
+    ".scss": "scss",
+    ".sh": "shell",
+    ".sql": "sql",
+    ".svelte": "svelte",
+    ".swift": "swift",
+    ".toml": "toml",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".vue": "vue",
+    ".xml": "xml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".zsh": "shell",
+}
+
+
+def _random_secret(length: int = 6) -> str:
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(random.choice(alphabet) for _ in range(max(1, int(length))))
+
+
+def _default_collection_from_folder(folder_path: str) -> str:
+    return Path(str(folder_path or "").strip()).resolve().name
+
+
+def _detect_ingestible_file_type(file_path: Path) -> str:
+    ext = file_path.suffix.lower()
+    if ext in INGESTIBLE_TEXT_EXTENSIONS:
+        return "text"
+    if ext == ".pdf":
+        return "pdf"
+    if ext == ".docx":
+        return "docx"
+    return "unsupported"
+
+
+def _detect_code_language(file_path: str) -> Optional[str]:
+    text = str(file_path or "").strip()
+    if not text:
+        return None
+    base = Path(text).name.lower()
+    if base in CODE_LANGUAGE_BY_BASENAME:
+        return CODE_LANGUAGE_BY_BASENAME[base]
+    return CODE_LANGUAGE_BY_EXTENSION.get(Path(base).suffix.lower())
+
+
+def _should_skip_codebase_rel_path(relative_path: str) -> bool:
+    clean = str(relative_path or "").strip()
+    if not clean:
+        return False
+    segments = [segment for segment in re.split(r"[\\/]+", clean) if segment]
+    return any(segment in CODEBASE_SKIP_DIR_NAMES for segment in segments)
+
+
+def _is_probably_text_buffer(raw: bytes) -> bool:
+    if not raw:
+        return True
+    sample = raw[: min(len(raw), 2048)]
+    weird = 0
+    for byte in sample:
+        if byte == 0:
+            return False
+        if byte < 7 or (14 < byte < 32):
+            weird += 1
+    return weird / len(sample) < 0.15
+
+
+def _normalize_extracted_text(value: Any) -> str:
+    return (
+        str(value or "")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\t", " ")
+        .replace(" \n", "\n")
+        .replace("\n\n\n", "\n\n")
+        .strip()
+    )
+
+
+def _extract_docx_text(file_path: Path) -> str:
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            xml = archive.read("word/document.xml")
+    except KeyError as exc:
+        raise SupaVectorError(f"Failed to extract DOCX text from {file_path.name}: word/document.xml missing") from exc
+    except zipfile.BadZipFile as exc:
+        raise SupaVectorError(f"Failed to extract DOCX text from {file_path.name}: invalid DOCX archive") from exc
+
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError as exc:
+        raise SupaVectorError(f"Failed to extract DOCX text from {file_path.name}: invalid XML") from exc
+
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs = []
+    for paragraph in root.findall(".//w:p", namespace):
+        parts = []
+        for node in paragraph.iter():
+            tag = node.tag.rsplit("}", 1)[-1] if "}" in node.tag else node.tag
+            if tag == "t" and node.text:
+                parts.append(node.text)
+            elif tag == "tab":
+                parts.append("\t")
+            elif tag in {"br", "cr"}:
+                parts.append("\n")
+        line = "".join(parts).strip()
+        if line:
+            paragraphs.append(line)
+    return _normalize_extracted_text("\n\n".join(paragraphs))
+
+
+def _extract_pdf_text(file_path: Path) -> str:
+    try:
+        pypdf = importlib.import_module("pypdf")
+    except ModuleNotFoundError as exc:
+        raise SupaVectorError(
+            f'PDF ingest for {file_path.name} requires the optional "pypdf" dependency. '
+            'Install it with `python3 -m pip install ".[pdf]"` from sdk/python or add `pypdf` to your environment.'
+        ) from exc
+    try:
+        reader = pypdf.PdfReader(str(file_path))
+        text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:  # pragma: no cover - parser-specific failures
+        raise SupaVectorError(f"Failed to extract PDF text from {file_path.name}: {exc}") from exc
+    return _normalize_extracted_text(text)
+
+
+def _extract_document_text(file_path: Path) -> str:
+    file_type = _detect_ingestible_file_type(file_path)
+    if file_type == "unsupported":
+        raise SupaVectorError(f"Unsupported file type: {file_path.suffix or '(no extension)'}")
+
+    raw = file_path.read_bytes()
+    if file_type == "text":
+        if not _is_probably_text_buffer(raw):
+            raise SupaVectorError(f"Binary or non-text content is not supported for {file_path.name}")
+        return raw.decode("utf-8")
+    if file_type == "pdf":
+        return _extract_pdf_text(file_path)
+    return _extract_docx_text(file_path)
+
+
+def _safe_doc_id_from_path(relative_path: str) -> str:
+    text = str(relative_path or "").strip()
+    normalized = (
+        "__".join(part for part in re.split(r"[\\/]+", text) if part)
+        .replace(" ", "-")
+    )
+    normalized = re.sub(r"[^A-Za-z0-9._-]", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized)
+    normalized = re.sub(r"^[-.]+|[-.]+$", "", normalized)
+    return normalized or f"doc-{_random_secret(6)}"
+
+
+def _derive_folder_idempotency_key(prefix: str, doc_id: str) -> str:
+    clean_prefix = str(prefix or "").strip()
+    clean_doc_id = str(doc_id or "").strip() or _random_secret(6)
+    return f"{clean_prefix}:{clean_doc_id}" if clean_prefix else clean_doc_id
 
 
 class SupaVectorClient:
@@ -273,6 +579,128 @@ class SupaVectorClient:
             body={"docId": doc_id, "url": url, **payload},
             idempotency_key=idempotency_key,
         )
+
+    def _prepare_file_index(
+        self,
+        file_path: str,
+        doc_id: Optional[str] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        *,
+        base_dir: Optional[str] = None,
+    ) -> tuple[str, str, Dict[str, Any]]:
+        abs_path = Path(str(file_path or "").strip()).expanduser().resolve()
+        if not abs_path.is_file():
+            raise SupaVectorError(f"File not found: {abs_path}")
+
+        root = Path(str(base_dir or abs_path.parent)).expanduser().resolve()
+        try:
+            relative_path = abs_path.relative_to(root).as_posix()
+        except ValueError:
+            relative_path = abs_path.name
+
+        text = _extract_document_text(abs_path)
+        if not text.strip():
+            raise SupaVectorError(f"No indexable text was extracted from {abs_path.name}")
+
+        payload = dict(params or {})
+        metadata = dict(payload.pop("metadata", {}) or {})
+        file_doc_id = str(doc_id or payload.pop("docId", "")).strip() or _safe_doc_id_from_path(relative_path)
+        if "title" not in payload or payload.get("title") in {None, ""}:
+            payload["title"] = relative_path
+        if "path" not in metadata and relative_path:
+            metadata["path"] = relative_path
+        language = _detect_code_language(relative_path)
+        if language and "language" not in metadata and "lang" not in metadata:
+            metadata["language"] = language
+        if metadata:
+            payload["metadata"] = metadata
+        if language and ("sourceType" not in payload and "source_type" not in payload):
+            payload["sourceType"] = "code"
+        return file_doc_id, text, payload
+
+    def index_file(
+        self,
+        file_path: str,
+        doc_id: Optional[str] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        *,
+        base_dir: Optional[str] = None,
+    ) -> Any:
+        file_doc_id, text, payload = self._prepare_file_index(
+            file_path,
+            doc_id=doc_id,
+            params=params,
+            base_dir=base_dir,
+        )
+        return self.index_text(file_doc_id, text, payload)
+
+    def index_folder(
+        self,
+        folder_path: str,
+        params: Optional[Mapping[str, Any]] = None,
+        *,
+        recursive: bool = True,
+        include_hidden: bool = False,
+        continue_on_error: bool = True,
+    ) -> Dict[str, Any]:
+        root = Path(str(folder_path or "").strip()).expanduser().resolve()
+        if not root.is_dir():
+            raise SupaVectorError(f"Folder not found: {root}")
+
+        base_payload = dict(params or {})
+        resolved_collection = (
+            base_payload.get("collection")
+            or self.collection
+            or _default_collection_from_folder(str(root))
+        )
+        base_payload["collection"] = resolved_collection
+        batch_idempotency_prefix = str(base_payload.pop("idempotencyKey", "")).strip() or None
+
+        indexed = []
+        errors = []
+
+        iterator = root.rglob("*") if recursive else root.glob("*")
+        for candidate in sorted(iterator):
+            if not candidate.is_file():
+                continue
+            relative_path = candidate.relative_to(root).as_posix()
+            parts = relative_path.split("/")
+            if not include_hidden and any(part.startswith(".") for part in parts):
+                continue
+            if _should_skip_codebase_rel_path(relative_path):
+                continue
+            if _detect_ingestible_file_type(candidate) == "unsupported":
+                continue
+            try:
+                file_doc_id, text, payload = self._prepare_file_index(
+                    str(candidate),
+                    params=base_payload,
+                    base_dir=str(root),
+                )
+                if batch_idempotency_prefix:
+                    payload["idempotencyKey"] = _derive_folder_idempotency_key(batch_idempotency_prefix, file_doc_id)
+                response = self.index_text(file_doc_id, text, payload)
+                indexed.append({
+                    "path": relative_path,
+                    "docId": file_doc_id,
+                    "response": response,
+                })
+            except Exception as exc:
+                errors.append({
+                    "path": relative_path,
+                    "error": str(exc),
+                })
+                if not continue_on_error:
+                    raise
+
+        return {
+            "folder": str(root),
+            "collection": resolved_collection,
+            "indexedCount": len(indexed),
+            "errorCount": len(errors),
+            "indexed": indexed,
+            "errors": errors,
+        }
 
     def delete_doc(self, doc_id: str, params: Optional[Mapping[str, Any]] = None) -> Any:
         safe_doc_id = urllib_parse.quote(str(doc_id), safe="")

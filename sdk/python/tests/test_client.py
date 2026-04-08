@@ -2,7 +2,9 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 from urllib import parse as urllib_parse
@@ -238,6 +240,137 @@ class ClientTests(unittest.TestCase):
                 "collection": "default",
             },
         )
+
+    @mock.patch("supavector.client.urllib_request.urlopen")
+    def test_index_file_sets_code_metadata_and_doc_id_from_relative_path(self, urlopen):
+        urlopen.return_value = FakeResponse({"ok": True, "data": {"chunksIndexed": 1}})
+        client = Client(base_url="http://localhost:3000", api_key="service-token")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            file_path = root / "src" / "refunds.ts"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text("export function refundWindowDays() { return 30; }\n", encoding="utf-8")
+
+            payload = client.index_file(str(file_path), params={"collection": "support-docs"}, base_dir=str(root))
+            self.assertTrue(payload["ok"])
+
+            req = urlopen.call_args.args[0]
+            self.assertEqual(req.full_url, "http://localhost:3000/v1/docs")
+            self.assertEqual(req.headers["X-api-key"], "service-token")
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["docId"], "src__refunds.ts")
+            self.assertEqual(body["collection"], "support-docs")
+            self.assertEqual(body["title"], "src/refunds.ts")
+            self.assertEqual(body["sourceType"], "code")
+            self.assertEqual(body["metadata"]["path"], "src/refunds.ts")
+            self.assertEqual(body["metadata"]["language"], "typescript")
+            self.assertIn("refundWindowDays", body["text"])
+
+    @mock.patch("supavector.client.urllib_request.urlopen")
+    def test_index_file_extracts_docx_text(self, urlopen):
+        urlopen.return_value = FakeResponse({"ok": True, "data": {"chunksIndexed": 1}})
+        client = Client(base_url="http://localhost:3000")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "notes.docx"
+            with zipfile.ZipFile(file_path, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                      <w:body>
+                        <w:p><w:r><w:t>Hello</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>From Docx</w:t></w:r></w:p>
+                      </w:body>
+                    </w:document>""",
+                )
+
+            client.index_file(str(file_path), doc_id="notes_docx", params={"collection": "docs"})
+            req = urlopen.call_args.args[0]
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["docId"], "notes_docx")
+            self.assertEqual(body["title"], "notes.docx")
+            self.assertEqual(body["metadata"]["path"], "notes.docx")
+            self.assertEqual(body["text"], "Hello\n\nFrom Docx")
+
+    @mock.patch("supavector.client.urllib_request.urlopen")
+    def test_index_folder_defaults_collection_and_skips_noise(self, urlopen):
+        captured_requests = []
+
+        def fake_urlopen(req, timeout=None):
+            body = json.loads(req.data.decode("utf-8"))
+            captured_requests.append({
+                "docId": body["docId"],
+                "collection": body["collection"],
+                "path": body["metadata"]["path"],
+                "idempotency": req.headers.get("Idempotency-key"),
+            })
+            return FakeResponse({"ok": True, "data": {"docId": body["docId"]}})
+
+        urlopen.side_effect = fake_urlopen
+        client = Client(base_url="http://localhost:3000")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "customer-support"
+            (root / "src").mkdir(parents=True, exist_ok=True)
+            (root / "node_modules").mkdir(parents=True, exist_ok=True)
+            (root / ".hidden").mkdir(parents=True, exist_ok=True)
+            (root / "README.md").write_text("# Support\n", encoding="utf-8")
+            (root / "src" / "handler.py").write_text("def handler():\n    return 'ok'\n", encoding="utf-8")
+            (root / "node_modules" / "ignored.js").write_text("console.log('skip')\n", encoding="utf-8")
+            (root / ".hidden" / "secret.txt").write_text("skip\n", encoding="utf-8")
+            (root / "image.png").write_bytes(b"\x89PNG\r\n")
+
+            result = client.index_folder(str(root))
+
+            self.assertEqual(result["collection"], "customer-support")
+            self.assertEqual(result["indexedCount"], 2)
+            self.assertEqual(result["errorCount"], 0)
+            self.assertEqual(
+                [
+                    (item["docId"], item["collection"], item["path"])
+                    for item in captured_requests
+                ],
+                [
+                    ("README.md", "customer-support", "README.md"),
+                    ("src__handler.py", "customer-support", "src/handler.py"),
+                ],
+            )
+
+    @mock.patch("supavector.client.urllib_request.urlopen")
+    def test_index_folder_derives_per_file_idempotency_keys(self, urlopen):
+        idempotency_keys = []
+
+        def fake_urlopen(req, timeout=None):
+            idempotency_keys.append(req.headers.get("Idempotency-key"))
+            return FakeResponse({"ok": True, "data": {"docId": "ok"}})
+
+        urlopen.side_effect = fake_urlopen
+        client = Client(base_url="http://localhost:3000")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "batch"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "a.txt").write_text("alpha\n", encoding="utf-8")
+            (root / "b.txt").write_text("beta\n", encoding="utf-8")
+
+            result = client.index_folder(str(root), params={"idempotencyKey": "batch-001"})
+
+            self.assertEqual(result["indexedCount"], 2)
+            self.assertEqual(
+                idempotency_keys,
+                ["batch-001:a.txt", "batch-001:b.txt"],
+            )
+
+    def test_index_file_rejects_unsupported_extension(self):
+        client = Client(base_url="http://localhost:3000")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "archive.bin"
+            file_path.write_bytes(b"\x00\x01\x02")
+            with self.assertRaises(SupaVectorError) as ctx:
+                client.index_file(str(file_path))
+        self.assertIn("Unsupported file type", str(ctx.exception))
 
 
 if __name__ == "__main__":
