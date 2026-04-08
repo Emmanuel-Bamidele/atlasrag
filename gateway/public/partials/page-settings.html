@@ -3,6 +3,158 @@
           <div class="settings-shell">
             <div class="settings-main">
               <div class="doc-panels" data-doc-panels="settings">
+                <div class="doc-panel" data-doc-panel="register" data-settings-scope="hosted">
+                  <div class="settings-panel-card">
+                    <div class="settings-panel-hero settings-panel-hero-split">
+                      <div>
+                        <div class="settings-kicker">Register</div>
+                        <h2>Create access and mint a service token</h2>
+                        <p id="registerPanelBody">Register a new account or authenticate an existing admin, get a default project, create a service token, and wire this browser automatically.</p>
+                      </div>
+                      <div class="actions settings-hero-actions">
+                        <button class="btn secondary" id="registerRefreshBtn">Refresh availability</button>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-card">
+                      <div class="settings-section-head">
+                        <div>
+                          <div class="doc-label">Availability</div>
+                          <div class="hint" id="registerAvailability">Checking registration availability...</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-grid">
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Create a new account</div>
+                            <div class="hint">This creates a default project, a local admin user, and the first tenant-scoped service token.</div>
+                          </div>
+                        </div>
+
+                        <div class="row">
+                          <div class="field">
+                            <label for="registerUsername">Username</label>
+                            <input id="registerUsername" placeholder="bamidele" autocomplete="username">
+                          </div>
+                          <div class="field">
+                            <label for="registerProjectNameInput">Project name</label>
+                            <input id="registerProjectNameInput" placeholder="My First Project" autocomplete="organization">
+                          </div>
+                        </div>
+
+                        <div class="row" style="margin-top:12px;">
+                          <div class="field">
+                            <label for="registerFullName">Full name</label>
+                            <input id="registerFullName" placeholder="Emmanuel Bamidele" autocomplete="name">
+                          </div>
+                          <div class="field">
+                            <label for="registerEmail">Email</label>
+                            <input id="registerEmail" placeholder="you@example.com" autocomplete="email">
+                          </div>
+                        </div>
+
+                        <div class="row" style="margin-top:12px;">
+                          <div class="field">
+                            <label for="registerPassword">Password</label>
+                            <input id="registerPassword" type="password" placeholder="at least 8 characters" autocomplete="new-password">
+                          </div>
+                          <div class="field">
+                            <label for="registerPasswordConfirm">Confirm password</label>
+                            <input id="registerPasswordConfirm" type="password" placeholder="repeat password" autocomplete="new-password">
+                          </div>
+                        </div>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn secondary" id="registerCreateBtn">Create account, project, and token</button>
+                        </div>
+                      </div>
+
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Authenticate and mint a token</div>
+                            <div class="hint">Signs in with username and password, then creates a fresh tenant-scoped service token and saves it into Settings.</div>
+                          </div>
+                        </div>
+
+                        <div class="row">
+                          <div class="field">
+                            <label for="registerLoginUser">Username</label>
+                            <input id="registerLoginUser" placeholder="username" autocomplete="username">
+                          </div>
+                          <div class="field">
+                            <label for="registerLoginPass">Password</label>
+                            <input id="registerLoginPass" type="password" placeholder="password" autocomplete="current-password">
+                          </div>
+                        </div>
+
+                        <div class="field" style="margin-top:12px;">
+                          <label for="registerExistingTokenName">Token name</label>
+                          <input id="registerExistingTokenName" placeholder="browser-default">
+                          <div class="hint">Uses <span class="mono">admin,indexer,reader</span> roles so the token works across the full gateway UI.</div>
+                        </div>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn secondary" id="registerLoginBtn">Authenticate and create token</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="settings-section-grid">
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Latest service token</div>
+                            <div class="hint">The service token is copied or saved from here. It is also pushed into the Settings service-token field automatically.</div>
+                          </div>
+                        </div>
+
+                        <pre class="doc-code" id="registerCreatedToken">(not created)</pre>
+
+                        <div class="actions" style="margin-top:14px;">
+                          <button class="btn" id="useRegisterTokenBtn" disabled>Use in Settings</button>
+                          <button class="btn secondary" id="copyRegisterTokenBtn" disabled>Copy service token</button>
+                        </div>
+                      </div>
+
+                      <div class="settings-section-card">
+                        <div class="settings-section-head">
+                          <div>
+                            <div class="doc-label">Basic usage</div>
+                            <div class="hint">Use the copied service token in your app, SDK, or environment. The project below is your default tenant/workspace.</div>
+                          </div>
+                        </div>
+
+                        <div class="row">
+                          <div class="field">
+                            <label for="registerProjectName">Default project</label>
+                            <input id="registerProjectName" readonly placeholder="Created after registration">
+                          </div>
+                          <div class="field">
+                            <label for="registerProjectId">Project ID</label>
+                            <input id="registerProjectId" readonly placeholder="Created after registration">
+                          </div>
+                        </div>
+
+                        <pre class="doc-code" id="registerTokenInstructions">pip install supavector
+
+SUPAVECTOR_BASE_URL=https://YOUR_SUPAVECTOR_BASE_URL
+SUPAVECTOR_API_KEY=&lt;paste-the-copied-service-token&gt;
+
+from supavector import Client
+
+client = Client(base_url="https://YOUR_SUPAVECTOR_BASE_URL", api_key="&lt;paste-the-copied-service-token&gt;")
+result = client.search(query="hello", collection="default")</pre>
+                      </div>
+                    </div>
+
+                    <div class="banner" id="registerBanner"></div>
+                  </div>
+                </div>
+
                 <div class="doc-panel active" data-doc-panel="auth">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
@@ -744,29 +896,36 @@
                 <p id="settingsSidebarBody">Pick a section on the right. The left pane stays focused on one setup flow at a time.</p>
 
                 <div class="doc-tabs settings-nav" data-doc-tabs="settings">
-                  <button class="doc-tab active" data-doc-tab="auth" type="button">
+                  <button class="doc-tab" data-doc-tab="register" type="button" data-settings-scope="hosted">
                     <span class="settings-nav-index">01</span>
+                    <span>
+                      <strong>Register</strong>
+                      <small>Create access, project, token</small>
+                    </span>
+                  </button>
+                  <button class="doc-tab active" data-doc-tab="auth" type="button">
+                    <span class="settings-nav-index">02</span>
                     <span>
                       <strong id="settingsNavAuthTitle">Authenticate</strong>
                       <small id="settingsNavAuthBody">Tokens, admin login, SSO</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="keys" type="button" data-settings-scope="self_hosted">
-                    <span class="settings-nav-index">02</span>
+                    <span class="settings-nav-index">03</span>
                     <span>
                       <strong>Service Tokens</strong>
                       <small>Issue machine credentials</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="providers" type="button">
-                    <span class="settings-nav-index">03</span>
+                    <span class="settings-nav-index">04</span>
                     <span>
                       <strong id="settingsNavProvidersTitle">Providers</strong>
                       <small id="settingsNavProvidersBody">Request-scoped provider overrides</small>
                     </span>
                   </button>
                   <button class="doc-tab" data-doc-tab="tenant" type="button" data-settings-scope="self_hosted">
-                    <span class="settings-nav-index">04</span>
+                    <span class="settings-nav-index">05</span>
                     <span>
                       <strong>Tenant</strong>
                       <small>Auth rules, models, users</small>

@@ -8,7 +8,11 @@ const {
     normalizeRuntimeRoleList,
     normalizeTenantIdentifier,
     parseTenantMetadataInput,
-    formatTenantRecord
+    formatTenantRecord,
+    buildPublicRegistrationProjectName,
+    slugifyPublicRegistrationProjectBase,
+    buildPublicRegistrationTenantId,
+    buildPublicRegistrationInstructions
   }
 } = require("../index");
 const {
@@ -95,6 +99,41 @@ function testBootstrapParseRolesSupportsInstanceAdmin() {
   );
 }
 
+function testBuildPublicRegistrationProjectNameFallsBackCleanly() {
+  assert.equal(
+    buildPublicRegistrationProjectName({ projectName: "Customer Support", fullName: "Ignored User", username: "ignored" }),
+    "Customer Support"
+  );
+  assert.equal(
+    buildPublicRegistrationProjectName({ fullName: "Ava Quinn", username: "ava" }),
+    "Ava Quinn's Project"
+  );
+  assert.equal(
+    buildPublicRegistrationProjectName({ username: "ava" }),
+    "ava Project"
+  );
+}
+
+function testPublicRegistrationTenantSlugHelpers() {
+  assert.equal(
+    slugifyPublicRegistrationProjectBase("Northwind Customer Support"),
+    "northwind-customer-support"
+  );
+  assert.equal(
+    buildPublicRegistrationTenantId({ projectName: "Northwind Customer Support", suffix: "abc123" }),
+    "northwind-customer-support-abc123"
+  );
+}
+
+function testBuildPublicRegistrationInstructionsIncludesSdkUsage() {
+  const payload = buildPublicRegistrationInstructions("https://api.supavector.test");
+  assert.equal(payload.baseUrl, "https://api.supavector.test");
+  assert.equal(payload.installCommand, "pip install supavector");
+  assert(payload.env.includes("SUPAVECTOR_API_KEY=<paste-the-copied-service-token>"));
+  assert(payload.python.some((line) => line.includes("Client")));
+  assert(payload.python.some((line) => line.includes('collection="default"')));
+}
+
 function main() {
   testNormalizeRuntimeRoleListAllowsInstanceAdminAliases();
   testNormalizeRuntimeRoleListRejectsInstanceAdminByDefault();
@@ -102,6 +141,9 @@ function main() {
   testParseTenantMetadataInputRequiresObject();
   testFormatTenantRecordIncludesExternalFieldsAndSummary();
   testBootstrapParseRolesSupportsInstanceAdmin();
+  testBuildPublicRegistrationProjectNameFallsBackCleanly();
+  testPublicRegistrationTenantSlugHelpers();
+  testBuildPublicRegistrationInstructionsIncludesSdkUsage();
   console.log("enterprise control plane tests passed");
 }
 
