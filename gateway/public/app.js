@@ -280,7 +280,7 @@ function apiHeaders(){
 
 function requireKeyOrWarn(bannerEl){
   if (!loadStoredAuth().token){
-    setBanner(bannerEl, "err", "No token saved. Go to Settings and paste your token.");
+    setBanner(bannerEl, "err", "No saved token or JWT. Go to Settings and paste a service token or sign in first.");
     return false;
   }
   if (authRejected){
@@ -642,7 +642,7 @@ function maskToken(value){
 function buildRegisterInstructionsPayload(baseUrl){
   const cleanBaseUrl = String(baseUrl || window.location.origin || DOC_CONNECT_BASE_URL_PLACEHOLDER).trim().replace(/\/+$/, "");
   return {
-    installCommand: "pip install supavector",
+    installCommand: "python3 -m pip install supavector",
     env: [
       `SUPAVECTOR_BASE_URL=${cleanBaseUrl}`,
       "SUPAVECTOR_API_KEY=<paste-the-copied-service-token>"
@@ -663,7 +663,7 @@ function formatRegisterInstructionsText(instructions){
   const envLines = Array.isArray(payload.env) ? payload.env : [];
   const pythonLines = Array.isArray(payload.python) ? payload.python : [];
   return [
-    String(payload.installCommand || "pip install supavector").trim(),
+    String(payload.installCommand || "python3 -m pip install supavector").trim(),
     "",
     ...envLines,
     "",
@@ -676,6 +676,16 @@ function setRegisterProjectInfo(project){
   const id = String(project?.id || "").trim();
   if ($("registerProjectName")) $("registerProjectName").value = name;
   if ($("registerProjectId")) $("registerProjectId").value = id;
+}
+
+function showSettingsSection(sectionName){
+  if (!sectionName) return;
+  activateDocPanel("settings", sectionName);
+}
+
+function showHostedTokenSection(sectionName){
+  if (!sectionName) return;
+  activateDocPanel("settingsHostedTokenSections", sectionName);
 }
 
 function publishServiceTokenToUi(token, options = {}){
@@ -1170,25 +1180,25 @@ function applyRuntimeUiConfig(config){
   setTextById(
     "settingsSidebarBody",
     hosted
-      ? "Use Overview for this browser. Use Provider Keys only if you want this browser to use your own AI keys. Use Dashboard for everything else."
+      ? "Start with Register for first access. Use Service Tokens for browser-local token work, Billing & Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys."
       : "Pick a section on the right. The left pane stays focused on one setup flow at a time."
   );
   setTextById(
     "registerPanelBody",
     hosted
-      ? "Create access or authenticate an existing admin, get a default project, mint a service token, and wire this browser automatically."
+      ? "Create your first hosted account here. After that, use Service Tokens for token overview, existing-account sign-in, and latest-token actions."
       : "Create the first self-hosted account when browser registration is available, or authenticate an existing admin and mint a service token."
   );
-  setTextById("settingsAuthKicker", hosted ? "Hosted" : "Access");
-  setTextById("settingsAuthTitle", hosted ? "Settings for this browser" : "Authenticate this browser");
+  setTextById("settingsAuthKicker", hosted ? "Service Tokens" : "Access");
+  setTextById("settingsAuthTitle", hosted ? "Service tokens for this browser" : "Authenticate this browser");
   setTextById(
     "settingsAuthBody",
     hosted
-      ? "This page is only for browser-local settings and optional AI provider keys. Use Dashboard for projects, users, billing, SSO, and service tokens."
-      : "Choose how this browser signs in to SupaVector. Use a service token for local runtime work, admin login for a human session, or SSO if your tenant requires it."
+      ? "Start with Overview, use Create to mint a fresh service token from an existing account, and use Latest token to copy or save the newest token created in this browser."
+      : "Choose how this browser authenticates to SupaVector. Save a service token, or sign in for a human admin JWT when you need admin actions."
   );
-  setTextById("settingsNavAuthTitle", hosted ? "Overview" : "Authenticate");
-  setTextById("settingsNavAuthBody", hosted ? "Browser-only settings" : "Tokens, admin login, SSO");
+  setTextById("settingsNavAuthTitle", hosted ? "Service Tokens" : "Authenticate");
+  setTextById("settingsNavAuthBody", hosted ? "Overview, create, latest token" : "Saved token, admin login, SSO");
   setTextById("settingsNavProvidersTitle", hosted ? "Provider Keys" : "Providers");
   setTextById("settingsNavProvidersBody", hosted ? "Save AI keys for this browser" : "Save browser-only AI keys");
   setTextById("settingsProvidersKicker", "Provider keys");
@@ -1220,6 +1230,12 @@ function applyRuntimeUiConfig(config){
   if (hostedNotice) {
     hostedNotice.hidden = !hosted;
   }
+  setTextById(
+    "settingsHostedNoticeBody",
+    hosted
+      ? "Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings."
+      : "Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings."
+  );
   const dashboardLink = $("settingsDashboardLink");
   if (dashboardLink) {
     const dashboardUrl = runtimeUiConfig.links.dashboardUrl || (hosted && runtimeUiConfig.capabilities.portalEnabled ? "/portal" : "");
@@ -1228,11 +1244,20 @@ function applyRuntimeUiConfig(config){
       dashboardLink.setAttribute("href", dashboardUrl);
     }
   }
+  const billingDashboardLink = $("settingsBillingDashboardLink");
+  if (billingDashboardLink) {
+    const dashboardUrl = runtimeUiConfig.links.dashboardUrl || (hosted && runtimeUiConfig.capabilities.portalEnabled ? "/portal" : "");
+    billingDashboardLink.hidden = !hosted || !dashboardUrl;
+    if (dashboardUrl) {
+      billingDashboardLink.setAttribute("href", dashboardUrl);
+    }
+  }
 
   setSettingsScopedVisibility("self_hosted", hosted);
   setSettingsScopedVisibility("hosted", !hosted);
   ensureFirstVisibleDocTab("settings");
   ensureFirstVisibleDocTab("settingsAuthSections");
+  ensureFirstVisibleDocTab("settingsHostedTokenSections");
   refreshSettingsNavIndices();
 }
 
@@ -3248,6 +3273,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   if ($("registerCreateBtn")) {
     $("registerCreateBtn").onclick = async () => {
       clearBanner($("registerBanner"));
+      clearBanner($("settingsBanner"));
       const username = $("registerUsername")?.value?.trim() || "";
       const projectName = $("registerProjectNameInput")?.value?.trim() || "";
       const fullName = $("registerFullName")?.value?.trim() || "";
@@ -3288,10 +3314,7 @@ window.addEventListener("DOMContentLoaded", async () => {
             project: data.project || data.tenant || null,
             instructions: data.instructions || buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin)
           });
-          saveServiceTokenIntoSettings(token, {
-            bannerEl: $("registerBanner"),
-            message: "Account created. The new service token is saved into Settings and ready to use."
-          });
+          saveServiceTokenIntoSettings(token);
           if ($("registerLoginUser")) $("registerLoginUser").value = username;
           if ($("registerProjectNameInput")) $("registerProjectNameInput").value = "";
           if ($("registerPassword")) $("registerPassword").value = "";
@@ -3300,6 +3323,9 @@ window.addEventListener("DOMContentLoaded", async () => {
           if ($("apiKeyBanner")) {
             clearBanner($("apiKeyBanner"));
           }
+          showSettingsSection("auth");
+          showHostedTokenSection("hostedLatestToken");
+          setBanner($("settingsBanner"), "ok", "Account created. Your new service token is saved for this browser and ready to use.");
           await loadRegisterOptions();
         }else{
           setBanner($("registerBanner"), "err", resolveErrorMessage(payload, "Registration failed."));
@@ -3315,18 +3341,18 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   if ($("registerLoginBtn")) {
     $("registerLoginBtn").onclick = async () => {
-      clearBanner($("registerBanner"));
+      clearBanner($("settingsBanner"));
       const username = $("registerLoginUser")?.value?.trim() || "";
       const password = $("registerLoginPass")?.value || "";
       const tokenName = $("registerExistingTokenName")?.value?.trim() || `browser-${username || "token"}`;
 
       if (!username || !password) {
-        setBanner($("registerBanner"), "err", "Username and password are required.");
+        setBanner($("settingsBanner"), "err", "Username and password are required.");
         return;
       }
 
       $("registerLoginBtn").disabled = true;
-      $("registerLoginBtn").textContent = "Authenticating...";
+      $("registerLoginBtn").textContent = "Signing in...";
 
       try{
         const loginRes = await fetch("/v1/login", {
@@ -3337,7 +3363,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         const loginPayload = await parseResponsePayload(loginRes);
         const jwtToken = loginPayload?.data?.token || "";
         if (!loginRes.ok || !loginPayload?.ok || !jwtToken) {
-          setBanner($("registerBanner"), "err", resolveErrorMessage(loginPayload, "Authentication failed."));
+          setBanner($("settingsBanner"), "err", resolveErrorMessage(loginPayload, "Authentication failed."));
           return;
         }
 
@@ -3357,11 +3383,13 @@ window.addEventListener("DOMContentLoaded", async () => {
             instructions: buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin)
           });
           saveServiceTokenIntoSettings(token, {
-            bannerEl: $("registerBanner"),
-            message: "Authenticated and created a fresh service token. Settings now uses that service token."
+            bannerEl: $("settingsBanner"),
+            message: "Authenticated and created a fresh service token. This browser now uses that service token."
           });
           if ($("loginUser")) $("loginUser").value = username;
           if ($("registerLoginPass")) $("registerLoginPass").value = "";
+          showSettingsSection("auth");
+          showHostedTokenSection("hostedLatestToken");
           return;
         }
 
@@ -3370,12 +3398,12 @@ window.addEventListener("DOMContentLoaded", async () => {
         if ($("apiKey")) $("apiKey").value = jwtToken;
         loadDocsList();
         loadCollectionScopeOptions();
-        setBanner($("registerBanner"), "err", `${resolveErrorMessage(mintPayload, "Authenticated, but failed to create a service token.")} A JWT was saved instead.`);
+        setBanner($("settingsBanner"), "err", `${resolveErrorMessage(mintPayload, "Authenticated, but failed to create a service token.")} A JWT was saved instead.`);
       }catch(_err){
-        setBanner($("registerBanner"), "err", "Error authenticating account.");
+        setBanner($("settingsBanner"), "err", "Error authenticating account.");
       }finally{
         $("registerLoginBtn").disabled = false;
-        $("registerLoginBtn").textContent = "Authenticate and create token";
+        $("registerLoginBtn").textContent = "Sign in and create token";
       }
     };
   }
@@ -3384,12 +3412,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("useRegisterTokenBtn").onclick = () => {
       const token = $("useRegisterTokenBtn").dataset.token;
       if (!token){
-        setBanner($("registerBanner"), "err", "No service token to use yet.");
+        setBanner($("settingsBanner"), "err", "No service token to use yet.");
         return;
       }
       saveServiceTokenIntoSettings(token, {
-        bannerEl: $("registerBanner"),
-        message: "Service token saved into Settings. You can now Index, Search, and Ask."
+        bannerEl: $("settingsBanner"),
+        message: "Service token saved for this browser. You can now use it from this page."
       });
     };
   }
@@ -3398,14 +3426,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("copyRegisterTokenBtn").onclick = async () => {
       const token = $("copyRegisterTokenBtn").dataset.token;
       if (!token){
-        setBanner($("registerBanner"), "err", "No service token to copy yet.");
+        setBanner($("settingsBanner"), "err", "No service token to copy yet.");
         return;
       }
       try{
         await copyTextToClipboard(token);
-        setBanner($("registerBanner"), "ok", "Service token copied to clipboard.");
+        setBanner($("settingsBanner"), "ok", "Service token copied to clipboard.");
       }catch(_err){
-        setBanner($("registerBanner"), "err", "Failed to copy service token.");
+        setBanner($("settingsBanner"), "err", "Failed to copy service token.");
       }
     };
   }
