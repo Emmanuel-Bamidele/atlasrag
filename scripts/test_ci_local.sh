@@ -21,6 +21,8 @@ RESET_VOLUMES_BEFORE_UP="${RESET_VOLUMES_BEFORE_UP:-1}"
 VECTOR_WAL="${VECTOR_WAL:-0}"
 RUN_CODE_E2E="${RUN_CODE_E2E:-1}"
 RUN_DIAGNOSTIC_E2E="${RUN_DIAGNOSTIC_E2E:-0}"
+COMPOSE_UP_RETRIES="${COMPOSE_UP_RETRIES:-4}"
+COMPOSE_UP_RETRY_DELAY_SECONDS="${COMPOSE_UP_RETRY_DELAY_SECONDS:-10}"
 
 DOCKER_BIN="$(command -v docker || true)"
 if [ -z "$DOCKER_BIN" ] && [ -x "/usr/local/bin/docker" ]; then
@@ -43,6 +45,22 @@ fi
 
 export VECTOR_WAL
 
+compose_up_with_retry() {
+  local attempt=1
+  while [ "$attempt" -le "$COMPOSE_UP_RETRIES" ]; do
+    if "${COMPOSE_CMD[@]}" up -d --build; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$COMPOSE_UP_RETRIES" ]; then
+      echo "docker compose up failed after ${COMPOSE_UP_RETRIES} attempts." >&2
+      return 1
+    fi
+    echo "docker compose up failed (attempt ${attempt}/${COMPOSE_UP_RETRIES}). Retrying in ${COMPOSE_UP_RETRY_DELAY_SECONDS}s..." >&2
+    sleep "$COMPOSE_UP_RETRY_DELAY_SECONDS"
+    attempt=$((attempt + 1))
+  done
+}
+
 on_exit() {
   local status=$?
   if [ "$status" -ne 0 ]; then
@@ -63,9 +81,9 @@ trap on_exit EXIT
 echo "Starting services..."
 if [ "$RESET_VOLUMES_BEFORE_UP" = "1" ]; then
   echo "Resetting compose volumes before start (RESET_VOLUMES_BEFORE_UP=1)..."
-  "${COMPOSE_CMD[@]}" down -v --remove-orphans || true
+"${COMPOSE_CMD[@]}" down -v --remove-orphans || true
 fi
-"${COMPOSE_CMD[@]}" up -d --build
+compose_up_with_retry
 
 echo "Waiting for gateway health: $HEALTH_URL"
 deadline=$((SECONDS + HEALTH_WAIT_SECONDS))
