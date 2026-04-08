@@ -1009,10 +1009,10 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
               <summary>SDKs</summary>
               <div class="section-body">
                 <p>
-                  Official SDK: <span class="mono">sdk/node</span> (Node.js). It supports JWT or API key auth,
-                  idempotency headers, and memory APIs. For apps and agents, the recommended input is
-                  <span class="mono">SUPAVECTOR_BASE_URL</span> plus <span class="mono">SUPAVECTOR_API_KEY</span>.
-                  Additional SDKs can be added using the OpenAPI schema.
+                  Official SDKs: <span class="mono">sdk/node</span> (Node.js) and <span class="mono">sdk/python</span> (Python).
+                  They support JWT or API key auth, idempotency headers, and memory APIs. For apps and agents,
+                  the recommended input is <span class="mono">SUPAVECTOR_BASE_URL</span> plus
+                  <span class="mono">SUPAVECTOR_API_KEY</span>.
                 </p>
               </div>
             </details>
@@ -1823,11 +1823,11 @@ curl -X POST "${SUPAVECTOR_BASE_URL}/v1/boolean_ask" \
   }'</pre>
                   <p class="hint">Keep write and read operations on the same <span class="mono">collection</span>. If you write to <span class="mono">default</span>, search, ask, and <span class="mono">boolean_ask</span> on <span class="mono">default</span> too unless you intentionally want a different scope.</p>
                 </div>
-                <div class="doc-block">
-                  <div class="doc-label">4. Use the Node SDK in a real backend or worker</div>
-                  <pre class="doc-code">const { SupavectorClient } = require("@supavector/sdk");
+                  <div class="doc-block">
+                    <div class="doc-label">4. Use the Node SDK in a real backend or worker</div>
+                  <pre class="doc-code">const { SupaVectorClient } = require("@supavector/sdk");
 
-const client = new SupavectorClient({
+const client = new SupaVectorClient({
   baseUrl: process.env.SUPAVECTOR_BASE_URL,
   apiKey: process.env.SUPAVECTOR_API_KEY,
   openAiApiKey: process.env.OPENAI_API_KEY,
@@ -1860,6 +1860,42 @@ async function main() {
 
 main().catch(console.error);</pre>
                   <p class="hint">For a fuller SDK walkthrough, open <span class="mono">sdk/node/README.md</span>.</p>
+                </div>
+                <div class="doc-block">
+                  <div class="doc-label">4b. Use the Python SDK in a real backend or worker</div>
+                  <pre class="doc-code">from supavector import Client
+
+client = Client.from_env(
+    collection="default",
+)
+
+client.index_text(
+    "welcome",
+    "SupaVector stores memory for agents.",
+    params={
+        "idempotencyKey": "py-idx-001",
+    },
+)
+
+answer = client.ask(
+    "What does SupaVector store?",
+    {
+        "k": 7,
+        "provider": "openai",
+    },
+)
+print(answer["data"]["answer"])
+
+boolean_ask = client.boolean_ask(
+    "Does SupaVector store memory for agents?",
+    {
+        "k": 7,
+        "provider": "openai",
+    },
+)
+print(boolean_ask["data"]["answer"])
+print(boolean_ask["data"]["supportingChunks"])</pre>
+                  <p class="hint">For a fuller SDK walkthrough, open <span class="mono">sdk/python/README.md</span>.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">5. Choose the integration shape</div>

@@ -388,6 +388,7 @@ const CONVERSATION_WIKI_PAGE_SET = new Set([CONVERSATION_WIKI_ARTICLE_PAGE]);
 const CONVERSATION_WIKI_SECTION_KEYS = ["confirmed", "uncertain", "open"];
 const CONVERSATION_WIKI_MAX_PAGE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_PAGE_CHARS || "9000", 10);
 const CONVERSATION_WIKI_MAX_SOURCE_TURNS = parseInt(process.env.CONVERSATION_WIKI_MAX_SOURCE_TURNS || "32", 10);
+const CONVERSATION_WIKI_TURNS_PER_EXCHANGE = 2;
 const CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION = parseInt(process.env.CONVERSATION_WIKI_MAX_ITEMS_PER_SECTION || "18", 10);
 const CONVERSATION_WIKI_MAX_TITLE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_TITLE_CHARS || "120", 10);
 const CONVERSATION_WIKI_MAX_NOTE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_NOTE_CHARS || "240", 10);
@@ -2509,44 +2510,12 @@ function buildConversationWikiArticle(records = []) {
 }
 
 function buildConversationWikiTurnExchanges(recentTurns = []) {
-  const exchanges = [];
-  let current = null;
-  for (const turn of Array.isArray(recentTurns) ? recentTurns : []) {
-    const role = String(turn?.role || turn?.metadata?.role || "").trim().toLowerCase();
-    const text = extractConversationMessageBody(turn?.text);
-    if (!text) continue;
-    if (role === "user") {
-      current = {
-        question: text,
-        askedAt: turn?.createdAt || null,
-        questionExternalId: turn?.externalId || null,
-        responses: []
-      };
-      exchanges.push(current);
-      continue;
-    }
-    if (!current) {
-      current = {
-        question: null,
-        askedAt: null,
-        questionExternalId: null,
-        responses: []
-      };
-      exchanges.push(current);
-    }
-    current.responses.push({
-      role: role || "assistant",
-      text,
-      createdAt: turn?.createdAt || null,
-      externalId: turn?.externalId || null
-    });
-  }
-  return exchanges.map((exchange, index) => ({
-    index: index + 1,
+  return buildConversationWikiTurnExchangeSpans(recentTurns).map((exchange) => ({
+    index: exchange.index,
     question: exchange.question || null,
     askedAt: exchange.askedAt || null,
     questionExternalId: exchange.questionExternalId || null,
-    responseCount: Array.isArray(exchange.responses) ? exchange.responses.length : 0,
+    responseCount: exchange.responseCount,
     responses: Array.isArray(exchange.responses) ? exchange.responses : []
   }));
 }
@@ -2845,6 +2814,7 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       "- When there are N answered exchanges, write at least N substantial body paragraphs before any concluding synthesis or knowledge-base gap paragraph.",
       "- Do not mention a user question without also carrying forward the substance of the assistant answer that followed it, unless no answer was actually given.",
       "- Preserve the substance of assistant answers in the article. Summaries should retain what was actually advised, explained, corrected, or recommended.",
+      "- Do not silently drop an answered exchange from the digest or source exchanges. If a newer exchange corrects an older one, keep both in the article by explicitly explaining the correction.",
       "- Use the explicit question-and-answer digest and the raw turn transcript together. The digest is the primary structure; the transcript is there to preserve wording and sequence.",
       "- Use previous wiki source exchanges as factual scaffolding so earlier answered exchanges are not silently dropped when older raw turns are no longer available.",
       "- Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information, deferred the answer, or clearly identified missing source material.",
@@ -7635,6 +7605,102 @@ function getConversationWikiCheckpoint(records = []) {
   return null;
 }
 
+function buildConversationWikiTurnExchangeSpans(recentTurns = []) {
+  const exchanges = [];
+  let current = null;
+  for (let turnIndex = 0; turnIndex < (Array.isArray(recentTurns) ? recentTurns.length : 0); turnIndex += 1) {
+    const turn = recentTurns[turnIndex];
+    const role = String(turn?.role || turn?.metadata?.role || "").trim().toLowerCase();
+    const text = extractConversationMessageBody(turn?.text);
+    if (!text) continue;
+    if (role === "user") {
+      current = {
+        startIndex: turnIndex,
+        endIndex: turnIndex,
+        question: text,
+        askedAt: turn?.createdAt || null,
+        questionExternalId: turn?.externalId || null,
+        responses: []
+      };
+      exchanges.push(current);
+      continue;
+    }
+    if (!current) {
+      current = {
+        startIndex: turnIndex,
+        endIndex: turnIndex,
+        question: null,
+        askedAt: null,
+        questionExternalId: null,
+        responses: []
+      };
+      exchanges.push(current);
+    }
+    current.endIndex = turnIndex;
+    current.responses.push({
+      role: role || "assistant",
+      text,
+      createdAt: turn?.createdAt || null,
+      externalId: turn?.externalId || null
+    });
+  }
+  return exchanges.map((exchange, index) => ({
+    index: index + 1,
+    startIndex: exchange.startIndex,
+    endIndex: exchange.endIndex,
+    question: exchange.question || null,
+    askedAt: exchange.askedAt || null,
+    questionExternalId: exchange.questionExternalId || null,
+    responseCount: Array.isArray(exchange.responses) ? exchange.responses.length : 0,
+    responses: Array.isArray(exchange.responses) ? exchange.responses : []
+  }));
+}
+
+function buildConversationWikiPromptTurnKey(turn) {
+  const externalId = String(turn?.externalId || "").trim();
+  if (externalId) return `external:${externalId}`;
+  return stableJson({
+    id: turn?.id || null,
+    createdAt: turn?.createdAt || null,
+    role: turn?.role || turn?.memory?.role || null,
+    text: String(turn?.text || "").trim()
+  });
+}
+
+function countConversationWikiTurnExchanges(recentTurns = []) {
+  return buildConversationWikiTurnExchangeSpans(recentTurns).length;
+}
+
+function sliceConversationWikiTurnsToRecentExchanges(recentTurns = [], keepRecentExchanges = 4) {
+  const safeTurns = Array.isArray(recentTurns) ? recentTurns.slice() : [];
+  const safeKeepRecentExchanges = Math.max(0, Math.floor(Number(keepRecentExchanges) || 0));
+  if (!safeTurns.length || !safeKeepRecentExchanges) return [];
+  const spans = buildConversationWikiTurnExchangeSpans(safeTurns);
+  if (!spans.length || spans.length <= safeKeepRecentExchanges) return safeTurns;
+  const startIndex = spans[spans.length - safeKeepRecentExchanges]?.startIndex ?? 0;
+  return safeTurns.slice(Math.max(0, startIndex));
+}
+
+function mergeConversationWikiPromptTurns(deltaTurns = [], overlapTurns = [], keepRecentExchanges = 4, maxTurns = CONVERSATION_WIKI_MAX_SOURCE_TURNS) {
+  const safeMaxTurns = Math.max(1, Math.floor(Number(maxTurns) || 0));
+  const overlapWindow = sliceConversationWikiTurnsToRecentExchanges(overlapTurns, keepRecentExchanges);
+  const deltaList = Array.isArray(deltaTurns) ? deltaTurns.filter(Boolean) : [];
+  if (deltaList.length >= safeMaxTurns) return deltaList.slice(-safeMaxTurns);
+  const merged = [];
+  const seen = new Set();
+  const deltaKeys = new Set(deltaList.map((turn) => buildConversationWikiPromptTurnKey(turn)));
+  for (const turn of overlapWindow) {
+    if (!turn || typeof turn !== "object") continue;
+    const stableKey = buildConversationWikiPromptTurnKey(turn);
+    if (seen.has(stableKey) || deltaKeys.has(stableKey)) continue;
+    seen.add(stableKey);
+    merged.push(turn);
+  }
+  const overlapBudget = Math.max(0, safeMaxTurns - deltaList.length);
+  const trimmedOverlap = overlapBudget ? merged.slice(-overlapBudget) : [];
+  return [...trimmedOverlap, ...deltaList];
+}
+
 function getConversationWikiRevision(records = []) {
   return records.reduce((max, record) => {
     const revision = Number(record?.revision || 0);
@@ -7662,7 +7728,15 @@ async function loadConversationTurnTexts(items = []) {
   })).filter((item) => String(item.text || "").trim());
 }
 
-async function loadConversationTurnsForWikiUpdate({ tenantId, collection, conversationId, principalId, checkpointTurnExternalId }) {
+async function loadConversationTurnsForWikiUpdate({
+  tenantId,
+  collection,
+  conversationId,
+  principalId,
+  checkpointTurnExternalId,
+  keepRecentTurns = 0
+}) {
+  const safeKeepRecentExchanges = Math.max(0, Math.floor(Number(keepRecentTurns) || 0));
   if (checkpointTurnExternalId) {
     const checkpoint = await getMemoryItemByExternalId({
       tenantId,
@@ -7680,7 +7754,37 @@ async function loadConversationTurnsForWikiUpdate({ tenantId, collection, conver
         limit: CONVERSATION_WIKI_MAX_SOURCE_TURNS,
         principalId
       });
-      return loadConversationTurnTexts(recent);
+      const newTurns = await loadConversationTurnTexts(recent);
+      if (!safeKeepRecentExchanges) {
+        return {
+          newTurns,
+          promptTurns: newTurns
+        };
+      }
+      const overlapTurnLimit = Math.min(
+        CONVERSATION_WIKI_MAX_SOURCE_TURNS,
+        Math.max(
+          CONVERSATION_WIKI_TURNS_PER_EXCHANGE,
+          safeKeepRecentExchanges * CONVERSATION_WIKI_TURNS_PER_EXCHANGE
+        )
+      );
+      const overlap = await listRecentConversationTurnItems({
+        tenantId,
+        collection,
+        conversationId,
+        limit: overlapTurnLimit,
+        principalId
+      });
+      const overlapTurns = await loadConversationTurnTexts(overlap);
+      return {
+        newTurns,
+        promptTurns: mergeConversationWikiPromptTurns(
+          newTurns,
+          overlapTurns,
+          safeKeepRecentExchanges,
+          CONVERSATION_WIKI_MAX_SOURCE_TURNS
+        )
+      };
     }
   }
   const recent = await listRecentConversationTurnItems({
@@ -7690,7 +7794,11 @@ async function loadConversationTurnsForWikiUpdate({ tenantId, collection, conver
     limit: CONVERSATION_WIKI_MAX_SOURCE_TURNS,
     principalId
   });
-  return loadConversationTurnTexts(recent);
+  const turns = await loadConversationTurnTexts(recent);
+  return {
+    newTurns: turns,
+    promptTurns: turns
+  };
 }
 
 function resolveConversationWikiSourceCheckpoint(records = [], { force = false } = {}) {
@@ -7901,7 +8009,10 @@ async function pruneConversationTurnsForWikiWithDeps(deps, { tenantId, collectio
     collection,
     conversationId,
     beforeCreatedAt: checkpoint.created_at,
-    keepRecentTurns,
+    keepRecentTurns: Math.max(
+      0,
+      Math.floor(Number(keepRecentTurns) || 0) * CONVERSATION_WIKI_TURNS_PER_EXCHANGE
+    ),
     principalId
   });
   let pruned = 0;
@@ -8067,15 +8178,18 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     });
     const checkpointTurnExternalId = getConversationWikiCheckpoint(existingPages);
     const sourceCheckpointTurnExternalId = resolveConversationWikiSourceCheckpoint(existingPages, { force });
-    const recentTurns = await loadConversationTurnsForWikiUpdate({
+    const { newTurns, promptTurns } = await loadConversationTurnsForWikiUpdate({
       tenantId,
       collection,
       conversationId,
       principalId,
-      checkpointTurnExternalId: sourceCheckpointTurnExternalId
+      checkpointTurnExternalId: sourceCheckpointTurnExternalId,
+      keepRecentTurns
     });
+    const newExchangeCount = countConversationWikiTurnExchanges(newTurns);
+    const promptExchangeCount = countConversationWikiTurnExchanges(promptTurns);
 
-    if (!force && recentTurns.length < updateEveryTurns) {
+    if (!force && newExchangeCount < updateEveryTurns) {
       recordConversationWikiMetrics(tenantId, {
         skipped: 1,
         lastPageCount: existingPages.length,
@@ -8088,7 +8202,8 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
         conversationId,
         source: "conversation_wiki_job"
       }, {
-        recent_turn_count: recentTurns.length,
+        recent_turn_count: newTurns.length,
+        recent_exchange_count: newExchangeCount,
         page_count: existingPages.length
       });
       await updateMemoryJob({
@@ -8099,14 +8214,15 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
           conversationId,
           updated: false,
           skipped: "not_due",
-          recentTurnCount: recentTurns.length,
+          recentTurnCount: newTurns.length,
+          recentExchangeCount: newExchangeCount,
           pageCount: existingPages.length
         }
       });
       return;
     }
 
-    if (!recentTurns.length && !existingPages.length) {
+    if (!promptTurns.length && !existingPages.length) {
       recordConversationWikiMetrics(tenantId, { skipped: 1, lastPageCount: 0 });
       emitConversationWikiTelemetry("skipped_no_source_turns", {
         requestId: `job:${jobId}`,
@@ -8124,6 +8240,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
           updated: false,
           skipped: "no_source_turns",
           recentTurnCount: 0,
+          recentExchangeCount: 0,
           pageCount: 0
         }
       });
@@ -8131,7 +8248,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }
 
     const existingWikiState = buildConversationWikiPromptState(existingPages);
-    const currentTurnExchanges = normalizeConversationWikiStoredExchanges(buildConversationWikiTurnExchanges(recentTurns));
+    const currentTurnExchanges = normalizeConversationWikiStoredExchanges(buildConversationWikiTurnExchanges(promptTurns));
     const nextSourceExchanges = mergeConversationWikiStoredExchanges(
       existingWikiState.previousWikiSourceExchanges,
       currentTurnExchanges
@@ -8140,7 +8257,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       conversationId,
       pages,
       existingWikiState,
-      recentTurns
+      recentTurns: promptTurns
     });
     const tenantModels = await getEffectiveTenantModels(tenantId);
     const requestedGeneration = resolveRequestedGenerationConfig({
@@ -8165,7 +8282,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }));
     const draftArticle = parseConversationWikiResponse(generated?.text, pages);
     const revision = getConversationWikiRevision(existingPages) + 1;
-    const nextCheckpoint = recentTurns[recentTurns.length - 1]?.externalId || checkpointTurnExternalId || null;
+    const nextCheckpoint = newTurns[newTurns.length - 1]?.externalId || checkpointTurnExternalId || null;
     const visibility = input.visibility ? normalizeVisibility(input.visibility) : (existingPages[0]?.memory?.visibility || "tenant");
     const acl = visibility === "acl"
       ? normalizeAclList(input.acl || existingPages[0]?.memory?.acl || [], principalId)
@@ -8281,7 +8398,8 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
         pageCount: effectivePageCount,
         lastUpdatedAt: writtenLastUpdatedAt,
         checkpointTurnExternalId: nextCheckpoint,
-        recentTurnCount: recentTurns.length,
+        recentTurnCount: promptTurns.length,
+        recentExchangeCount: promptExchangeCount,
         prunedTurns: pruneResult.pruned,
         queuedDeletes: pruneResult.queued
       }
@@ -13772,6 +13890,9 @@ module.exports = {
     buildConversationWikiPageTitle,
     buildConversationWikiPageText,
     buildConversationWikiTurnExchanges,
+    countConversationWikiTurnExchanges,
+    sliceConversationWikiTurnsToRecentExchanges,
+    mergeConversationWikiPromptTurns,
     normalizeConversationWikiStoredExchanges,
     mergeConversationWikiStoredExchanges,
     resolveConversationWikiSourceCheckpoint,

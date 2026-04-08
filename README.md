@@ -13,6 +13,7 @@ License: MIT
 - `gateway/`: Node.js/Express gateway, auth, APIs, public docs UI, and background jobs.
 - `supavector/`: C++ vector server used for embedding storage and similarity search.
 - `sdk/node/`: small Node SDK for API consumers.
+- `sdk/python/`: small Python SDK for API consumers.
 - `docs/`: setup, deployment, and agent integration guides.
 - `scripts/install.sh` and `scripts/install.ps1`: CLI installer entrypoints for local setup.
 - `docker-compose.yml`: local/self-hosted stack.
@@ -719,6 +720,7 @@ The production compose file now supports an external cert directory for the inte
 ## SDK And Guides
 
 - Node SDK: [`sdk/node/README.md`](sdk/node/README.md)
+- Python SDK: [`sdk/python/README.md`](sdk/python/README.md)
 - Guides index: [`docs/README.md`](docs/README.md)
 
 ## Project Docs
