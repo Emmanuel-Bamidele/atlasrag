@@ -129,6 +129,46 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.equal(exchanges.length, 2);
   assert.equal(exchanges[0].responseCount, 1);
   assert.match(exchanges[1].responses[0].text, /compensation no longer reflects/);
+  const promptTurns = __testHooks.mergeConversationWikiPromptTurns([
+    {
+      role: "user",
+      createdAt: "2026-04-07T01:02:00.000Z",
+      externalId: "turn-user-2",
+      text: "Message:\nWhen should I draw the line between performance and compensation?"
+    },
+    {
+      role: "assistant",
+      createdAt: "2026-04-07T01:03:00.000Z",
+      externalId: "turn-assistant-2",
+      text: "Message:\nDraw the line when your compensation no longer reflects the level of ownership and outcomes you consistently carry."
+    }
+  ], [
+    {
+      role: "user",
+      createdAt: "2026-04-07T01:00:00.000Z",
+      externalId: "turn-user-1",
+      text: "Message:\nHow can I demonstrate consistency in my work?"
+    },
+    {
+      role: "assistant",
+      createdAt: "2026-04-07T01:01:00.000Z",
+      externalId: "turn-assistant-1",
+      text: "Message:\nShow a repeatable pattern of follow-through, clear communication, and reliable outcomes."
+    },
+    {
+      role: "user",
+      createdAt: "2026-04-07T01:02:00.000Z",
+      externalId: "turn-user-2",
+      text: "Message:\nWhen should I draw the line between performance and compensation?"
+    }
+  ], 2);
+  assert.deepEqual(promptTurns.map((turn) => turn.externalId), [
+    "turn-user-1",
+    "turn-assistant-1",
+    "turn-user-2",
+    "turn-assistant-2"
+  ]);
+  assert.equal(__testHooks.countConversationWikiTurnExchanges(promptTurns), 2);
 
   const prompt = __testHooks.buildConversationWikiUpdatePrompt({
     conversationId: "conv-1",
@@ -169,6 +209,7 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.match(prompt.system, /Treat answered questions as answered\./);
   assert.match(prompt.system, /cover each exchange with its own substantial paragraph/);
   assert.match(prompt.system, /Do not mention a user question without also carrying forward the substance of the assistant answer/);
+  assert.match(prompt.system, /Do not silently drop an answered exchange from the digest or source exchanges\./);
   assert.match(prompt.system, /Only add a knowledge-base gap paragraph when the assistant response explicitly lacked enough information/);
   assert.match(prompt.user, /Previous wiki article text:/);
   assert.match(prompt.user, /Earlier draft paragraph\./);
@@ -297,7 +338,7 @@ async function testPrunesConversationTailAndCountsQueuedDeletes() {
     getMemoryItemByExternalId: async () => ({ created_at: "2026-04-06T10:00:00.000Z" }),
     listConversationTurnItemsForPrune: async ({ beforeCreatedAt, keepRecentTurns }) => {
       assert.equal(beforeCreatedAt, "2026-04-06T10:00:00.000Z");
-      assert.equal(keepRecentTurns, 2);
+      assert.equal(keepRecentTurns, 4);
       return [
         { id: "turn-1" },
         { id: "turn-2" },

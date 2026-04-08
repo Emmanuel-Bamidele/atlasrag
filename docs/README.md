@@ -56,5 +56,6 @@ Related repo docs:
 - External Postgres Compose file: [`../docker-compose.external-postgres.yml`](../docker-compose.external-postgres.yml)
 - External Postgres env template: [`../.env.external-postgres.example`](../.env.external-postgres.example)
 - Node SDK: [`../sdk/node/README.md`](../sdk/node/README.md)
+- Python SDK: [`../sdk/python/README.md`](../sdk/python/README.md)
 - Production cert layout: [`../deploy/stunnel/README.md`](../deploy/stunnel/README.md)
 - Security reporting: [`../SECURITY.md`](../SECURITY.md)

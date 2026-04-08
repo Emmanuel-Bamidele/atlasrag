@@ -511,17 +511,20 @@ console.log(booleanAsk.data.supportingChunks);
 
 This direct `/v1/docs` example stays on the default text path. If you are indexing source code instead, add `"sourceType":"code"` to that document payload.
 
-## When To Use The Node SDK
+## When To Use The SDKs
 
 If you do not want to hand-roll fetch calls, use:
 
 - [`../sdk/node/README.md`](../sdk/node/README.md)
+- [`../sdk/python/README.md`](../sdk/python/README.md)
 
-The SDK already understands:
+The SDKs already understand:
 
 - JWT or API key auth
 - idempotency headers
 - search, ask, docs, memory, and jobs endpoints
+
+Use the Node SDK when your runtime is already in Node.js. Use the Python SDK when your app, worker, notebook, or agent runtime already lives in Python and should call SupaVector over HTTP with the same `SUPAVECTOR_BASE_URL` and `SUPAVECTOR_API_KEY` pattern.
 
 ## Hosted Service Tokens And Credits
 
