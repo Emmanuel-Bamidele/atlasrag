@@ -1176,31 +1176,31 @@ function applyRuntimeUiConfig(config){
   }
 
   setTextById("settingsSidebarKicker", hosted ? "Hosted" : "Settings");
-  setTextById("settingsSidebarTitle", hosted ? "Use this page" : "Manage this workspace");
+  setTextById("settingsSidebarTitle", hosted ? "Start in the right place" : "Pick the admin job");
   setTextById(
     "settingsSidebarBody",
     hosted
-      ? "Start with Register for first access. Use Service Tokens for browser-local token work, Billing & Credit for hosted billing rules, and Provider Keys only when this browser should use your own AI keys."
-      : "Pick a section on the right. The left pane stays focused on one setup flow at a time."
+      ? "Register once, then use Service Tokens whenever you need browser-local token work again. Keep long-lived service tokens in backend or agent secrets."
+      : "Use saved tokens for machine access, human login only when you need admin controls, and create separate service tokens for each runtime."
   );
   setTextById(
     "registerPanelBody",
     hosted
-      ? "Create your first hosted account here. After that, use Service Tokens for token overview, existing-account sign-in, and latest-token actions."
+      ? "Start here for a new hosted workspace. Registration creates the first admin, the default project, and the first service token you will use from your backend, worker, or agent."
       : "Create the first self-hosted account when browser registration is available, or authenticate an existing admin and mint a service token."
   );
   setTextById("settingsAuthKicker", hosted ? "Service Tokens" : "Access");
-  setTextById("settingsAuthTitle", hosted ? "Service tokens for this browser" : "Authenticate this browser");
+  setTextById("settingsAuthTitle", hosted ? "Sign in and manage browser tokens" : "Authenticate this browser");
   setTextById(
     "settingsAuthBody",
     hosted
-      ? "Start with Overview, use Create to mint a fresh service token from an existing account, and use Latest token to copy or save the newest token created in this browser."
+      ? "Start with Overview, use Create to sign in and mint a fresh service token for this browser, then use Latest token to copy or re-save the newest token created here."
       : "Choose how this browser authenticates to SupaVector. Save a service token, or sign in for a human admin JWT when you need admin actions."
   );
-  setTextById("settingsNavAuthTitle", hosted ? "Service Tokens" : "Authenticate");
-  setTextById("settingsNavAuthBody", hosted ? "Overview, create, latest token" : "Saved token, admin login, SSO");
-  setTextById("settingsNavProvidersTitle", hosted ? "Provider Keys" : "Providers");
-  setTextById("settingsNavProvidersBody", hosted ? "Save AI keys for this browser" : "Save browser-only AI keys");
+  setTextById("settingsNavAuthTitle", hosted ? "Service Tokens" : "Browser Access");
+  setTextById("settingsNavAuthBody", hosted ? "Overview, create, latest token" : "Saved token, login, SSO");
+  setTextById("settingsNavProvidersTitle", "Provider Keys");
+  setTextById("settingsNavProvidersBody", hosted ? "Browser-only AI billing overrides" : "Browser-only AI billing overrides");
   setTextById("settingsProvidersKicker", "Provider keys");
   setTextById("settingsProvidersTitle", "Optional AI keys for this browser");
   setTextById(
