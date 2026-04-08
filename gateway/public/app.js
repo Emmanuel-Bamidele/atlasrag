@@ -70,6 +70,7 @@ const DEFAULT_RUNTIME_UI_CONFIG = Object.freeze({
 let modelCatalogLoaded = false;
 let runtimeUiConfig = DEFAULT_RUNTIME_UI_CONFIG;
 let docsSubmenuVisible = false;
+let registerOptionsState = null;
 
 function setModelDatalistOptions(listId, models){
   const list = $(listId);
@@ -638,6 +639,88 @@ function maskToken(value){
   return `${head}****${tail}`;
 }
 
+function buildRegisterInstructionsPayload(baseUrl){
+  const cleanBaseUrl = String(baseUrl || window.location.origin || DOC_CONNECT_BASE_URL_PLACEHOLDER).trim().replace(/\/+$/, "");
+  return {
+    installCommand: "pip install supavector",
+    env: [
+      `SUPAVECTOR_BASE_URL=${cleanBaseUrl}`,
+      "SUPAVECTOR_API_KEY=<paste-the-copied-service-token>"
+    ],
+    python: [
+      "from supavector import Client",
+      "",
+      `client = Client(base_url=\"${cleanBaseUrl}\", api_key=\"<paste-the-copied-service-token>\")`,
+      "result = client.search(query=\"hello\", collection=\"default\")"
+    ]
+  };
+}
+
+function formatRegisterInstructionsText(instructions){
+  const payload = instructions && typeof instructions === "object"
+    ? instructions
+    : buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin);
+  const envLines = Array.isArray(payload.env) ? payload.env : [];
+  const pythonLines = Array.isArray(payload.python) ? payload.python : [];
+  return [
+    String(payload.installCommand || "pip install supavector").trim(),
+    "",
+    ...envLines,
+    "",
+    ...pythonLines
+  ].join("\n");
+}
+
+function setRegisterProjectInfo(project){
+  const name = String(project?.name || "").trim();
+  const id = String(project?.id || "").trim();
+  if ($("registerProjectName")) $("registerProjectName").value = name;
+  if ($("registerProjectId")) $("registerProjectId").value = id;
+}
+
+function publishServiceTokenToUi(token, options = {}){
+  const raw = String(token || "").trim();
+  if (!raw) return;
+  const masked = maskToken(raw);
+  if ($("registerCreatedToken")) $("registerCreatedToken").textContent = masked;
+  if ($("copyRegisterTokenBtn")) {
+    $("copyRegisterTokenBtn").dataset.token = raw;
+    $("copyRegisterTokenBtn").disabled = false;
+  }
+  if ($("useRegisterTokenBtn")) {
+    $("useRegisterTokenBtn").dataset.token = raw;
+    $("useRegisterTokenBtn").disabled = false;
+  }
+  if ($("createdApiKey")) $("createdApiKey").textContent = masked;
+  if ($("copyCreatedApiKeyBtn")) {
+    $("copyCreatedApiKeyBtn").dataset.token = raw;
+    $("copyCreatedApiKeyBtn").disabled = false;
+  }
+  if ($("useCreatedApiKeyBtn")) {
+    $("useCreatedApiKeyBtn").dataset.token = raw;
+    $("useCreatedApiKeyBtn").disabled = false;
+  }
+  if (options.project) {
+    setRegisterProjectInfo(options.project);
+  }
+  if ($("registerTokenInstructions")) {
+    $("registerTokenInstructions").textContent = formatRegisterInstructionsText(options.instructions);
+  }
+}
+
+function saveServiceTokenIntoSettings(token, { bannerEl = null, message = "" } = {}){
+  const raw = String(token || "").trim();
+  if (!raw) return;
+  if ($("authType")) $("authType").value = "api_key";
+  if ($("apiKey")) $("apiKey").value = raw;
+  saveStoredAuth("api_key", raw);
+  loadDocsList();
+  loadCollectionScopeOptions();
+  if (bannerEl && message) {
+    setBanner(bannerEl, "ok", message);
+  }
+}
+
 function slugifyDocId(value){
   return String(value || "")
     .toLowerCase()
@@ -1090,6 +1173,12 @@ function applyRuntimeUiConfig(config){
       ? "Use Overview for this browser. Use Provider Keys only if you want this browser to use your own AI keys. Use Dashboard for everything else."
       : "Pick a section on the right. The left pane stays focused on one setup flow at a time."
   );
+  setTextById(
+    "registerPanelBody",
+    hosted
+      ? "Create access or authenticate an existing admin, get a default project, mint a service token, and wire this browser automatically."
+      : "Create the first self-hosted account when browser registration is available, or authenticate an existing admin and mint a service token."
+  );
   setTextById("settingsAuthKicker", hosted ? "Hosted" : "Access");
   setTextById("settingsAuthTitle", hosted ? "Settings for this browser" : "Authenticate this browser");
   setTextById(
@@ -1160,6 +1249,66 @@ async function loadRuntimeUiConfig(){
   }
   applyRuntimeUiConfig(DEFAULT_RUNTIME_UI_CONFIG);
   return runtimeUiConfig;
+}
+
+async function loadRegisterOptions(){
+  const availabilityEl = $("registerAvailability");
+  try{
+    const res = await fetch("/v1/register/options");
+    const payload = await parseResponsePayload(res);
+    if (res.ok && payload?.ok && payload.data){
+      registerOptionsState = payload.data;
+      if (availabilityEl) {
+        availabilityEl.textContent = payload.data.note || "Registration options loaded.";
+      }
+      if ($("registerCreateBtn")) {
+        $("registerCreateBtn").disabled = !payload.data.enabled;
+      }
+      if ($("registerTokenInstructions")) {
+        $("registerTokenInstructions").textContent = formatRegisterInstructionsText(
+          buildRegisterInstructionsPayload(payload.data.baseUrl || window.location.origin)
+        );
+      }
+      return payload.data;
+    }
+    if (availabilityEl) {
+      availabilityEl.textContent = resolveErrorMessage(payload, "Failed to load registration options.");
+    }
+  }catch(_err){
+    if (availabilityEl) {
+      availabilityEl.textContent = "Failed to load registration options.";
+    }
+  }
+  if ($("registerCreateBtn")) {
+    $("registerCreateBtn").disabled = true;
+  }
+  return null;
+}
+
+async function mintServiceTokenWithJwt(jwtToken, body){
+  const res = await fetch("/v1/admin/service-tokens", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      authorization: `Bearer ${jwtToken}`
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await parseResponsePayload(res);
+  return { res, payload };
+}
+
+async function loadTenantSummaryWithJwt(jwtToken){
+  const res = await fetch("/v1/admin/tenant", {
+    headers: {
+      authorization: `Bearer ${jwtToken}`
+    }
+  });
+  const payload = await parseResponsePayload(res);
+  if (res.ok && payload?.ok && payload.data?.tenant){
+    return payload.data.tenant;
+  }
+  return null;
 }
 
 function copyButtonMarkup(state = "copy"){
@@ -2996,6 +3145,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   initTheme();
   await loadRuntimeUiConfig();
+  if (runtimeUiConfig.deploymentMode === "hosted") {
+    await loadRegisterOptions();
+  }
   initDocTabs();
   expandDocsSections();
   initDocsHashNavigation();
@@ -3086,6 +3238,175 @@ window.addEventListener("DOMContentLoaded", async () => {
       setBanner($("settingsBanner"), "ok", "Saved. You can now Index, Search, and Ask.");
       loadDocsList();
       loadCollectionScopeOptions();
+    };
+  }
+
+  if ($("registerRefreshBtn")) {
+    $("registerRefreshBtn").onclick = () => loadRegisterOptions();
+  }
+
+  if ($("registerCreateBtn")) {
+    $("registerCreateBtn").onclick = async () => {
+      clearBanner($("registerBanner"));
+      const username = $("registerUsername")?.value?.trim() || "";
+      const projectName = $("registerProjectNameInput")?.value?.trim() || "";
+      const fullName = $("registerFullName")?.value?.trim() || "";
+      const email = $("registerEmail")?.value?.trim() || "";
+      const password = $("registerPassword")?.value || "";
+      const confirmPassword = $("registerPasswordConfirm")?.value || "";
+
+      if (!username || !password) {
+        setBanner($("registerBanner"), "err", "Username and password are required.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setBanner($("registerBanner"), "err", "Password confirmation does not match.");
+        return;
+      }
+
+      $("registerCreateBtn").disabled = true;
+      $("registerCreateBtn").textContent = "Creating...";
+
+      try{
+        const res = await fetch("/v1/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            projectName,
+            fullName,
+            email,
+            password,
+            confirmPassword
+          })
+        });
+        const payload = await parseResponsePayload(res);
+        if (res.ok && payload?.ok && payload.data?.serviceToken?.token){
+          const data = payload.data;
+          const token = data.serviceToken.token;
+          publishServiceTokenToUi(token, {
+            project: data.project || data.tenant || null,
+            instructions: data.instructions || buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin)
+          });
+          saveServiceTokenIntoSettings(token, {
+            bannerEl: $("registerBanner"),
+            message: "Account created. The new service token is saved into Settings and ready to use."
+          });
+          if ($("registerLoginUser")) $("registerLoginUser").value = username;
+          if ($("registerProjectNameInput")) $("registerProjectNameInput").value = "";
+          if ($("registerPassword")) $("registerPassword").value = "";
+          if ($("registerPasswordConfirm")) $("registerPasswordConfirm").value = "";
+          if ($("loginUser")) $("loginUser").value = username;
+          if ($("apiKeyBanner")) {
+            clearBanner($("apiKeyBanner"));
+          }
+          await loadRegisterOptions();
+        }else{
+          setBanner($("registerBanner"), "err", resolveErrorMessage(payload, "Registration failed."));
+        }
+      }catch(e){
+        setBanner($("registerBanner"), "err", "Error creating account.");
+      }finally{
+        $("registerCreateBtn").disabled = Boolean(registerOptionsState && registerOptionsState.enabled === false);
+        $("registerCreateBtn").textContent = "Create account, project, and token";
+      }
+    };
+  }
+
+  if ($("registerLoginBtn")) {
+    $("registerLoginBtn").onclick = async () => {
+      clearBanner($("registerBanner"));
+      const username = $("registerLoginUser")?.value?.trim() || "";
+      const password = $("registerLoginPass")?.value || "";
+      const tokenName = $("registerExistingTokenName")?.value?.trim() || `browser-${username || "token"}`;
+
+      if (!username || !password) {
+        setBanner($("registerBanner"), "err", "Username and password are required.");
+        return;
+      }
+
+      $("registerLoginBtn").disabled = true;
+      $("registerLoginBtn").textContent = "Authenticating...";
+
+      try{
+        const loginRes = await fetch("/v1/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        const loginPayload = await parseResponsePayload(loginRes);
+        const jwtToken = loginPayload?.data?.token || "";
+        if (!loginRes.ok || !loginPayload?.ok || !jwtToken) {
+          setBanner($("registerBanner"), "err", resolveErrorMessage(loginPayload, "Authentication failed."));
+          return;
+        }
+
+        const tenant = await loadTenantSummaryWithJwt(jwtToken);
+        const mintBody = {
+          name: tokenName,
+          principalId: username,
+          roles: ["admin", "indexer", "reader"]
+        };
+        const { res: mintRes, payload: mintPayload } = await mintServiceTokenWithJwt(jwtToken, mintBody);
+        if (mintRes.ok && mintPayload?.ok && mintPayload.data?.token){
+          const token = mintPayload.data.token;
+          publishServiceTokenToUi(token, {
+            project: tenant
+              ? { id: tenant.id || "", name: tenant.name || "" }
+              : { id: loginPayload?.data?.user?.tenant || "", name: "" },
+            instructions: buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin)
+          });
+          saveServiceTokenIntoSettings(token, {
+            bannerEl: $("registerBanner"),
+            message: "Authenticated and created a fresh service token. Settings now uses that service token."
+          });
+          if ($("loginUser")) $("loginUser").value = username;
+          if ($("registerLoginPass")) $("registerLoginPass").value = "";
+          return;
+        }
+
+        saveStoredAuth("bearer", jwtToken);
+        if ($("authType")) $("authType").value = "bearer";
+        if ($("apiKey")) $("apiKey").value = jwtToken;
+        loadDocsList();
+        loadCollectionScopeOptions();
+        setBanner($("registerBanner"), "err", `${resolveErrorMessage(mintPayload, "Authenticated, but failed to create a service token.")} A JWT was saved instead.`);
+      }catch(_err){
+        setBanner($("registerBanner"), "err", "Error authenticating account.");
+      }finally{
+        $("registerLoginBtn").disabled = false;
+        $("registerLoginBtn").textContent = "Authenticate and create token";
+      }
+    };
+  }
+
+  if ($("useRegisterTokenBtn")) {
+    $("useRegisterTokenBtn").onclick = () => {
+      const token = $("useRegisterTokenBtn").dataset.token;
+      if (!token){
+        setBanner($("registerBanner"), "err", "No service token to use yet.");
+        return;
+      }
+      saveServiceTokenIntoSettings(token, {
+        bannerEl: $("registerBanner"),
+        message: "Service token saved into Settings. You can now Index, Search, and Ask."
+      });
+    };
+  }
+
+  if ($("copyRegisterTokenBtn")) {
+    $("copyRegisterTokenBtn").onclick = async () => {
+      const token = $("copyRegisterTokenBtn").dataset.token;
+      if (!token){
+        setBanner($("registerBanner"), "err", "No service token to copy yet.");
+        return;
+      }
+      try{
+        await copyTextToClipboard(token);
+        setBanner($("registerBanner"), "ok", "Service token copied to clipboard.");
+      }catch(_err){
+        setBanner($("registerBanner"), "err", "Failed to copy service token.");
+      }
     };
   }
 
@@ -3215,11 +3536,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       const data = await res.json();
       if (res.ok && data.ok && data.data?.token){
         const token = data.data.token;
-        $("createdApiKey").textContent = maskToken(token);
-        $("useCreatedApiKeyBtn").disabled = false;
-        $("copyCreatedApiKeyBtn").disabled = false;
-        $("useCreatedApiKeyBtn").dataset.token = token;
-        $("copyCreatedApiKeyBtn").dataset.token = token;
+        publishServiceTokenToUi(token, {
+          instructions: buildRegisterInstructionsPayload(registerOptionsState?.baseUrl || window.location.origin)
+        });
         setBanner($("apiKeyBanner"), "ok", "Service token created. Save it now.");
       }else{
         const msg = data?.error?.message || data?.error || "Failed to create service token.";
@@ -3239,12 +3558,10 @@ window.addEventListener("DOMContentLoaded", async () => {
       setBanner($("apiKeyBanner"), "err", "No service token to use yet.");
       return;
     }
-    if ($("authType")) $("authType").value = "api_key";
-    $("apiKey").value = token;
-    saveStoredAuth("api_key", token);
-    setBanner($("apiKeyBanner"), "ok", "Service token saved. You can now Index, Search, and Ask.");
-    loadDocsList();
-    loadCollectionScopeOptions();
+    saveServiceTokenIntoSettings(token, {
+      bannerEl: $("apiKeyBanner"),
+      message: "Service token saved. You can now Index, Search, and Ask."
+    });
   };
 
   $("copyCreatedApiKeyBtn").onclick = async () => {

@@ -76,6 +76,7 @@ const {
   getTenantItemStats,
   getMemoryStateSnapshot,
   listTenants,
+  countUsers,
   createTenantWithBootstrap,
   getTenantById,
   setTenantSettings,
@@ -210,6 +211,10 @@ const DASHBOARD_URL = String(
   || process.env.DASHBOARD_URL
   || ""
 ).trim();
+const PUBLIC_REGISTRATION_ENABLED = parseEnvFlag(
+  process.env.PUBLIC_REGISTRATION_ENABLED,
+  DEPLOYMENT_MODE === "hosted"
+);
 let portalPluginMounted = false;
 
 const JSON_BODY_LIMIT = String(process.env.JSON_BODY_LIMIT || "64mb").trim() || "64mb";
@@ -472,6 +477,7 @@ const PRINCIPAL_RE = /^[a-zA-Z0-9._:@-]+$/;
 const TAG_RE = /^[a-zA-Z0-9._:@-]+$/;
 const AGENT_RE = /^[a-zA-Z0-9._:@-]+$/;
 const DEFAULT_COLLECTION = process.env.DEFAULT_COLLECTION || "default";
+const SELF_SERVICE_REGISTRATION_ROLES = Object.freeze(["admin", "indexer", "reader"]);
 const TENANT_SEARCH_MULTIPLIER = parseInt(process.env.TENANT_SEARCH_MULTIPLIER || "5", 10);
 const TENANT_SEARCH_CAP = parseInt(process.env.TENANT_SEARCH_CAP || "50", 10);
 const CHUNK_STRATEGY = String(process.env.CHUNK_STRATEGY || "token").toLowerCase() === "char" ? "char" : "token";
@@ -602,6 +608,102 @@ function resolvePublicBaseUrl(req) {
     .trim();
   if (!forwardedHost) return "http://localhost:3000";
   return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
+}
+
+function buildPublicRegistrationProjectName({ projectName, fullName, username } = {}) {
+  const explicit = parseOptionalString(projectName, { label: "projectName", max: 80 });
+  if (explicit) return explicit;
+  const cleanFullName = parseOptionalString(fullName, { label: "fullName", max: 120 });
+  if (cleanFullName) return `${cleanFullName}'s Project`;
+  const cleanUsername = normalizePublicRegistrationUsername(username);
+  return `${cleanUsername} Project`;
+}
+
+function normalizePublicRegistrationUsername(value) {
+  const clean = String(value || "").trim();
+  if (!clean) {
+    throw new Error("username is required");
+  }
+  if (!TENANT_RE.test(clean)) {
+    throw new Error("username must use only letters, numbers, dot, dash, or underscore");
+  }
+  return clean;
+}
+
+function slugifyPublicRegistrationProjectBase(value, fallback = "project") {
+  const clean = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const base = clean || fallback;
+  return base.slice(0, 32).replace(/^-+|-+$/g, "") || fallback;
+}
+
+function buildPublicRegistrationTenantId({ projectName, username, suffix } = {}) {
+  const base = slugifyPublicRegistrationProjectBase(projectName || username || "project");
+  const cleanSuffix = String(
+    suffix
+    || crypto.randomBytes(3).toString("hex")
+  ).trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "default";
+  return `${base}-${cleanSuffix}`;
+}
+
+function buildPublicRegistrationInstructions(baseUrl) {
+  const cleanBaseUrl = String(baseUrl || "http://localhost:3000").trim().replace(/\/+$/, "");
+  return {
+    baseUrl: cleanBaseUrl,
+    installCommand: "pip install supavector",
+    env: [
+      `SUPAVECTOR_BASE_URL=${cleanBaseUrl}`,
+      "SUPAVECTOR_API_KEY=<paste-the-copied-service-token>"
+    ],
+    python: [
+      "from supavector import Client",
+      "",
+      `client = Client(base_url=\"${cleanBaseUrl}\", api_key=\"<paste-the-copied-service-token>\")`,
+      `result = client.search(query=\"hello\", collection=\"${DEFAULT_COLLECTION}\")`
+    ]
+  };
+}
+
+async function resolvePublicRegistrationState() {
+  if (PUBLIC_REGISTRATION_ENABLED) {
+    return {
+      enabled: true,
+      reason: DEPLOYMENT_MODE === "hosted" ? "hosted_self_serve" : "env_enabled"
+    };
+  }
+  if (DEPLOYMENT_MODE === "self_hosted") {
+    const totalUsers = await countUsers();
+    if (totalUsers === 0) {
+      return {
+        enabled: true,
+        reason: "first_user_bootstrap"
+      };
+    }
+  }
+  return {
+    enabled: false,
+    reason: DEPLOYMENT_MODE === "hosted" ? "disabled" : "self_hosted_bootstrapped"
+  };
+}
+
+function describePublicRegistrationState(state) {
+  if (state?.enabled && state?.reason === "first_user_bootstrap") {
+    return "Browser registration is available because this self-hosted deployment does not have an admin yet.";
+  }
+  if (state?.enabled && state?.reason === "env_enabled") {
+    return "Self-serve browser registration is enabled on this self-hosted deployment.";
+  }
+  if (state?.enabled) {
+    return "Create an account, get a default project, and mint a service token in one flow.";
+  }
+  if (DEPLOYMENT_MODE === "hosted") {
+    return "Self-serve registration is disabled. Use the hosted control plane or ask an admin for access.";
+  }
+  return "Self-serve registration is disabled on this self-hosted deployment. Use supavector onboard for the first admin, or ask an admin to create a user and service token.";
 }
 
 function buildOpenApiDoc(req, options = {}) {
@@ -9942,6 +10044,22 @@ app.get("/v1/runtime", async (req, res) => {
   }, null, null);
 });
 
+app.get("/v1/register/options", async (req, res) => {
+  try {
+    const state = await resolvePublicRegistrationState();
+    sendOk(res, {
+      enabled: Boolean(state.enabled),
+      reason: state.reason || null,
+      note: describePublicRegistrationState(state),
+      deploymentMode: DEPLOYMENT_MODE,
+      baseUrl: resolvePublicBaseUrl(req),
+      projectLabel: "project"
+    }, null, null);
+  } catch (err) {
+    sendError(res, 500, "Failed to load registration options", "REGISTRATION_OPTIONS_FAILED", null, null);
+  }
+});
+
 // --------------------------
 // OpenAPI (public)
 // --------------------------
@@ -10104,6 +10222,147 @@ app.post("/login", loginLimiter, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err), tenantId: null, collection: null });
+  }
+});
+
+app.post("/v1/register", loginLimiter, async (req, res) => {
+  let tenantId = null;
+  try {
+    const state = await resolvePublicRegistrationState();
+    if (!state.enabled) {
+      return sendError(res, 403, describePublicRegistrationState(state), "REGISTRATION_DISABLED", null, null);
+    }
+
+    const username = normalizePublicRegistrationUsername(req.body?.username);
+    const password = String(req.body?.password || "");
+    if (password.length < 8) {
+      return sendError(res, 400, "password must be at least 8 characters", "INVALID_INPUT", null, null);
+    }
+    const confirmPassword = String(req.body?.confirmPassword ?? req.body?.confirm_password ?? "");
+    if (confirmPassword && confirmPassword !== password) {
+      return sendError(res, 400, "password confirmation does not match", "INVALID_INPUT", null, null);
+    }
+
+    const email = parseOptionalString(req.body?.email, { label: "email", max: 240 }) || null;
+    const fullName = parseOptionalString(req.body?.fullName ?? req.body?.full_name, { label: "fullName", max: 120 }) || null;
+    const projectName = buildPublicRegistrationProjectName({
+      projectName: req.body?.projectName ?? req.body?.project_name ?? req.body?.project,
+      fullName,
+      username
+    });
+
+    tenantId = buildPublicRegistrationTenantId({
+      projectName,
+      username
+    });
+    const passwordHash = await bcrypt.hash(password, 12);
+    const rawServiceToken = `supav_${crypto.randomBytes(24).toString("base64url")}`;
+    const created = await createTenantWithBootstrap({
+      tenant: {
+        tenantId,
+        name: projectName,
+        metadata: {
+          createdVia: "browser_register",
+          projectLabel: "project"
+        }
+      },
+      bootstrapUser: {
+        username,
+        passwordHash,
+        roles: SELF_SERVICE_REGISTRATION_ROLES,
+        email,
+        fullName,
+        ssoOnly: false
+      },
+      bootstrapServiceToken: {
+        name: `${tenantId}-default`,
+        principalId: username,
+        roles: SELF_SERVICE_REGISTRATION_ROLES,
+        keyHash: hashToken(rawServiceToken),
+        expiresAt: null
+      }
+    });
+
+    const jwtToken = issueToken({
+      username,
+      tenant: tenantId,
+      roles: SELF_SERVICE_REGISTRATION_ROLES
+    });
+
+    await recordAudit(req, tenantId, {
+      action: "self_service.register",
+      targetType: "tenant",
+      targetId: tenantId,
+      metadata: {
+        username,
+        projectName,
+        reason: state.reason || null
+      }
+    });
+    if (created?.bootstrapUser) {
+      await recordAudit(req, tenantId, {
+        action: "tenant.user.create",
+        targetType: "user",
+        targetId: String(created.bootstrapUser.id || ""),
+        metadata: {
+          username,
+          roles: created.bootstrapUser.roles || [],
+          bootstrap: true,
+          source: "self_service_register"
+        }
+      });
+    }
+    if (created?.bootstrapServiceToken) {
+      await recordAudit(req, tenantId, {
+        action: "service_token.created",
+        targetType: "service_token",
+        targetId: String(created.bootstrapServiceToken.id || ""),
+        metadata: {
+          name: created.bootstrapServiceToken.name || null,
+          principalId: created.bootstrapServiceToken.principal_id || null,
+          roles: created.bootstrapServiceToken.roles || [],
+          bootstrap: true,
+          source: "self_service_register"
+        }
+      });
+    }
+
+    sendOk(res, {
+      auth: {
+        token: jwtToken,
+        type: "bearer",
+        note: "Short-lived admin JWT for human browser actions."
+      },
+      project: {
+        id: tenantId,
+        name: projectName
+      },
+      tenant: formatTenantRecord(created?.tenant, {
+        summary: {
+          userCount: 1,
+          serviceTokenCount: 1
+        }
+      }),
+      user: formatTenantUser(created?.bootstrapUser),
+      serviceToken: {
+        token: rawServiceToken,
+        tokenInfo: formatServiceToken(created?.bootstrapServiceToken),
+        note: "Store this token now. It will not be shown again."
+      },
+      instructions: buildPublicRegistrationInstructions(resolvePublicBaseUrl(req))
+    }, tenantId, null);
+  } catch (err) {
+    if (String(err.code || "") === "23505") {
+      const detail = String(err.detail || "").toLowerCase();
+      const constraint = String(err.constraint || "").toLowerCase();
+      if (constraint.includes("users") || detail.includes("username")) {
+        return sendError(res, 409, "username already exists", "CONFLICT", tenantId, null);
+      }
+      return sendError(res, 409, "Registration conflict. Try a different username or project name.", "CONFLICT", tenantId, null);
+    }
+    const message = String(err.message || err);
+    const status = message.includes("required") || message.includes("must") ? 400 : 500;
+    sendError(res, status, status === 400 ? message : "Failed to create account", status === 400 ? "INVALID_INPUT" : "REGISTRATION_FAILED", tenantId, null);
   }
 });
 
@@ -13874,6 +14133,10 @@ module.exports = {
     normalizeRuntimeRoleList,
     normalizeTenantIdentifier,
     parseTenantMetadataInput,
+    buildPublicRegistrationProjectName,
+    slugifyPublicRegistrationProjectBase,
+    buildPublicRegistrationTenantId,
+    buildPublicRegistrationInstructions,
     parseDocumentSourceInput,
     buildCodeRetrievalQuery,
     normalizeCodeSessionContext,

@@ -1635,6 +1635,14 @@ async function getUserByUsername(username) {
   return res.rows[0] || null;
 }
 
+async function countUsers() {
+  const res = await pool.query(
+    `SELECT COUNT(*)::bigint AS total
+     FROM users`
+  );
+  return Number(res.rows[0]?.total || 0);
+}
+
 async function getTenantById(tenantId) {
   const res = await pool.query(
     `SELECT ${TENANT_SELECT_FIELDS}
@@ -3210,6 +3218,7 @@ module.exports = {
   ensureTenant,
   listTenants,
   getUserByUsername,
+  countUsers,
   createTenant,
   createTenantWithBootstrap,
   getTenantById,
