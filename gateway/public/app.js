@@ -1176,55 +1176,55 @@ function applyRuntimeUiConfig(config){
   }
 
   setTextById("settingsSidebarKicker", hosted ? "Hosted" : "Settings");
-  setTextById("settingsSidebarTitle", hosted ? "Start in the right place" : "Pick the admin job");
+  setTextById("settingsSidebarTitle", hosted ? "Choose a task" : "Choose a task");
   setTextById(
     "settingsSidebarBody",
     hosted
-      ? "Register once, then use Service Tokens whenever you need browser-local token work again. Keep long-lived service tokens in backend or agent secrets."
-      : "Use saved tokens for machine access, human login only when you need admin controls, and create separate service tokens for each runtime."
+      ? "Use Register once. Come back to Access when you need a browser token."
+      : "Pick the section that matches the job: access, tokens, provider keys, or tenant controls."
   );
   setTextById(
     "registerPanelBody",
     hosted
-      ? "Start here for a new hosted workspace. Registration creates the first admin, the default project, and the first service token you will use from your backend, worker, or agent."
-      : "Create the first self-hosted account when browser registration is available, or authenticate an existing admin and mint a service token."
+      ? "First-time setup only. Create the account, project, and first service token."
+      : "Create the first self-hosted account, or sign in with an existing admin and mint a token."
   );
   setTextById("settingsAuthKicker", hosted ? "Service Tokens" : "Access");
-  setTextById("settingsAuthTitle", hosted ? "Sign in and manage browser tokens" : "Authenticate this browser");
+  setTextById("settingsAuthTitle", hosted ? "Access and tokens" : "Access and tokens");
   setTextById(
     "settingsAuthBody",
     hosted
-      ? "Start with Overview, use Create to sign in and mint a fresh service token for this browser, then use Latest token to copy or re-save the newest token created here."
-      : "Choose how this browser authenticates to SupaVector. Save a service token, or sign in for a human admin JWT when you need admin actions."
+      ? "Choose the tab that matches the job."
+      : "Choose the tab that matches how this browser should sign in."
   );
   setTextById("settingsNavAuthTitle", hosted ? "Service Tokens" : "Browser Access");
-  setTextById("settingsNavAuthBody", hosted ? "Overview, create, latest token" : "Saved token, login, SSO");
+  setTextById("settingsNavAuthBody", hosted ? "Start, sign in, use token" : "Saved token, password, SSO");
   setTextById("settingsNavProvidersTitle", "Provider Keys");
-  setTextById("settingsNavProvidersBody", hosted ? "Browser-only AI billing overrides" : "Browser-only AI billing overrides");
+  setTextById("settingsNavProvidersBody", hosted ? "Browser-only AI keys" : "Browser-only AI keys");
   setTextById("settingsProvidersKicker", "Provider keys");
-  setTextById("settingsProvidersTitle", "Optional AI keys for this browser");
+  setTextById("settingsProvidersTitle", "Browser AI keys");
   setTextById(
     "settingsProvidersBody",
     hosted
-      ? "Only use this if you want requests from this browser to use your own OpenAI, Gemini, or Anthropic key."
-      : "Save an OpenAI, Gemini, or Anthropic key here only if you want requests from this browser to use your own provider account."
+      ? "Optional. Use only when this browser should bill against your own AI account."
+      : "Optional. Use only when this browser should send your own AI provider key."
   );
   setTextById("settingsProviderOverridesLabel", "Saved in this browser");
   setTextById(
     "settingsProviderOverridesHint",
     hosted
-      ? "These stay in this browser. They are sent only when a request supports provider keys."
-      : "These stay in this browser and are only sent when a request supports provider keys."
+      ? "These stay in this browser and are only sent on supported requests."
+      : "These stay in this browser and are only sent on supported requests."
   );
   setTextById("settingsProviderWhenLabel", "Use this if");
   setTextById(
     "settingsProviderUseCase1",
     hosted
-      ? "You want this browser to use your own AI account."
-      : "You want this browser to send your own provider key."
+      ? "This browser should use your own AI account."
+      : "This browser should send your own provider key."
   );
-  setTextById("settingsProviderUseCase2", "It does not change how SupaVector authenticates you.");
-  setTextById("settingsProviderUseCase3", "It affects only requests made from this browser.");
+  setTextById("settingsProviderUseCase2", "It does not change SupaVector authentication.");
+  setTextById("settingsProviderUseCase3", "It affects only requests from this browser.");
 
   const hostedNotice = $("settingsHostedNotice");
   if (hostedNotice) {
@@ -1233,8 +1233,8 @@ function applyRuntimeUiConfig(config){
   setTextById(
     "settingsHostedNoticeBody",
     hosted
-      ? "Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings."
-      : "Use Dashboard for projects, service tokens, users, billing, and SSO. This page is only for browser-local settings."
+      ? "Projects, billing, users, and long-lived tokens stay in Dashboard."
+      : "Projects, billing, users, and long-lived tokens stay in Dashboard."
   );
   const dashboardLink = $("settingsDashboardLink");
   if (dashboardLink) {
@@ -3330,7 +3330,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         setBanner($("registerBanner"), "err", "Error creating account.");
       }finally{
         $("registerCreateBtn").disabled = Boolean(registerOptionsState && registerOptionsState.enabled === false);
-        $("registerCreateBtn").textContent = "Create account, project, and token";
+        $("registerCreateBtn").textContent = "Create account";
       }
     };
   }
