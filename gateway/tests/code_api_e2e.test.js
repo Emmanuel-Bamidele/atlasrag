@@ -10,6 +10,12 @@ const {
 
 const USERNAME = process.env.E2E_USERNAME || "ci_admin";
 const PASSWORD = process.env.E2E_PASSWORD || "ci_admin_password";
+const HAS_GENERATION_PROVIDER = Boolean(
+  process.env.OPENAI_API_KEY
+  || process.env.GEMINI_API_KEY
+  || process.env.ANTHROPIC_API_KEY
+);
+const GENERATION_UNAVAILABLE_RE = /generation is unavailable/i;
 
 async function login() {
   const response = await requestJson("POST", "/v1/login", {
@@ -149,10 +155,15 @@ async function deleteDoc(adminJwt, docId) {
       || codedData.relationshipSummary.connections.some((line) => /src\/server\.ts calls validateSession from src\/auth\/session\.ts/.test(line)),
       "relationship summary should describe the server/session connection"
     );
-    assert(
-      /validateSession|src\/auth\/session\.ts|GET \/health|healthHandler/i.test(codedData.answer),
-      "code answer should mention the retrieved connection evidence"
-    );
+    if (HAS_GENERATION_PROVIDER) {
+      assert(
+        /validateSession|src\/auth\/session\.ts|GET \/health|healthHandler/i.test(codedData.answer),
+        "code answer should mention the retrieved connection evidence"
+      );
+    } else {
+      assert.match(codedData.answer, GENERATION_UNAVAILABLE_RE, "code should fail closed when no generation provider is configured");
+      assert.deepStrictEqual(codedData.citations, [], "code should not fabricate citations when generation is unavailable");
+    }
 
     console.log("code_api_e2e tests passed");
   } catch (err) {

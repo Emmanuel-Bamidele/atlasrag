@@ -11,6 +11,12 @@ const {
 
 const USERNAME = process.env.E2E_USERNAME || "ci_admin";
 const PASSWORD = process.env.E2E_PASSWORD || "ci_admin_password";
+const HAS_GENERATION_PROVIDER = Boolean(
+  process.env.OPENAI_API_KEY
+  || process.env.GEMINI_API_KEY
+  || process.env.ANTHROPIC_API_KEY
+);
+const GENERATION_UNAVAILABLE_RE = /generation is unavailable/i;
 
 async function login() {
   const response = await requestJson("POST", "/v1/login", {
@@ -145,8 +151,13 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     assertStatus(asked, 200, "/v1/ask");
     const askedData = assertOkEnvelope(asked, "/v1/ask");
     assert(typeof askedData.answer === "string" && askedData.answer.length > 0, "ask should return answer text");
-    assert.match(askedData.answer, /Maris Quill/, "ask should return the primary contact");
     assert(Array.isArray(askedData.citations), "ask should return citations");
+    if (HAS_GENERATION_PROVIDER) {
+      assert.match(askedData.answer, /Maris Quill/, "ask should return the primary contact");
+    } else {
+      assert.match(askedData.answer, GENERATION_UNAVAILABLE_RE, "ask should fail closed when no generation provider is configured");
+      assert.deepStrictEqual(askedData.citations, [], "ask should not fabricate citations when generation is unavailable");
+    }
 
     const coded = await requestJson("POST", "/v1/code", {
       headers: apiKey(svcToken),
@@ -165,6 +176,10 @@ async function deleteDocWithAdmin(adminJwt, docId) {
     assert(Array.isArray(codedData.citations), "code should return citations");
     assert(Array.isArray(codedData.files), "code should return files");
     assert(codedData.files.some((file) => file.path === "src/auth.ts"), "code should include relevant file metadata");
+    if (!HAS_GENERATION_PROVIDER) {
+      assert.match(codedData.answer, GENERATION_UNAVAILABLE_RE, "code should fail closed when no generation provider is configured");
+      assert.deepStrictEqual(codedData.citations, [], "code should not fabricate citations when generation is unavailable");
+    }
 
     const booleanAsk = await requestJson("POST", "/v1/boolean_ask", {
       headers: apiKey(svcToken),
