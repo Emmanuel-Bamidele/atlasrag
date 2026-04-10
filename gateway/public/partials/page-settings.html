@@ -3,72 +3,26 @@
           <div class="settings-shell">
             <div class="settings-main">
               <div class="doc-panels" data-doc-panels="settings">
+
+                <!-- REGISTER -->
                 <div class="doc-panel active" data-doc-panel="register" data-settings-scope="hosted">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero settings-panel-hero-split">
                       <div>
                         <div class="settings-kicker">Register</div>
                         <h2>Create account</h2>
-                        <p id="registerPanelBody">First-time setup only. Create the account, project, and first service token.</p>
+                        <p id="registerPanelBody" style="display:none;"></p>
+                        <p id="registerAvailability" class="settings-avail-text">Checking registration availability...</p>
                       </div>
                       <div class="actions settings-hero-actions">
-                        <button class="btn secondary" id="registerRefreshBtn">Refresh availability</button>
-                      </div>
-                    </div>
-
-                    <div class="settings-journey" aria-label="Registration flow">
-                      <div class="settings-journey-step">
-                        <span>1</span>
-                        <div>
-                          <strong>Register</strong>
-                          <small>Account, project, password.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>2</span>
-                        <div>
-                          <strong>Get token</strong>
-                          <small>The first token appears here.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>3</span>
-                        <div>
-                          <strong>Save it</strong>
-                          <small>Browser or secret manager.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>4</span>
-                        <div>
-                          <strong>Use token</strong>
-                          <small>Backend, worker, or agent.</small>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="settings-callouts-grid settings-callouts-grid-wide">
-                      <div class="settings-callout">
-                        <div class="doc-label">Availability</div>
-                        <p class="settings-callout-copy" id="registerAvailability">Checking registration availability...</p>
-                      </div>
-                      <div class="settings-callout settings-callout-accent">
-                        <div class="doc-label">Creates</div>
-                        <ul class="settings-list-compact">
-                          <li>Your first hosted project / tenant.</li>
-                          <li>The first admin user for that project.</li>
-                          <li>The first service token for server-to-server API use.</li>
-                        </ul>
+                        <button class="btn secondary" id="registerRefreshBtn">Check availability</button>
                       </div>
                     </div>
 
                     <div class="settings-section-grid">
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">Account details</div>
-                            <div class="hint">Fill this once for a new hosted workspace.</div>
-                          </div>
+                          <div class="doc-label">Account details</div>
                         </div>
 
                         <div class="row">
@@ -105,16 +59,13 @@
                         </div>
 
                         <div class="actions" style="margin-top:14px;">
-                          <button class="btn secondary" id="registerCreateBtn">Create account</button>
+                          <button class="btn secondary" id="registerCreateBtn">Create account, project, and token</button>
                         </div>
                       </div>
 
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">Use token</div>
-                            <div class="hint">Copy the token into your runtime after setup.</div>
-                          </div>
+                          <div class="doc-label">Service token</div>
                         </div>
 
                         <div class="row">
@@ -126,11 +77,6 @@
                             <label for="registerProjectId">Project ID</label>
                             <input id="registerProjectId" readonly placeholder="Created after registration">
                           </div>
-                        </div>
-
-                        <div class="settings-inline-note settings-inline-note-success">
-                          <strong>Best for:</strong>
-                          <span>Backend, worker, agent, or local SDK.</span>
                         </div>
 
                         <pre class="doc-code" id="registerTokenInstructions">python3 -m pip install supavector
@@ -149,51 +95,22 @@ result = client.search(query="hello", collection="default")</pre>
                   </div>
                 </div>
 
+                <!-- SERVICE TOKENS / AUTH -->
                 <div class="doc-panel" data-doc-panel="auth">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
                         <div class="settings-kicker" id="settingsAuthKicker">Service tokens</div>
-                        <h2 id="settingsAuthTitle">Access and tokens</h2>
-                        <p id="settingsAuthBody">Choose the tab that matches the job.</p>
-                      </div>
-                    </div>
-
-                    <div class="settings-callouts-grid" data-settings-scope="hosted">
-                      <div class="settings-callout">
-                        <div class="doc-label">Start here</div>
-                        <p class="settings-callout-copy">See what belongs here and what stays in Dashboard.</p>
-                      </div>
-                      <div class="settings-callout">
-                        <div class="doc-label">Sign in</div>
-                        <p class="settings-callout-copy">Create a fresh browser token.</p>
-                      </div>
-                      <div class="settings-callout">
-                        <div class="doc-label">Use token</div>
-                        <p class="settings-callout-copy">Copy or save the latest token.</p>
-                      </div>
-                    </div>
-
-                    <div class="settings-callouts-grid" data-settings-scope="self_hosted">
-                      <div class="settings-callout">
-                        <div class="doc-label">Have token</div>
-                        <p class="settings-callout-copy">Paste an existing token or JWT.</p>
-                      </div>
-                      <div class="settings-callout">
-                        <div class="doc-label">Need admin</div>
-                        <p class="settings-callout-copy">Use password login for browser admin work.</p>
-                      </div>
-                      <div class="settings-callout">
-                        <div class="doc-label">Use SSO</div>
-                        <p class="settings-callout-copy">Sign in with Google, Azure, or Okta.</p>
+                        <h2 id="settingsAuthTitle">Sign in and manage browser tokens</h2>
+                        <p id="settingsAuthBody" class="settings-avail-text">Start with Overview, use Sign in to mint a fresh service token for this browser, then use Latest token to copy or re-save the newest token created here.</p>
                       </div>
                     </div>
 
                     <div data-settings-scope="hosted">
                       <div class="doc-tabs doc-tabs-compact settings-section-tabs" data-doc-tabs="settingsHostedTokenSections">
-                        <button class="doc-tab active" data-doc-tab="hostedOverview" type="button">Start here</button>
+                        <button class="doc-tab active" data-doc-tab="hostedOverview" type="button">Overview</button>
                         <button class="doc-tab" data-doc-tab="hostedCreateToken" type="button">Sign in</button>
-                        <button class="doc-tab" data-doc-tab="hostedLatestToken" type="button">Use token</button>
+                        <button class="doc-tab" data-doc-tab="hostedLatestToken" type="button">Latest token</button>
                       </div>
 
                       <div class="doc-panels" data-doc-panels="settingsHostedTokenSections">
@@ -201,36 +118,18 @@ result = client.search(query="hello", collection="default")</pre>
                           <div class="settings-surface-note" id="settingsHostedNotice">
                             <div>
                               <div class="doc-label">Dashboard</div>
-                              <p id="settingsHostedNoticeBody">Projects, billing, users, and long-lived tokens stay in Dashboard.</p>
+                              <p id="settingsHostedNoticeBody">Use Dashboard for projects, users, billing, SSO, and long-lived service-token management. This page is for signing in and managing the token this browser uses.</p>
                             </div>
                             <div class="actions">
                               <a class="btn" id="settingsDashboardLink" href="/portal">Open Dashboard</a>
                             </div>
-                          </div>
-
-                          <div class="settings-section-card">
-                            <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">What goes where</div>
-                                <div class="hint">Register once. Come back here when you need a browser token.</div>
-                              </div>
-                            </div>
-
-                            <ul class="settings-list-compact">
-                              <li><strong>Register</strong> is only for first setup.</li>
-                              <li><strong>Sign in</strong> creates a fresh browser token.</li>
-                              <li><strong>Use token</strong> saves or copies the newest token.</li>
-                            </ul>
                           </div>
                         </div>
 
                         <div class="doc-panel" data-doc-panel="hostedCreateToken">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Sign in to create token</div>
-                                <div class="hint">Creates a fresh browser token for this project.</div>
-                              </div>
+                              <div class="doc-label">Sign in to create token</div>
                             </div>
 
                             <div class="row">
@@ -247,16 +146,10 @@ result = client.search(query="hello", collection="default")</pre>
                             <div class="field" style="margin-top:12px;">
                               <label for="registerExistingTokenName">Token name</label>
                               <input id="registerExistingTokenName" placeholder="browser-default">
-                              <div class="hint">Default roles: <span class="mono">admin,indexer,reader</span>.</div>
                             </div>
 
                             <div class="actions" style="margin-top:14px;">
                               <button class="btn secondary" id="registerLoginBtn">Sign in and create token</button>
-                            </div>
-
-                            <div class="settings-inline-note">
-                              <strong>Result:</strong>
-                              <span>A fresh token ready to save here or copy out.</span>
                             </div>
                           </div>
                         </div>
@@ -264,23 +157,15 @@ result = client.search(query="hello", collection="default")</pre>
                         <div class="doc-panel" data-doc-panel="hostedLatestToken">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Use the latest token</div>
-                                <div class="hint">Save it here or copy it out.</div>
-                              </div>
+                              <div class="doc-label">Latest token</div>
                             </div>
 
                             <pre class="doc-code" id="registerCreatedToken">(not created)</pre>
 
                             <div class="actions" style="margin-top:14px;">
-                              <button class="btn" id="useRegisterTokenBtn" disabled>Use in browser</button>
-                              <button class="btn secondary" id="copyRegisterTokenBtn" disabled>Copy token</button>
+                              <button class="btn" id="useRegisterTokenBtn" disabled>Save in this browser</button>
+                              <button class="btn secondary" id="copyRegisterTokenBtn" disabled>Copy service token</button>
                             </div>
-
-                            <ul class="settings-list-compact settings-list-compact-spaced">
-                              <li><strong>Use in browser</strong> switches this UI to the token.</li>
-                              <li><strong>Copy token</strong> is for env vars and secrets.</li>
-                            </ul>
                           </div>
                         </div>
                       </div>
@@ -296,16 +181,13 @@ result = client.search(query="hello", collection="default")</pre>
                       <div class="doc-panel active" data-doc-panel="serviceToken" data-settings-scope="self_hosted">
                         <div class="settings-section-card">
                           <div class="settings-section-head">
-                            <div>
-                              <div class="doc-label">Use a saved token</div>
-                              <div class="hint">Paste a service token or admin JWT for this browser. On the local CLI path, run <span class="mono">supavector config show --show-secrets</span> if needed.</div>
-                            </div>
+                            <div class="doc-label">Saved token or JWT</div>
                           </div>
 
                           <div class="field">
-                            <label for="apiKey">Saved token or JWT</label>
+                            <label for="apiKey">Token</label>
                             <div style="position:relative;">
-                              <input id="apiKey" type="password" autocomplete="off" placeholder="Paste a service token or JWT — saves automatically">
+                              <input id="apiKey" type="password" autocomplete="off" placeholder="Paste a service token or JWT">
                               <span id="apiKeySavedBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--good);pointer-events:none;">Saved</span>
                             </div>
                             <div class="hint">
@@ -315,11 +197,6 @@ result = client.search(query="hello", collection="default")</pre>
 
                           <div class="actions" style="margin-top:14px;">
                             <button class="btn danger" id="clearKeyBtn">Forget saved token</button>
-                          </div>
-
-                          <div class="settings-inline-note">
-                            <strong>Fastest path:</strong>
-                            <span>Paste a token here if you already have one.</span>
                           </div>
 
                           <select id="authType" style="display:none;">
@@ -332,10 +209,7 @@ result = client.search(query="hello", collection="default")</pre>
                       <div class="doc-panel" data-doc-panel="adminLogin" data-settings-scope="self_hosted">
                         <div class="settings-section-card">
                           <div class="settings-section-head">
-                            <div>
-                              <div class="doc-label">Password login</div>
-                              <div class="hint">Use this for short-lived browser admin access.</div>
-                            </div>
+                            <div class="doc-label">Password login</div>
                           </div>
 
                           <div class="row">
@@ -352,21 +226,13 @@ result = client.search(query="hello", collection="default")</pre>
                           <div class="actions" style="margin-top:14px;">
                             <button class="btn secondary" id="loginBtn">Login and save token</button>
                           </div>
-
-                          <div class="settings-inline-note">
-                            <strong>Best for:</strong>
-                            <span>Quick admin work in the UI.</span>
-                          </div>
                         </div>
                       </div>
 
                       <div class="doc-panel" data-doc-panel="ssoLogin" data-settings-scope="self_hosted">
                         <div class="settings-section-card">
                           <div class="settings-section-head">
-                            <div>
-                              <div class="doc-label">SSO login</div>
-                              <div class="hint">Use your tenant SSO when it is already enabled.</div>
-                            </div>
+                            <div class="doc-label">SSO login</div>
                           </div>
 
                           <div class="row">
@@ -378,17 +244,12 @@ result = client.search(query="hello", collection="default")</pre>
 
                           <div class="actions" style="margin-top:14px;">
                             <button class="btn secondary" id="ssoProvidersLoadBtn">Check SSO providers</button>
-                            <button class="btn secondary" id="ssoLoginGoogleBtn" disabled>Sign in with Google</button>
-                            <button class="btn secondary" id="ssoLoginAzureBtn" disabled>Sign in with Azure</button>
-                            <button class="btn secondary" id="ssoLoginOktaBtn" disabled>Sign in with Okta</button>
+                            <button class="btn secondary" id="ssoLoginGoogleBtn" disabled>Google</button>
+                            <button class="btn secondary" id="ssoLoginAzureBtn" disabled>Azure</button>
+                            <button class="btn secondary" id="ssoLoginOktaBtn" disabled>Okta</button>
                           </div>
 
                           <div class="hint" id="ssoProvidersStatus" style="margin-top:10px;">No SSO provider status loaded yet.</div>
-
-                          <div class="settings-inline-note">
-                            <strong>Use when:</strong>
-                            <span>Your tenant already uses Google, Azure, or Okta.</span>
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -397,45 +258,29 @@ result = client.search(query="hello", collection="default")</pre>
                   </div>
                 </div>
 
+                <!-- BILLING -->
                 <div class="doc-panel" data-doc-panel="billing" data-settings-scope="hosted">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
                         <div class="settings-kicker">Billing</div>
-                        <h2>Billing</h2>
-                        <p>Use Dashboard for balance, payments, invoices, and add credit.</p>
+                        <h2>Billing &amp; credit</h2>
                       </div>
                     </div>
 
                     <div class="settings-section-grid">
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">AI credit</div>
-                            <div class="hint">Hosted generation uses credit unless the request sends its own provider key.</div>
-                          </div>
+                          <div class="doc-label">AI credit</div>
                         </div>
-
-                        <ul>
-                          <li><span class="mono">ask</span>, <span class="mono">code</span>, and <span class="mono">boolean_ask</span> can use hosted credit.</li>
-                          <li>If you send your own provider key on a supported request, generation can bill against your provider instead of hosted credit.</li>
-                          <li>Manage add-credit and current balance in Dashboard.</li>
-                        </ul>
+                        <p style="margin:0;font-size:13px;color:rgba(232,242,242,0.76);line-height:1.5;">Used by <span class="mono">ask</span>, <span class="mono">code</span>, and <span class="mono">boolean_ask</span> unless you send your own provider key. Manage balance in Dashboard.</p>
                       </div>
 
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">Storage</div>
-                            <div class="hint">Storage billing is separate from AI credit.</div>
-                          </div>
+                          <div class="doc-label">Storage</div>
                         </div>
-
-                        <ul>
-                          <li>Document writes, memory writes, and retained hosted data affect storage usage.</li>
-                          <li>Storage is billed separately from AI credit.</li>
-                          <li>Use Dashboard for payment method, invoices, and current hosted billing state.</li>
-                        </ul>
+                        <p style="margin:0;font-size:13px;color:rgba(232,242,242,0.76);line-height:1.5;">Billed separately from AI credit. Document and memory writes affect usage. Manage in Dashboard.</p>
                       </div>
                     </div>
 
@@ -445,65 +290,20 @@ result = client.search(query="hello", collection="default")</pre>
                   </div>
                 </div>
 
+                <!-- CREATE TOKENS -->
                 <div class="doc-panel" data-doc-panel="keys" data-settings-scope="self_hosted">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
                         <div class="settings-kicker">Machine auth</div>
                         <h2>Create service tokens</h2>
-                        <p>Make a machine token for an app, worker, agent, or CI. The plain value is shown once.</p>
-                      </div>
-                    </div>
-
-                    <div class="settings-journey" aria-label="Service token creation flow">
-                      <div class="settings-journey-step">
-                        <span>1</span>
-                        <div>
-                          <strong>Admin access</strong>
-                          <small>Saved token or admin login.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>2</span>
-                        <div>
-                          <strong>Create token</strong>
-                          <small>Name the runtime that will use it.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>3</span>
-                        <div>
-                          <strong>Copy it now</strong>
-                          <small>The plain value shows once.</small>
-                        </div>
-                      </div>
-                      <div class="settings-journey-step">
-                        <span>4</span>
-                        <div>
-                          <strong>Use server-side</strong>
-                          <small>Keep long-lived tokens out of frontend code.</small>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="settings-callouts-grid">
-                      <div class="settings-callout">
-                        <div class="doc-label">Needs admin access</div>
-                        <p class="settings-callout-copy">Start from Access with an admin token or JWT.</p>
-                      </div>
-                      <div class="settings-callout settings-callout-accent">
-                        <div class="doc-label">One per runtime</div>
-                        <p class="settings-callout-copy">Use separate tokens for prod, staging, CI, and internal tools.</p>
                       </div>
                     </div>
 
                     <div class="settings-section-grid">
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">Token details</div>
-                            <div class="hint">Name the runtime that will use this token.</div>
-                          </div>
+                          <div class="doc-label">Token details</div>
                         </div>
 
                         <div class="field">
@@ -513,9 +313,8 @@ result = client.search(query="hello", collection="default")</pre>
 
                         <div class="row" style="margin-top:12px;">
                           <div class="field">
-                            <label for="apiKeyPrincipal">Principal ID (optional)</label>
+                            <label for="apiKeyPrincipal">Principal ID <span style="font-size:11px;color:var(--muted);font-weight:400;">optional</span></label>
                             <input id="apiKeyPrincipal" placeholder="svc:ci">
-                            <div class="hint">Defaults to the current subject.</div>
                           </div>
                           <div class="field">
                             <label for="apiKeyExpires">Expires at</label>
@@ -524,9 +323,9 @@ result = client.search(query="hello", collection="default")</pre>
                         </div>
 
                         <div class="field" style="margin-top:12px;">
-                          <label for="apiKeyRoles">Roles (comma separated)</label>
+                          <label for="apiKeyRoles">Roles</label>
                           <input id="apiKeyRoles" placeholder="indexer,reader">
-                          <div class="hint">Valid roles: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span>.</div>
+                          <div class="hint">Valid: <span class="mono">admin</span>, <span class="mono">indexer</span>, <span class="mono">reader</span></div>
                         </div>
 
                         <div class="actions" style="margin-top:14px;">
@@ -536,10 +335,7 @@ result = client.search(query="hello", collection="default")</pre>
 
                       <div class="settings-section-card">
                         <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label">Newest token</div>
-                            <div class="hint">Copy it now, or switch this browser to it.</div>
-                          </div>
+                          <div class="doc-label">New token</div>
                         </div>
 
                         <pre class="doc-code" id="createdApiKey">(not created)</pre>
@@ -549,38 +345,11 @@ result = client.search(query="hello", collection="default")</pre>
                           <button class="btn secondary" id="copyCreatedApiKeyBtn" disabled>Copy token</button>
                         </div>
 
-                        <ul class="settings-list-compact settings-list-compact-spaced">
-                          <li><strong>Use in browser</strong> switches this UI to the new token.</li>
-                          <li><strong>Copy token</strong> is the normal path for apps and agents.</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div class="settings-section-card settings-section-card-wide">
-                      <div class="settings-section-head">
-                        <div>
-                          <div class="doc-label">Use token</div>
-                          <div class="hint">Store it as a secret and send it as <span class="mono">X-API-Key</span> from your runtime.</div>
-                        </div>
-                      </div>
-
-                      <div class="settings-callouts-grid">
-                        <div class="settings-callout">
-                          <div class="doc-label">Rules</div>
-                          <ul class="settings-list-compact">
-                            <li>Keep service tokens server-side only.</li>
-                            <li>Use separate tokens per environment or app.</li>
-                            <li>Rotate or revoke tokens when an environment is retired.</li>
-                          </ul>
-                        </div>
-                        <div class="settings-callout settings-callout-code">
-                          <div class="doc-label">Quick example</div>
-                          <pre class="doc-code">export SUPAVECTOR_BASE_URL=http://localhost:3000
+                        <pre class="doc-code" style="margin-top:14px;">export SUPAVECTOR_BASE_URL=http://localhost:3000
 export SUPAVECTOR_API_KEY=&lt;copy-the-new-service-token&gt;
 
 curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
   "$SUPAVECTOR_BASE_URL/v1/collections"</pre>
-                        </div>
                       </div>
                     </div>
 
@@ -588,93 +357,67 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                   </div>
                 </div>
 
+                <!-- PROVIDER KEYS -->
                 <div class="doc-panel" data-doc-panel="providers">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero">
                       <div>
                         <div class="settings-kicker" id="settingsProvidersKicker">Provider keys</div>
                         <h2 id="settingsProvidersTitle">Browser AI keys</h2>
-                        <p id="settingsProvidersBody">Optional. Use only when this browser should bill against your own AI account.</p>
+                        <p id="settingsProvidersBody" class="settings-avail-text">Optional. Use only when this browser should bill against your own AI account.</p>
                       </div>
                     </div>
 
-                    <div class="settings-callouts-grid">
-                      <div class="settings-callout">
-                        <div class="doc-label">Use when</div>
-                        <p class="settings-callout-copy">This browser should send your own provider key.</p>
+                    <div class="settings-section-card">
+                      <div class="settings-section-head">
+                        <div class="doc-label" id="settingsProviderOverridesLabel">Saved in this browser</div>
                       </div>
-                      <div class="settings-callout">
-                        <div class="doc-label">Not for auth</div>
-                        <p class="settings-callout-copy">Provider keys do not replace your SupaVector token or JWT.</p>
-                      </div>
-                      <div class="settings-callout settings-callout-accent">
-                        <div class="doc-label">Scope</div>
-                        <p class="settings-callout-copy">These keys stay in this browser only.</p>
-                      </div>
-                    </div>
 
-                    <div class="settings-section-grid">
-                      <div class="settings-section-card">
-                        <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label" id="settingsProviderOverridesLabel">Saved in this browser</div>
-                            <div class="hint" id="settingsProviderOverridesHint">These stay in this browser and are only sent on supported requests.</div>
-                          </div>
+                      <div class="row">
+                        <div class="field">
+                          <label for="openAiApiKeyOverride">OpenAI</label>
+                          <input id="openAiApiKeyOverride" type="password" autocomplete="off" placeholder="sk-...">
+                          <div class="hint">Sent as <span class="mono">X-OpenAI-API-Key</span></div>
                         </div>
-
-                        <div class="row">
-                          <div class="field">
-                            <label for="openAiApiKeyOverride">OpenAI</label>
-                            <input id="openAiApiKeyOverride" type="password" autocomplete="off" placeholder="sk-...">
-                            <div class="hint">Sent as <span class="mono">X-OpenAI-API-Key</span>.</div>
-                          </div>
-                          <div class="field">
-                            <label for="geminiApiKeyOverride">Gemini</label>
-                            <input id="geminiApiKeyOverride" type="password" autocomplete="off" placeholder="AIza...">
-                            <div class="hint">Sent as <span class="mono">X-Gemini-API-Key</span>.</div>
-                          </div>
-                        </div>
-
-                        <div class="row" style="margin-top:12px;">
-                          <div class="field">
-                            <label for="anthropicApiKeyOverride">Anthropic</label>
-                            <input id="anthropicApiKeyOverride" type="password" autocomplete="off" placeholder="sk-ant-...">
-                            <div class="hint">Sent as <span class="mono">X-Anthropic-API-Key</span>.</div>
-                          </div>
-                        </div>
-
-                        <div class="actions" style="margin-top:14px;">
-                          <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
-                          <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
+                        <div class="field">
+                          <label for="geminiApiKeyOverride">Gemini</label>
+                          <input id="geminiApiKeyOverride" type="password" autocomplete="off" placeholder="AIza...">
+                          <div class="hint">Sent as <span class="mono">X-Gemini-API-Key</span></div>
                         </div>
                       </div>
 
-                      <div class="settings-section-card">
-                        <div class="settings-section-head">
-                          <div>
-                            <div class="doc-label" id="settingsProviderWhenLabel">Use this if</div>
-                          </div>
+                      <div class="row" style="margin-top:12px;">
+                        <div class="field">
+                          <label for="anthropicApiKeyOverride">Anthropic</label>
+                          <input id="anthropicApiKeyOverride" type="password" autocomplete="off" placeholder="sk-ant-...">
+                          <div class="hint">Sent as <span class="mono">X-Anthropic-API-Key</span></div>
                         </div>
+                      </div>
 
-                        <ul>
-                          <li id="settingsProviderUseCase1">This browser should send your own provider key.</li>
-                          <li id="settingsProviderUseCase2">It does not change SupaVector authentication.</li>
-                          <li id="settingsProviderUseCase3">It affects only requests from this browser.</li>
-                        </ul>
+                      <div class="actions" style="margin-top:14px;">
+                        <button class="btn secondary" id="saveProviderOverridesBtn">Save provider keys</button>
+                        <button class="btn danger" id="clearProviderOverridesBtn">Forget provider keys</button>
                       </div>
                     </div>
+
+                    <!-- Hidden elements JS may update -->
+                    <span id="settingsProviderOverridesHint" style="display:none;"></span>
+                    <span id="settingsProviderWhenLabel" style="display:none;"></span>
+                    <span id="settingsProviderUseCase1" style="display:none;"></span>
+                    <span id="settingsProviderUseCase2" style="display:none;"></span>
+                    <span id="settingsProviderUseCase3" style="display:none;"></span>
 
                     <div class="banner" id="providerOverridesBanner"></div>
                   </div>
                 </div>
 
+                <!-- TENANT -->
                 <div class="doc-panel" data-doc-panel="tenant" data-settings-scope="self_hosted">
                   <div class="settings-panel-card">
                     <div class="settings-panel-hero settings-panel-hero-split">
                       <div>
                         <div class="settings-kicker">Tenant controls</div>
                         <h2>Tenant controls</h2>
-                        <p>Manage auth, models, and users for the current tenant. Requires tenant-admin access.</p>
                       </div>
                       <div class="actions settings-hero-actions">
                         <button class="btn secondary" id="tenantAuthLoadBtn">Load tenant settings</button>
@@ -694,9 +437,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                         <div class="settings-section-grid">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Tenant identity</div>
-                              </div>
+                              <div class="doc-label">Tenant identity</div>
                             </div>
 
                             <div class="row">
@@ -713,10 +454,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
 
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Login policy</div>
-                                <div class="hint">Admins can enforce SSO-only or password-only login per tenant.</div>
-                              </div>
+                              <div class="doc-label">Login policy</div>
                             </div>
 
                             <div class="field">
@@ -730,8 +468,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
 
                             <div class="field" style="margin-top:14px;">
                               <label>Allowed SSO providers</label>
-                              <div class="hint" style="margin-bottom:8px;">Uncheck all to disable SSO for this tenant.</div>
-                              <div class="settings-check-grid">
+                              <div class="settings-check-grid" style="margin-top:8px;">
                                 <label class="check">
                                   <input type="checkbox" id="tenantSsoGoogle" value="google">
                                   Google
@@ -753,10 +490,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                       <div class="doc-panel" data-doc-panel="sso">
                         <div class="settings-section-card">
                           <div class="settings-section-head">
-                            <div>
-                              <div class="doc-label">Tenant-scoped enterprise SSO</div>
-                              <div class="hint">Tenant-scoped OIDC config overrides instance-wide provider env for this tenant. Leave client secret blank when saving if you want to keep the stored secret unchanged.</div>
-                            </div>
+                            <div class="doc-label">Enterprise SSO</div>
                           </div>
 
                           <div class="doc-tabs doc-tabs-compact settings-section-tabs settings-provider-tabs" data-doc-tabs="settingsTenantSsoProviders">
@@ -770,7 +504,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                               <div class="settings-subpanel">
                                 <div class="row">
                                   <div class="field">
-                                    <label class="check"><input type="checkbox" id="tenantSsoGoogleEnabled"> Enable tenant-scoped Google SSO</label>
+                                    <label class="check"><input type="checkbox" id="tenantSsoGoogleEnabled"> Enable Google SSO</label>
                                   </div>
                                   <div class="field">
                                     <label for="tenantSsoGoogleClientId">Client ID</label>
@@ -826,7 +560,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                               <div class="settings-subpanel">
                                 <div class="row">
                                   <div class="field">
-                                    <label class="check"><input type="checkbox" id="tenantSsoAzureEnabled"> Enable tenant-scoped Azure SSO</label>
+                                    <label class="check"><input type="checkbox" id="tenantSsoAzureEnabled"> Enable Azure SSO</label>
                                   </div>
                                   <div class="field">
                                     <label for="tenantSsoAzureClientId">Client ID</label>
@@ -882,7 +616,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                               <div class="settings-subpanel">
                                 <div class="row">
                                   <div class="field">
-                                    <label class="check"><input type="checkbox" id="tenantSsoOktaEnabled"> Enable tenant-scoped Okta SSO</label>
+                                    <label class="check"><input type="checkbox" id="tenantSsoOktaEnabled"> Enable Okta SSO</label>
                                   </div>
                                   <div class="field">
                                     <label for="tenantSsoOktaClientId">Client ID</label>
@@ -941,9 +675,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                         <div class="settings-section-grid">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Ask and boolean ask</div>
-                              </div>
+                              <div class="doc-label">Ask and boolean ask</div>
                             </div>
 
                             <div class="row">
@@ -955,12 +687,10 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                                   <option value="gemini">Google Gemini</option>
                                   <option value="anthropic">Anthropic</option>
                                 </select>
-                                <div class="hint">Optional tenant override for the <span class="mono">ask</span> provider.</div>
                               </div>
                               <div class="field">
                                 <label for="tenantAnswerModel">Ask model</label>
                                 <input id="tenantAnswerModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                                <div class="hint">Optional tenant override for <span class="mono">ask</span>. Leave blank to inherit the instance default.</div>
                               </div>
                             </div>
 
@@ -973,21 +703,17 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                                   <option value="gemini">Google Gemini</option>
                                   <option value="anthropic">Anthropic</option>
                                 </select>
-                                <div class="hint">Optional tenant override for the <span class="mono">boolean_ask</span> provider.</div>
                               </div>
                               <div class="field">
                                 <label for="tenantBooleanAskModel">Boolean ask model</label>
                                 <input id="tenantBooleanAskModel" list="tenantGenerationModels" placeholder="blank = follow ask model">
-                                <div class="hint">Leave blank to follow the tenant ask model.</div>
                               </div>
                             </div>
                           </div>
 
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Background job models</div>
-                              </div>
+                              <div class="doc-label">Background job models</div>
                             </div>
 
                             <div class="row">
@@ -999,12 +725,10 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                                   <option value="gemini">Google Gemini</option>
                                   <option value="anthropic">Anthropic</option>
                                 </select>
-                                <div class="hint">Optional tenant override for reflection jobs.</div>
                               </div>
                               <div class="field">
                                 <label for="tenantReflectModel">Reflect model</label>
                                 <input id="tenantReflectModel" list="tenantGenerationModels" placeholder="blank = instance default">
-                                <div class="hint">Optional tenant override for the reflection model.</div>
                               </div>
                             </div>
 
@@ -1017,34 +741,27 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                                   <option value="gemini">Google Gemini</option>
                                   <option value="anthropic">Anthropic</option>
                                 </select>
-                                <div class="hint">Optional tenant override for compaction jobs.</div>
                               </div>
                               <div class="field">
                                 <label for="tenantCompactModel">Compact model</label>
                                 <input id="tenantCompactModel" list="tenantGenerationModels" placeholder="blank = follow reflect model">
-                                <div class="hint">Leave blank to follow the tenant reflect model.</div>
                               </div>
                             </div>
                           </div>
 
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Embedding model</div>
-                                <div class="hint">Embedding settings remain instance-wide.</div>
-                              </div>
+                              <div class="doc-label">Embedding model</div>
                             </div>
 
                             <div class="row">
                               <div class="field">
                                 <label for="tenantEmbedProvider">Embedding provider</label>
                                 <input id="tenantEmbedProvider" readonly>
-                                <div class="hint">Change it in the self-hosted env or with <span class="mono">supavector changemodel</span>.</div>
                               </div>
                               <div class="field">
                                 <label for="tenantEmbedModel">Embedding model</label>
                                 <input id="tenantEmbedModel" readonly>
-                                <div class="hint">Changing the embedding model requires a reindex on restart.</div>
                               </div>
                             </div>
                           </div>
@@ -1069,10 +786,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
                         <div class="settings-section-grid">
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Current tenant users</div>
-                                <div class="hint">SSO users are created on first successful login. Use this section to review users, promote roles, or disable accounts.</div>
-                              </div>
+                              <div class="doc-label">Current tenant users</div>
                             </div>
 
                             <div class="actions" style="margin-bottom:10px;">
@@ -1086,10 +800,7 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
 
                           <div class="settings-section-card">
                             <div class="settings-section-head">
-                              <div>
-                                <div class="doc-label">Create local user</div>
-                                <div class="hint">Use this for break-glass access or password login paths that should exist alongside SSO.</div>
-                              </div>
+                              <div class="doc-label">Create local user</div>
                             </div>
 
                             <div class="row">
@@ -1140,112 +851,23 @@ curl -H "X-API-Key: $SUPAVECTOR_API_KEY" \
 
             <aside class="settings-sidebar">
               <div class="settings-sidebar-card">
-                <div class="settings-kicker" id="settingsSidebarKicker">Settings</div>
-                <h3 id="settingsSidebarTitle">Choose a task</h3>
-                <p id="settingsSidebarBody">Start with the section that matches what you need to do.</p>
-
-                <div class="settings-sidebar-flow" data-settings-scope="hosted">
-                  <div class="settings-sidebar-flow-title">Hosted</div>
-                  <div class="settings-flow-list">
-                    <div class="settings-flow-item">
-                      <span>1</span>
-                      <div>
-                        <strong>Register</strong>
-                        <small>First account and first token.</small>
-                      </div>
-                    </div>
-                    <div class="settings-flow-item">
-                      <span>2</span>
-                      <div>
-                        <strong>Sign in</strong>
-                        <small>Create a fresh browser token.</small>
-                      </div>
-                    </div>
-                    <div class="settings-flow-item">
-                      <span>3</span>
-                      <div>
-                        <strong>Use token</strong>
-                        <small>Copy it into backend or agent secrets.</small>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="settings-sidebar-flow" data-settings-scope="self_hosted">
-                  <div class="settings-sidebar-flow-title">Self-hosted</div>
-                  <div class="settings-flow-list">
-                    <div class="settings-flow-item">
-                      <span>1</span>
-                      <div>
-                        <strong>Access browser</strong>
-                        <small>Saved token, password, or SSO.</small>
-                      </div>
-                    </div>
-                    <div class="settings-flow-item">
-                      <span>2</span>
-                      <div>
-                        <strong>Create service tokens</strong>
-                        <small>Issue separate tokens for apps, CI, and workers.</small>
-                      </div>
-                    </div>
-                    <div class="settings-flow-item">
-                      <span>3</span>
-                      <div>
-                        <strong>Manage tenant controls</strong>
-                        <small>Adjust auth rules, models, and users when needed.</small>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <span id="settingsSidebarKicker" style="display:none;"></span>
+                <span id="settingsSidebarTitle" style="display:none;"></span>
+                <span id="settingsSidebarBody" style="display:none;"></span>
 
                 <div class="doc-tabs settings-nav" data-doc-tabs="settings">
-                  <button class="doc-tab active" data-doc-tab="register" type="button" data-settings-scope="hosted">
-                    <span class="settings-nav-index">01</span>
-                    <span>
-                      <strong>Register</strong>
-                      <small>First account and token</small>
-                    </span>
-                  </button>
+                  <button class="doc-tab active" data-doc-tab="register" type="button" data-settings-scope="hosted">Register</button>
                   <button class="doc-tab" data-doc-tab="auth" type="button">
-                    <span class="settings-nav-index">02</span>
-                    <span>
-                      <strong id="settingsNavAuthTitle">Service Tokens</strong>
-                      <small id="settingsNavAuthBody">Start, sign in, use token</small>
-                    </span>
+                    <span id="settingsNavAuthTitle">Service Tokens</span>
+                    <span id="settingsNavAuthBody" style="display:none;"></span>
                   </button>
-                  <button class="doc-tab" data-doc-tab="billing" type="button" data-settings-scope="hosted">
-                    <span class="settings-nav-index">03</span>
-                    <span>
-                      <strong>Billing</strong>
-                      <small>Balance, payments, invoices</small>
-                    </span>
-                  </button>
-                  <button class="doc-tab" data-doc-tab="keys" type="button" data-settings-scope="self_hosted">
-                    <span class="settings-nav-index">04</span>
-                    <span>
-                      <strong>Create Tokens</strong>
-                      <small>App, worker, and agent tokens</small>
-                    </span>
-                  </button>
+                  <button class="doc-tab" data-doc-tab="billing" type="button" data-settings-scope="hosted">Billing</button>
+                  <button class="doc-tab" data-doc-tab="keys" type="button" data-settings-scope="self_hosted">Create Tokens</button>
                   <button class="doc-tab" data-doc-tab="providers" type="button">
-                    <span class="settings-nav-index">05</span>
-                    <span>
-                      <strong id="settingsNavProvidersTitle">Provider Keys</strong>
-                      <small id="settingsNavProvidersBody">Browser-only AI keys</small>
-                    </span>
+                    <span id="settingsNavProvidersTitle">Provider Keys</span>
+                    <span id="settingsNavProvidersBody" style="display:none;"></span>
                   </button>
-                  <button class="doc-tab" data-doc-tab="tenant" type="button" data-settings-scope="self_hosted">
-                    <span class="settings-nav-index">06</span>
-                    <span>
-                      <strong>Tenant</strong>
-                      <small>Auth rules, models, users</small>
-                    </span>
-                  </button>
-                </div>
-
-                <div class="settings-sidebar-note">
-                  <strong>Rule of thumb:</strong>
-                  <span>Logins are for people. Service tokens are for apps and agents.</span>
+                  <button class="doc-tab" data-doc-tab="tenant" type="button" data-settings-scope="self_hosted">Tenant</button>
                 </div>
               </div>
             </aside>

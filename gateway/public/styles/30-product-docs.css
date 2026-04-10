@@ -492,7 +492,7 @@
 .settings-sidebar-card p{
   margin: 0 0 18px;
   color: rgba(232,242,242,0.74);
-  line-height: 1.5;
+  line-height: 1.6;
   font-size: 13px;
 }
 
@@ -547,10 +547,9 @@
 
 .settings-panel-hero p{
   margin: 0;
-  max-width: 54ch;
+  max-width: 70ch;
   color: rgba(232,242,242,0.8);
-  line-height: 1.55;
-  font-size: 14px;
+  line-height: 1.68;
 }
 
 .settings-kicker{
@@ -635,8 +634,8 @@
 
 .settings-callout{
   min-width: 0;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
   border: 1px solid rgba(226,232,240,0.08);
   background:
     linear-gradient(180deg, rgba(18,24,31,0.82), rgba(12,16,22,0.74));
@@ -656,10 +655,9 @@
 }
 
 .settings-callout-copy{
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: rgba(232,242,242,0.76);
-  line-height: 1.48;
-  font-size: 12.5px;
+  line-height: 1.65;
 }
 
 .settings-callout .doc-code{
@@ -808,7 +806,7 @@
 .settings-nav .doc-tab small{
   color: rgba(232,242,242,0.62);
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 
 .settings-nav .doc-tab:hover{
@@ -846,29 +844,23 @@
 
 .settings-section-tabs{
   margin: 0 0 18px;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid rgba(226,232,240,0.09);
   border-radius: 18px;
   background: rgba(9,12,17,0.42);
 }
 
 .settings-section-tabs .doc-tab{
-  padding: 11px 14px;
+  padding: 10px 14px;
   border-radius: 14px;
   border-color: transparent;
   background: transparent;
   font-size: 12px;
-  font-weight: 600;
-  color: rgba(232,242,242,0.76);
 }
 
 .settings-section-tabs .doc-tab.active{
   border-color: rgba(56,189,248,0.16);
-  background:
-    linear-gradient(135deg, rgba(56,189,248,0.18), rgba(56,189,248,0.08)),
-    rgba(56,189,248,0.08);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-  color: var(--text);
+  background: rgba(56,189,248,0.12);
 }
 
 .settings-provider-tabs{
@@ -4134,4 +4126,31 @@ body.light-theme .product-story-panel:hover {
   .product-cta-start {
     transition: none !important;
   }
+}
+
+/* ── Settings refactor: simplified nav + status text ── */
+
+.settings-avail-text{
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: rgba(232,242,242,0.62);
+  line-height: 1.5;
+}
+
+body.light-theme .settings-avail-text{
+  color: #6b8a96;
+}
+
+/* Simplified sidebar nav — plain-text buttons, no icon+description layout */
+.settings-nav .doc-tab{
+  gap: 0;
+  padding: 11px 15px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-nav .doc-tab > span:last-child{
+  display: inline;
+  flex-direction: unset;
+  gap: 0;
 }
