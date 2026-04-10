@@ -42,6 +42,15 @@ function makeJsonResponse(payload) {
   };
 }
 
+function makeErrorResponse(status, payload) {
+  return {
+    ok: false,
+    status,
+    statusText: payload?.message || `HTTP ${status}`,
+    text: async () => JSON.stringify(payload)
+  };
+}
+
 function testResolveProviderApiKeyAliases() {
   withEnv({ GEMINI_API: "test-gemini-key", GEMINI_API_KEY: undefined }, () => {
     assert.equal(resolveProviderApiKey("gemini"), "test-gemini-key");
@@ -100,6 +109,113 @@ async function testAnthropicGeneration() {
     });
     assert.equal(result.text, "Anthropic answer\nCitations: SOURCE-2");
     assert.equal(result.usage.total_tokens, 14);
+  });
+}
+
+async function testGeminiGenerationRetriesTransientFailure() {
+  let attempts = 0;
+  await withFetchStub(async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return makeErrorResponse(429, {
+        error: {
+          message: "Rate limit exceeded"
+        }
+      });
+    }
+    return makeJsonResponse({
+      candidates: [{
+        content: {
+          parts: [{ text: "Recovered answer\nCitations: SOURCE-3" }]
+        }
+      }],
+      usageMetadata: {
+        promptTokenCount: 11,
+        candidatesTokenCount: 5,
+        totalTokenCount: 16
+      }
+    });
+  }, async () => {
+    const result = await generateProviderText({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      input: "hello",
+      apiKey: "gemini-key",
+      maxRetries: 1,
+      retryDelayMs: 0,
+      sleepFn: async () => {}
+    });
+    assert.equal(attempts, 2);
+    assert.equal(result.text, "Recovered answer\nCitations: SOURCE-3");
+    assert.equal(result.usage.total_tokens, 16);
+  });
+}
+
+async function testGeminiGenerationRetriesBlankText() {
+  let attempts = 0;
+  await withFetchStub(async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return makeJsonResponse({
+        candidates: [{
+          content: {
+            parts: [{ text: "" }]
+          }
+        }],
+        usageMetadata: {
+          promptTokenCount: 8,
+          candidatesTokenCount: 0,
+          totalTokenCount: 8
+        }
+      });
+    }
+    return makeJsonResponse({
+      candidates: [{
+        content: {
+          parts: [{ text: "Second try answer\nCitations: SOURCE-4" }]
+        }
+      }],
+      usageMetadata: {
+        promptTokenCount: 8,
+        candidatesTokenCount: 4,
+        totalTokenCount: 12
+      }
+    });
+  }, async () => {
+    const result = await generateProviderText({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      input: "hello",
+      apiKey: "gemini-key",
+      maxRetries: 1,
+      retryDelayMs: 0,
+      sleepFn: async () => {}
+    });
+    assert.equal(attempts, 2);
+    assert.equal(result.text, "Second try answer\nCitations: SOURCE-4");
+  });
+}
+
+async function testGeminiGenerationDoesNotRetryNonRetryableFailure() {
+  let attempts = 0;
+  await withFetchStub(async () => {
+    attempts += 1;
+    return makeErrorResponse(400, {
+      error: {
+        message: "Invalid request body"
+      }
+    });
+  }, async () => {
+    await assert.rejects(() => generateProviderText({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      input: "hello",
+      apiKey: "gemini-key",
+      maxRetries: 2,
+      retryDelayMs: 0,
+      sleepFn: async () => {}
+    }), /Invalid request body/);
+    assert.equal(attempts, 1);
   });
 }
 
@@ -175,6 +291,9 @@ async function main() {
   testOpenAiRequestBuilderOmitsUnsupportedTemperature();
   await testGeminiGeneration();
   await testAnthropicGeneration();
+  await testGeminiGenerationRetriesTransientFailure();
+  await testGeminiGenerationRetriesBlankText();
+  await testGeminiGenerationDoesNotRetryNonRetryableFailure();
   await testGeminiEmbeddings();
   console.log("provider client tests passed");
 }

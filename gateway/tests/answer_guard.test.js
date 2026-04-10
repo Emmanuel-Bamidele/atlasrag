@@ -1,6 +1,11 @@
 const assert = require("assert/strict");
 
-const { __testHooks } = require("../answer");
+const {
+  generateAnswer,
+  generateBooleanAskAnswer,
+  generateCodeAnswer,
+  __testHooks
+} = require("../answer");
 
 function testShortChunkIsRetainedWhenItIsTheOnlyEvidence() {
   const chunks = [
@@ -91,6 +96,18 @@ function testAskPromptSupportsMetadataCitationMode() {
   assert.doesNotMatch(prompt, /Final line: "Citations: <comma-separated SOURCE ids>"/);
 }
 
+function testAskPromptOmitsLengthInstructionForAuto() {
+  const prompt = __testHooks.buildPrompt("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], "auto");
+
+  assert.equal(typeof prompt, "string");
+  assert.doesNotMatch(prompt, /Target length:/);
+}
+
 function testBooleanAskPromptRemainsSingleStringPrompt() {
   const prompt = __testHooks.buildBooleanAskPrompt("Is SupaVector a database?", [
     {
@@ -105,11 +122,14 @@ function testBooleanAskPromptRemainsSingleStringPrompt() {
 }
 
 function testAnswerLengthInstructionsAndTokenBudgets() {
+  assert.equal(__testHooks.buildAnswerLengthInstruction("auto"), "");
   assert.match(__testHooks.buildAnswerLengthInstruction("medium"), /roughly 220-450 words/);
   assert.match(__testHooks.buildAnswerLengthInstruction("long"), /roughly 450-900 words/);
+  assert.equal(__testHooks.resolveAnswerMaxTokens("auto"), 6144);
   assert.equal(__testHooks.resolveAnswerMaxTokens("short"), 1024);
   assert.equal(__testHooks.resolveAnswerMaxTokens("medium"), 3072);
   assert.equal(__testHooks.resolveAnswerMaxTokens("long"), 6144);
+  assert.equal(__testHooks.resolveCodeAnswerMaxTokens("auto"), 12288);
   assert.equal(__testHooks.resolveCodeAnswerMaxTokens("short"), 2048);
   assert.equal(__testHooks.resolveCodeAnswerMaxTokens("medium"), 6144);
   assert.equal(__testHooks.resolveCodeAnswerMaxTokens("long"), 12288);
@@ -185,7 +205,127 @@ function testCanonicalUnknownDetectionMatchesExpectedForms() {
   assert.equal(__testHooks.isCanonicalUnknownAnswer("SupaVector stores memory for agents."), false);
 }
 
-function main() {
+async function testGenerateAnswerReturnsGenerationUnavailableOnProviderFailure() {
+  const result = await generateAnswer("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    answerLength: "short",
+    generateText: async () => {
+      throw new Error("provider boom");
+    }
+  });
+
+  assert.equal(result.answer, "I couldn't generate a grounded answer right now because answer generation is unavailable.");
+  assert.deepEqual(result.citations, []);
+  assert.equal(result.answerLength, "short");
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-4o-mini");
+  assert.equal(result.usage?.fallback, true);
+  assert.equal(result.usage?.estimated, true);
+  assert.equal(result.selectedChunks?.length, 1);
+}
+
+async function testGenerateAnswerReturnsGenerationUnavailableOnBlankModelOutput() {
+  const result = await generateAnswer("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    answerLength: "short",
+    generateText: async () => ({
+      text: "Citations: default::cli-smoke::welcome#0",
+      usage: { input_tokens: 10, output_tokens: 3, total_tokens: 13 }
+    })
+  });
+
+  assert.equal(result.answer, "I couldn't generate a grounded answer right now because answer generation is unavailable.");
+  assert.deepEqual(result.citations, []);
+  assert.equal(result.answerLength, "short");
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-4o-mini");
+  assert.equal(result.usage?.fallback, true);
+  assert.equal(result.selectedChunks?.length, 1);
+}
+
+async function testGenerateCodeAnswerReturnsGenerationUnavailableOnProviderFailure() {
+  const result = await generateCodeAnswer("Where is the token validated?", [
+    {
+      chunk_id: "repo::auth.js#0",
+      text: "function readToken(headers) { return headers.authorization || null; }"
+    }
+  ], {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    answerLength: "short",
+    generateText: async () => {
+      throw new Error("provider boom");
+    }
+  });
+
+  assert.equal(result.answer, "I couldn't generate a grounded answer right now because answer generation is unavailable.");
+  assert.deepEqual(result.citations, []);
+  assert.equal(result.answerLength, "short");
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-4o-mini");
+  assert.equal(result.usage?.fallback, true);
+  assert.equal(result.selectedChunks?.length, 1);
+}
+
+async function testGenerateBooleanAskReturnsInvalidOnProviderFailure() {
+  const result = await generateBooleanAskAnswer("Is SupaVector a SQL database?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    generateText: async () => {
+      throw new Error("provider boom");
+    }
+  });
+
+  assert.equal(result.answer, "invalid");
+  assert.deepEqual(result.citations, ["default::cli-smoke::welcome#0"]);
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-4o-mini");
+  assert.equal(result.usage?.fallback, true);
+  assert.equal(result.selectedChunks?.length, 1);
+}
+
+async function testGenerateAnswerPreservesAutoLengthWithoutPromptSteering() {
+  let capturedInput = "";
+  const result = await generateAnswer("What does SupaVector store?", [
+    {
+      chunk_id: "default::cli-smoke::welcome#0",
+      text: "SupaVector stores memory for agents."
+    }
+  ], {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    answerLength: "auto",
+    generateText: async ({ input }) => {
+      capturedInput = String(input || "");
+      return {
+        text: "SupaVector stores memory for agents.\nCitations: default::cli-smoke::welcome#0",
+        usage: { input_tokens: 10, output_tokens: 8, total_tokens: 18 }
+      };
+    }
+  });
+
+  assert.equal(result.answerLength, "auto");
+  assert.doesNotMatch(capturedInput, /Target length:/);
+}
+
+async function main() {
   testShortChunkIsRetainedWhenItIsTheOnlyEvidence();
   testShortChunkIsRetainedAlongsideLongerEvidence();
   testPromptInjectionLinesAreStillRemoved();
@@ -193,6 +333,7 @@ function main() {
   testCodeTaskNormalization();
   testAskPromptRemainsSingleStringPrompt();
   testAskPromptSupportsMetadataCitationMode();
+  testAskPromptOmitsLengthInstructionForAuto();
   testBooleanAskPromptRemainsSingleStringPrompt();
   testAnswerLengthInstructionsAndTokenBudgets();
   testFallbackSummaryIsNotCanonicalUnknownWhenChunksHaveText();
@@ -200,7 +341,15 @@ function main() {
   testFallbackSummaryReturnsCanonicalUnknownWhenQuestionDoesNotMatchSources();
   testPromptChunkSelectionPrefersSourceDiversityAndCapsSize();
   testCanonicalUnknownDetectionMatchesExpectedForms();
+  await testGenerateAnswerReturnsGenerationUnavailableOnProviderFailure();
+  await testGenerateAnswerReturnsGenerationUnavailableOnBlankModelOutput();
+  await testGenerateCodeAnswerReturnsGenerationUnavailableOnProviderFailure();
+  await testGenerateBooleanAskReturnsInvalidOnProviderFailure();
+  await testGenerateAnswerPreservesAutoLengthWithoutPromptSteering();
   console.log("answer guard tests passed");
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

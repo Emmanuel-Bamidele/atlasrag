@@ -9,7 +9,22 @@ const {
 
 const OPENAI_CLIENTS = new Map();
 const PROVIDER_TIMEOUT_MS = parseInt(process.env.OPENAI_TIMEOUT_MS || "600000", 10);
+const PROVIDER_MAX_RETRIES = parseInt(process.env.PROVIDER_MAX_RETRIES || "2", 10);
+const PROVIDER_RETRY_BASE_DELAY_MS = parseInt(process.env.PROVIDER_RETRY_BASE_DELAY_MS || "250", 10);
 const ANTHROPIC_VERSION = "2023-06-01";
+const RETRYABLE_ERROR_CODES = new Set([
+  "ABORT_ERR",
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETDOWN",
+  "ENETRESET",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "EAI_AGAIN"
+]);
 
 function providerEnvKey(provider) {
   const clean = normalizeProviderId(provider);
@@ -43,6 +58,10 @@ function createAbortSignal(timeoutMs = PROVIDER_TIMEOUT_MS) {
     signal: controller.signal,
     dispose: () => clearTimeout(timer)
   };
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function createOpenAIClient(apiKey) {
@@ -135,6 +154,46 @@ function buildOpenAiTextRequestBody({ model, input, temperature, jsonMode = fals
     ...(Number.isFinite(maxTokens) && maxTokens > 0 ? { max_output_tokens: Math.floor(maxTokens) } : {}),
     ...(jsonMode ? { text: { format: { type: "json_object" } } } : {})
   });
+}
+
+function resolveRetryCount(value, fallback = PROVIDER_MAX_RETRIES) {
+  const count = Number.isFinite(value) ? Number(value) : Number(fallback);
+  if (!Number.isFinite(count) || count < 0) return 0;
+  return Math.floor(count);
+}
+
+function resolveRetryDelayMs(value, fallback = PROVIDER_RETRY_BASE_DELAY_MS) {
+  const delay = Number.isFinite(value) ? Number(value) : Number(fallback);
+  if (!Number.isFinite(delay) || delay < 0) return 0;
+  return Math.floor(delay);
+}
+
+function isRetryableGenerationError(err) {
+  const status = Number(err?.status);
+  if (status === 408 || status === 409 || status === 425 || status === 429) {
+    return true;
+  }
+  if (Number.isFinite(status) && status >= 500) {
+    return true;
+  }
+
+  const code = String(err?.code || err?.cause?.code || "").trim().toUpperCase();
+  if (RETRYABLE_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  const name = String(err?.name || err?.cause?.name || "").trim();
+  if (name === "AbortError") {
+    return true;
+  }
+
+  const message = String(err?.message || err?.cause?.message || "").toLowerCase();
+  return /timeout|timed out|rate limit|too many requests|temporar|overloaded|overload|busy|try again|connect|connection|socket|network|dns|enotfound|econn|reset by peer|service unavailable|bad gateway|gateway timeout|upstream/.test(message);
+}
+
+function buildRetryDelayMs(attempt, baseDelayMs) {
+  const exponent = Math.max(0, attempt);
+  return baseDelayMs * Math.pow(2, exponent);
 }
 
 async function fetchJson(url, options = {}) {
@@ -248,16 +307,46 @@ async function generateProviderText({
   apiKey,
   temperature,
   jsonMode = false,
-  maxTokens
+  maxTokens,
+  maxRetries,
+  retryDelayMs,
+  retryOnEmptyText = true,
+  sleepFn
 }) {
   const cleanProvider = normalizeProviderId(provider) || DEFAULT_ANSWER_PROVIDER;
+  const retries = resolveRetryCount(maxRetries);
+  const baseDelayMs = resolveRetryDelayMs(retryDelayMs);
+  const wait = typeof sleepFn === "function" ? sleepFn : sleep;
+  let generator = generateTextWithOpenAI;
   if (cleanProvider === "gemini") {
-    return generateTextWithGemini({ model, input, apiKey, temperature, jsonMode, maxTokens });
+    generator = generateTextWithGemini;
+  } else if (cleanProvider === "anthropic") {
+    generator = generateTextWithAnthropic;
   }
-  if (cleanProvider === "anthropic") {
-    return generateTextWithAnthropic({ model, input, apiKey, temperature, maxTokens });
+
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const result = await generator({ model, input, apiKey, temperature, jsonMode, maxTokens });
+      const text = String(result?.text || "").trim();
+      if (!text && retryOnEmptyText && attempt < retries) {
+        await wait(buildRetryDelayMs(attempt, baseDelayMs));
+        continue;
+      }
+      return {
+        ...result,
+        text
+      };
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableGenerationError(err) || attempt >= retries) {
+        throw err;
+      }
+      await wait(buildRetryDelayMs(attempt, baseDelayMs));
+    }
   }
-  return generateTextWithOpenAI({ model, input, apiKey, temperature, jsonMode, maxTokens });
+
+  throw lastError || new Error(`Provider generation failed for ${cleanProvider}.`);
 }
 
 function extractOpenAiEmbeddingUsage(usage) {
@@ -353,6 +442,10 @@ module.exports = {
     extractAnthropicText,
     extractGeminiUsage,
     extractAnthropicUsage,
-    extractOpenAiUsage
+    extractOpenAiUsage,
+    resolveRetryCount,
+    resolveRetryDelayMs,
+    isRetryableGenerationError,
+    buildRetryDelayMs
   }
 };
