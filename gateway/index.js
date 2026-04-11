@@ -2470,7 +2470,7 @@ function normalizeConversationWikiParagraphs(value, { label = "conversationWiki.
   const paragraphs = [];
   const seen = new Set();
   for (let index = 0; index < raw.length; index += 1) {
-    const paragraph = normalizeConversationWikiParagraphText(raw[index], CONVERSATION_WIKI_MAX_PARAGRAPH_CHARS);
+    const paragraph = String(raw[index] || "").replace(/\r\n/g, "\n").trim();
     if (!paragraph) continue;
     const key = paragraph.toLowerCase();
     if (seen.has(key)) continue;
@@ -2796,51 +2796,30 @@ function countConversationWikiItems(section = {}) {
   return Array.isArray(section.paragraphs) ? section.paragraphs.length : 0;
 }
 
-function trimConversationWikiParagraphs(paragraphs, maxChars) {
-  const safeMaxChars = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0
-    ? Math.floor(Number(maxChars))
-    : CONVERSATION_WIKI_MAX_PAGE_CHARS;
-  const next = [];
-  let budget = safeMaxChars;
-  for (const paragraph of Array.isArray(paragraphs) ? paragraphs : []) {
-    const cleanParagraph = normalizeConversationWikiParagraphText(paragraph);
-    if (!cleanParagraph) continue;
-    const cost = cleanParagraph.length + 4;
-    if (next.length && budget - cost < 0) break;
-    next.push(cleanParagraph);
-    budget -= cost;
-  }
-  return next;
-}
-
 function buildConversationWikiPageText(page, section, maxChars = CONVERSATION_WIKI_MAX_PAGE_CHARS) {
   const normalized = normalizeConversationWikiArticleSection(section || {}, page, buildConversationWikiPageTitle(page));
-  const titleBudget = normalized.title.length + (normalized.note ? normalized.note.length + 8 : 0);
-  const trimmedParagraphs = trimConversationWikiParagraphs(
-    normalized.paragraphs,
-    Math.max(120, maxChars - titleBudget)
-  );
+  const paragraphSource = Array.isArray(normalized.paragraphs) ? normalized.paragraphs : [];
   const lines = [normalized.title];
   if (normalized.note) {
     lines.push("");
     lines.push(`Note: ${normalized.note}`);
   }
-  if (!trimmedParagraphs.length) {
+  if (!paragraphSource.length) {
     lines.push("");
     lines.push("No durable narrative has been captured for this section yet.");
   } else {
-    for (const paragraph of trimmedParagraphs) {
+    for (const paragraph of paragraphSource) {
       lines.push("");
       lines.push(paragraph);
     }
   }
   return {
-    text: lines.join("\n").slice(0, maxChars),
+    text: lines.join("\n"),
     page: normalized.id,
     title: normalized.title,
     note: normalized.note,
-    paragraphs: trimmedParagraphs,
-    itemCount: countConversationWikiItems({ paragraphs: trimmedParagraphs })
+    paragraphs: paragraphSource,
+    itemCount: countConversationWikiItems({ paragraphs: paragraphSource })
   };
 }
 

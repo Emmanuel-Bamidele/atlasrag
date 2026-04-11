@@ -53,6 +53,18 @@ function testBuildsConversationWikiPageText() {
   assert.equal(built.itemCount, 2);
 }
 
+function testPreservesLongConversationWikiParagraphs() {
+  const longParagraph = Array.from({ length: 40 }, (_, index) => (
+    `Sentence ${index + 1} explains the presentation advice in a complete thought that should stay readable when the wiki article is stored.`
+  )).join(" ");
+  const built = __testHooks.buildConversationWikiPageText("article", {
+    title: "Conversation wiki",
+    paragraphs: [`${longParagraph} Final sentence keeps the ending intact.`]
+  }, 9000);
+  assert.equal(built.paragraphs.length, 1);
+  assert.match(built.paragraphs[0], /Final sentence keeps the ending intact\./);
+  assert.ok(built.paragraphs[0].length > 1800);
+}
 function testParsesConversationWikiResponse() {
   const parsed = __testHooks.parseConversationWikiResponse(JSON.stringify({
     article: {
@@ -736,6 +748,7 @@ async function main() {
   testGatewayIndexLoadsConversationWikiGeneratorDependency();
   testNormalizesWikiPages();
   testBuildsConversationWikiPageText();
+  testPreservesLongConversationWikiParagraphs();
   testParsesConversationWikiResponse();
   testParsesLegacyConversationWikiResponse();
   testRepairsConversationWikiResponseWhenModelUnderfills();
