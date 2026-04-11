@@ -1,13 +1,27 @@
 const assert = require("assert/strict");
 const Module = require("module");
+const path = require("path");
 
 process.env.COOKIE_SECRET = process.env.COOKIE_SECRET || "test-cookie-secret";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
 
 const originalLoad = Module._load;
+let providerClientsLoadedByIndex = false;
+function isGatewayIndexModule(parent) {
+  const fileName = String(parent?.filename || "");
+  if (!fileName) return false;
+  const normalized = fileName.replace(/\\/g, "/");
+  if (normalized.endsWith("/gateway/index.js")) return true;
+  return path.basename(normalized) === "index.js" && path.basename(path.dirname(normalized)) === "app";
+}
+
 Module._load = function patchedLoad(request, parent, isMain) {
-  if (request === "./plugins" && parent?.filename?.endsWith("/gateway/index.js")) {
+  if (request === "./plugins" && isGatewayIndexModule(parent)) {
     return { mount() {} };
+  }
+  if (request === "./provider_clients" && isGatewayIndexModule(parent)) {
+    providerClientsLoadedByIndex = true;
+    return originalLoad.apply(this, arguments);
   }
   return originalLoad.apply(this, arguments);
 };
@@ -19,6 +33,10 @@ function testNormalizesWikiPages() {
     __testHooks.normalizeConversationWikiPagesInput(["questions answered", "Questions Answered", "how understanding evolved"]),
     ["questions answered", "how understanding evolved"]
   );
+}
+
+function testGatewayIndexLoadsConversationWikiGeneratorDependency() {
+  assert.equal(providerClientsLoadedByIndex, true);
 }
 
 function testBuildsConversationWikiPageText() {
@@ -698,14 +716,31 @@ async function testRunsConversationMemoryClearJob() {
   assert.equal(audits[0].metadata.deletedVectors, 22);
 }
 
+async function testDispatchMemoryJobRoutesConversationWikiUpdates() {
+  const calls = [];
+  await __testHooks.dispatchMemoryJobWithDeps({
+    runConversationWikiUpdateJob: async (jobId, tenantId) => {
+      calls.push({ jobId, tenantId });
+    }
+  }, "job-wiki-1", "tenant-1", "conversation_wiki_update");
+  assert.deepEqual(calls, [{ jobId: "job-wiki-1", tenantId: "tenant-1" }]);
+  assert.equal(
+    __testHooks.resolveMemoryJobRunner("conversation_wiki_update", {
+      runConversationWikiUpdateJob: () => "ok"
+    })(),
+    "ok"
+  );
+}
+
 async function main() {
+  testGatewayIndexLoadsConversationWikiGeneratorDependency();
   testNormalizesWikiPages();
-testBuildsConversationWikiPageText();
-testParsesConversationWikiResponse();
-testParsesLegacyConversationWikiResponse();
-testRepairsConversationWikiResponseWhenModelUnderfills();
-testFormatsConversationWikiAuditFields();
-testBuildsTurnExchangesAndPrompt();
+  testBuildsConversationWikiPageText();
+  testParsesConversationWikiResponse();
+  testParsesLegacyConversationWikiResponse();
+  testRepairsConversationWikiResponseWhenModelUnderfills();
+  testFormatsConversationWikiAuditFields();
+  testBuildsTurnExchangesAndPrompt();
   await testLoadConversationTurnsForWikiUpdateKeepsConfiguredOverlap();
   testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
@@ -716,6 +751,7 @@ testBuildsTurnExchangesAndPrompt();
   await testClearsConversationMemoryCollection();
   await testEnqueuesConversationMemoryClearJob();
   await testRunsConversationMemoryClearJob();
+  await testDispatchMemoryJobRoutesConversationWikiUpdates();
   console.log("conversation wiki tests passed");
 }
 

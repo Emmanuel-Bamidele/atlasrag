@@ -97,6 +97,7 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer, generateCodeAnswer, normalizeCodeTask } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
+const { generateProviderText } = require("./provider_clients");
 const {
   DEFAULT_EMBED_PROVIDER,
   DEFAULT_EMBED_MODEL,
@@ -7635,35 +7636,47 @@ function computeJobBackoff(attempt) {
   return exp + jitter;
 }
 
-async function dispatchMemoryJob(jobId, tenantId, jobType) {
-  const type = jobType || null;
+function resolveMemoryJobRunner(type, deps = {}) {
   if (type === "reflect") {
-    await runReflectionJob(jobId, tenantId);
-    return;
+    return deps.runReflectionJob || runReflectionJob;
   }
   if (type === "ttl_cleanup") {
-    await runTtlCleanupJob(jobId, tenantId);
-    return;
+    return deps.runTtlCleanupJob || runTtlCleanupJob;
   }
   if (type === "compaction") {
-    await runCompactionJob(jobId, tenantId);
-    return;
+    return deps.runCompactionJob || runCompactionJob;
   }
   if (type === "delete_reconcile") {
-    await runDeleteReconcileJob(jobId, tenantId);
-    return;
+    return deps.runDeleteReconcileJob || runDeleteReconcileJob;
+  }
+  if (type === "conversation_wiki_update") {
+    return deps.runConversationWikiUpdateJob || runConversationWikiUpdateJob;
   }
   if (type === CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE) {
-    await runConversationMemoryClearJob(jobId, tenantId);
+    return deps.runConversationMemoryClearJob || runConversationMemoryClearJob;
+  }
+  return null;
+}
+
+async function dispatchMemoryJobWithDeps(deps = {}, jobId, tenantId, jobType) {
+  const type = jobType || null;
+  const runner = resolveMemoryJobRunner(type, deps);
+  if (runner) {
+    await runner(jobId, tenantId);
     return;
   }
   if (!type) {
-    const job = await getMemoryJobById(jobId, tenantId);
+    const getJobById = deps.getMemoryJobById || getMemoryJobById;
+    const job = await getJobById(jobId, tenantId);
     if (!job) return;
-    await dispatchMemoryJob(jobId, tenantId, job.job_type);
+    await dispatchMemoryJobWithDeps(deps, jobId, tenantId, job.job_type);
     return;
   }
   console.warn(`[jobs] Unknown job type ${type} for job ${jobId}`);
+}
+
+async function dispatchMemoryJob(jobId, tenantId, jobType) {
+  return dispatchMemoryJobWithDeps({}, jobId, tenantId, jobType);
 }
 
 async function finalizeJobFailure(job, err, options = {}) {
@@ -14276,6 +14289,8 @@ module.exports = {
     clearConversationMemoryCollectionWithDeps,
     enqueueConversationMemoryClearJobWithDeps,
     runConversationMemoryClearJobWithDeps,
+    resolveMemoryJobRunner,
+    dispatchMemoryJobWithDeps,
     formatConversationWikiItem,
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
