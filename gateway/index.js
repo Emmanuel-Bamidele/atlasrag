@@ -2683,6 +2683,89 @@ function mergeConversationWikiStoredExchanges(...sets) {
   );
 }
 
+function countConversationWikiAnsweredStoredExchanges(value = []) {
+  return normalizeConversationWikiStoredExchanges(value).filter((exchange) => (
+    Array.isArray(exchange?.responses) && exchange.responses.length > 0
+  )).length;
+}
+
+function buildConversationWikiFallbackParagraphs(sourceExchanges = [], { label = "conversationWiki.fallbackSourceExchanges" } = {}) {
+  const exchanges = normalizeConversationWikiStoredExchanges(sourceExchanges, { label });
+  const paragraphs = [];
+  for (let exchangeIndex = 0; exchangeIndex < exchanges.length; exchangeIndex += 1) {
+    const exchange = exchanges[exchangeIndex];
+    const sentences = [];
+    if (exchange?.question) {
+      sentences.push(`The user asked: ${exchange.question}`);
+    } else {
+      sentences.push("The conversation continued without a newly captured user question before the assistant responded.");
+    }
+    const responses = Array.isArray(exchange?.responses) ? exchange.responses : [];
+    if (responses.length) {
+      for (let responseIndex = 0; responseIndex < responses.length; responseIndex += 1) {
+        const response = responses[responseIndex];
+        const responseText = String(response?.text || "").trim();
+        if (!responseText) continue;
+        sentences.push(`${responseIndex === 0 ? "The assistant answered:" : "A follow-up assistant response added:"} ${responseText}`);
+      }
+    } else {
+      sentences.push("No assistant answer was captured for this exchange.");
+    }
+    const paragraph = normalizeConversationWikiParagraphs(
+      [sentences.join(" ")],
+      { label: `${label}[${exchangeIndex}].paragraph` }
+    )[0] || null;
+    if (paragraph) paragraphs.push(paragraph);
+  }
+  return paragraphs;
+}
+
+function repairConversationWikiArticleDraft(article, {
+  sourceExchanges = [],
+  previousWiki = null,
+  minAnsweredExchanges = 0,
+  fallbackTitle = "Conversation wiki"
+} = {}) {
+  const normalized = normalizeConversationWikiArticle(article, {
+    fallbackId: CONVERSATION_WIKI_ARTICLE_PAGE,
+    fallbackTitle
+  });
+  const requiredParagraphs = Math.max(0, Math.floor(Number(minAnsweredExchanges) || 0));
+  const exchangeParagraphs = buildConversationWikiFallbackParagraphs(sourceExchanges, {
+    label: "conversationWiki.repair.sourceExchanges"
+  });
+  const previousParagraphs = normalizeConversationWikiParagraphs(
+    previousWiki?.paragraphs,
+    { label: "conversationWiki.repair.previousWiki.paragraphs" }
+  );
+  const hasReadableParagraphs = Array.isArray(normalized.paragraphs) && normalized.paragraphs.length > 0;
+  const isUnderfilled = requiredParagraphs > 0
+    && normalized.paragraphs.length < requiredParagraphs
+    && exchangeParagraphs.length >= requiredParagraphs;
+  if (hasReadableParagraphs && !isUnderfilled) {
+    return normalized;
+  }
+  const fallbackParagraphs = exchangeParagraphs.length ? exchangeParagraphs : previousParagraphs;
+  if (!fallbackParagraphs.length) {
+    return normalized;
+  }
+  return normalizeConversationWikiArticle({
+    article: {
+      id: CONVERSATION_WIKI_ARTICLE_PAGE,
+      title: normalized.title || fallbackTitle,
+      note: normalized.note || (
+        hasReadableParagraphs
+          ? "Rebuilt directly from captured exchanges because the generated article did not preserve every recent answered interaction."
+          : "Rebuilt directly from captured exchanges because the generator returned no readable article."
+      ),
+      paragraphs: fallbackParagraphs
+    }
+  }, {
+    fallbackId: CONVERSATION_WIKI_ARTICLE_PAGE,
+    fallbackTitle
+  });
+}
+
 function buildConversationWikiExchangeDigest(recentTurns = []) {
   const exchanges = Array.isArray(recentTurns) && recentTurns.length && recentTurns[0] && typeof recentTurns[0] === "object" && "responses" in recentTurns[0]
     ? normalizeConversationWikiStoredExchanges(recentTurns)
@@ -7944,6 +8027,11 @@ async function upsertConversationWikiPage({
     paragraphs,
     sections
   }, pageMaxChars);
+  if (!Array.isArray(built.paragraphs) || built.paragraphs.length === 0) {
+    const error = new Error("Conversation wiki page must include at least one readable paragraph.");
+    error.code = "CONVERSATION_WIKI_EMPTY_PAGE";
+    throw error;
+  }
   const memoryId = crypto.randomUUID();
   const namespaceId = namespaceDocId(tenantId, collection, `mem_${memoryId}`);
   const updatedAt = new Date().toISOString();
@@ -8364,6 +8452,11 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       existingWikiState.previousWikiSourceExchanges,
       currentTurnExchanges
     );
+    const fallbackSourceExchanges = mergeConversationWikiStoredExchanges(
+      currentTurnExchanges,
+      existingWikiState.previousWikiSourceExchanges
+    );
+    const answeredRecentExchangeCount = countConversationWikiAnsweredStoredExchanges(currentTurnExchanges);
     const prompt = buildConversationWikiUpdatePrompt({
       conversationId,
       pages,
@@ -8391,7 +8484,15 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
       collection,
       source: "job_conversation_wiki_generation"
     }));
-    const draftArticle = parseConversationWikiResponse(generated?.text, pages);
+    const draftArticle = repairConversationWikiArticleDraft(
+      parseConversationWikiResponse(generated?.text, pages),
+      {
+        sourceExchanges: fallbackSourceExchanges,
+        previousWiki: existingWikiState.previousWiki,
+        minAnsweredExchanges: answeredRecentExchangeCount,
+        fallbackTitle: "Conversation wiki"
+      }
+    );
     const revision = getConversationWikiRevision(existingPages) + 1;
     const nextCheckpoint = newTurns[newTurns.length - 1]?.externalId || checkpointTurnExternalId || null;
     const visibility = input.visibility ? normalizeVisibility(input.visibility) : (existingPages[0]?.memory?.visibility || "tenant");
@@ -8493,7 +8594,7 @@ async function runConversationWikiUpdateJob(jobId, tenantId) {
     }, {
       updated: writes.length > 0,
       updated_pages: writes.map((page) => page.page),
-      recent_turn_count: recentTurns.length,
+      recent_turn_count: promptTurns.length,
       pruned_turns: pruneResult.pruned,
       queued_deletes: pruneResult.queued
     });
@@ -14179,6 +14280,7 @@ module.exports = {
     getConversationWikiLastUpdatedAt,
     formatConversationWikiJob,
     parseConversationWikiResponse,
+    repairConversationWikiArticleDraft,
     enqueueConversationWikiUpdateJobWithDeps,
     pruneConversationTurnsForWikiWithDeps,
     resolveMemoryPolicyConfig,

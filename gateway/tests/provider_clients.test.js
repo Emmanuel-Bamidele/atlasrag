@@ -219,6 +219,31 @@ async function testGeminiGenerationDoesNotRetryNonRetryableFailure() {
   });
 }
 
+async function testAnthropicGenerationJsonMode() {
+  await withFetchStub(async (url, options) => {
+    assert.equal(String(url), "https://api.anthropic.com/v1/messages");
+    const body = JSON.parse(options.body);
+    assert.match(String(body.system || ""), /Return only a valid JSON object/);
+    assert.equal(body.messages[1].role, "assistant");
+    assert.equal(body.messages[1].content, "{");
+    return makeJsonResponse({
+      content: [{ type: "text", text: "\"ok\":true}" }],
+      usage: { input_tokens: 7, output_tokens: 3 }
+    });
+  }, async () => {
+    const result = await generateProviderText({
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      input: { system: "Return JSON only.", user: "Give me a tiny JSON object." },
+      apiKey: "anthropic-key",
+      jsonMode: true,
+      maxTokens: 512
+    });
+    assert.equal(result.text, "{\"ok\":true}");
+    assert.equal(result.usage.total_tokens, 10);
+  });
+}
+
 async function testGeminiEmbeddings() {
   await withFetchStub(async (url, options) => {
     assert.match(String(url), /embedContent/);
@@ -254,6 +279,26 @@ function testProviderClientHooks() {
   assert.equal(__testHooks.extractAnthropicText({
     content: [{ type: "text", text: "hi" }, { type: "tool_result", text: "ignored" }]
   }), "hi");
+  assert.equal(__testHooks.extractOpenAiText({
+    output: [{
+      content: [
+        { type: "output_text", text: "{\"ok\":true}" }
+      ]
+    }]
+  }), "{\"ok\":true}");
+  assert.throws(
+    () => __testHooks.ensureGeneratedText("", { provider: "openai", model: "gpt-5.2", jsonMode: true }),
+    /returned no text/
+  );
+  const anthropicBody = __testHooks.buildAnthropicTextRequestBody({
+    model: "claude-sonnet-4-20250514",
+    input: { system: "Stay grounded.", user: "Return JSON only." },
+    jsonMode: true,
+    maxTokens: 256
+  });
+  assert.match(String(anthropicBody.system || ""), /Return only a valid JSON object/);
+  assert.equal(anthropicBody.messages[1].role, "assistant");
+  assert.equal(anthropicBody.messages[1].content, "{");
 }
 
 function testOpenAiRequestBuilderOmitsUnsupportedTemperature() {
@@ -294,6 +339,7 @@ async function main() {
   await testGeminiGenerationRetriesTransientFailure();
   await testGeminiGenerationRetriesBlankText();
   await testGeminiGenerationDoesNotRetryNonRetryableFailure();
+  await testAnthropicGenerationJsonMode();
   await testGeminiEmbeddings();
   console.log("provider client tests passed");
 }

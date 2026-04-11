@@ -68,6 +68,61 @@ function testParsesLegacyConversationWikiResponse() {
   ]);
 }
 
+function testRepairsConversationWikiResponseWhenModelUnderfills() {
+  const exchanges = __testHooks.buildConversationWikiTurnExchanges([
+    {
+      role: "user",
+      createdAt: "2026-04-07T01:00:00.000Z",
+      externalId: "turn-user-1",
+      text: "Message:\nHow can I demonstrate consistency in my work?"
+    },
+    {
+      role: "assistant",
+      createdAt: "2026-04-07T01:01:00.000Z",
+      externalId: "turn-assistant-1",
+      text: "Message:\nShow a repeatable pattern of follow-through, clear communication, and reliable outcomes."
+    },
+    {
+      role: "user",
+      createdAt: "2026-04-07T01:02:00.000Z",
+      externalId: "turn-user-2",
+      text: "Message:\nWhen should I draw the line between performance and compensation?"
+    },
+    {
+      role: "assistant",
+      createdAt: "2026-04-07T01:03:00.000Z",
+      externalId: "turn-assistant-2",
+      text: "Message:\nDraw the line when your compensation no longer reflects the level of ownership and outcomes you consistently carry."
+    }
+  ]);
+  const repairedFromEmpty = __testHooks.repairConversationWikiArticleDraft(
+    __testHooks.parseConversationWikiResponse(""),
+    {
+      sourceExchanges: exchanges,
+      minAnsweredExchanges: 2,
+      fallbackTitle: "Conversation wiki"
+    }
+  );
+  assert.equal(repairedFromEmpty.id, "article");
+  assert.equal(repairedFromEmpty.paragraphs.length, 2);
+  assert.match(repairedFromEmpty.note || "", /generator returned no readable article/i);
+  assert.match(repairedFromEmpty.paragraphs[0], /The user asked:/);
+  assert.match(repairedFromEmpty.paragraphs[0], /The assistant answered:/);
+
+  const repairedFromUnderfilled = __testHooks.repairConversationWikiArticleDraft({
+    article: {
+      title: "Conversation wiki",
+      paragraphs: ["One short paragraph that drops the rest."]
+    }
+  }, {
+    sourceExchanges: exchanges,
+    minAnsweredExchanges: 2,
+    fallbackTitle: "Conversation wiki"
+  });
+  assert.equal(repairedFromUnderfilled.paragraphs.length, 2);
+  assert.match(repairedFromUnderfilled.note || "", /did not preserve every recent answered interaction/i);
+}
+
 function testFormatsConversationWikiAuditFields() {
   const formatted = __testHooks.formatConversationWikiItem({
     metadata: {
@@ -645,11 +700,12 @@ async function testRunsConversationMemoryClearJob() {
 
 async function main() {
   testNormalizesWikiPages();
-  testBuildsConversationWikiPageText();
-  testParsesConversationWikiResponse();
-  testParsesLegacyConversationWikiResponse();
-  testFormatsConversationWikiAuditFields();
-  testBuildsTurnExchangesAndPrompt();
+testBuildsConversationWikiPageText();
+testParsesConversationWikiResponse();
+testParsesLegacyConversationWikiResponse();
+testRepairsConversationWikiResponseWhenModelUnderfills();
+testFormatsConversationWikiAuditFields();
+testBuildsTurnExchangesAndPrompt();
   await testLoadConversationTurnsForWikiUpdateKeepsConfiguredOverlap();
   testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
