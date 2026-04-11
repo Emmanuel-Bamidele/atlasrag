@@ -97,6 +97,7 @@ const {
 const { requireJwt, limiter, loginLimiter } = require("./security");
 const { generateAnswer, generateBooleanAskAnswer, generateCodeAnswer, normalizeCodeTask } = require("./answer");
 const { reflectMemories, summarizeMemories } = require("./memory_reflect");
+const { generateProviderText } = require("./provider_clients");
 const {
   DEFAULT_EMBED_PROVIDER,
   DEFAULT_EMBED_MODEL,

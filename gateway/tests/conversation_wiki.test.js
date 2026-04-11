@@ -5,9 +5,14 @@ process.env.COOKIE_SECRET = process.env.COOKIE_SECRET || "test-cookie-secret";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
 
 const originalLoad = Module._load;
+let providerClientsLoadedByIndex = false;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "./plugins" && parent?.filename?.endsWith("/gateway/index.js")) {
     return { mount() {} };
+  }
+  if (request === "./provider_clients" && parent?.filename?.endsWith("/gateway/index.js")) {
+    providerClientsLoadedByIndex = true;
+    return originalLoad.apply(this, arguments);
   }
   return originalLoad.apply(this, arguments);
 };
@@ -19,6 +24,10 @@ function testNormalizesWikiPages() {
     __testHooks.normalizeConversationWikiPagesInput(["questions answered", "Questions Answered", "how understanding evolved"]),
     ["questions answered", "how understanding evolved"]
   );
+}
+
+function testGatewayIndexLoadsConversationWikiGeneratorDependency() {
+  assert.equal(providerClientsLoadedByIndex, true);
 }
 
 function testBuildsConversationWikiPageText() {
@@ -715,13 +724,14 @@ async function testDispatchMemoryJobRoutesConversationWikiUpdates() {
 }
 
 async function main() {
+  testGatewayIndexLoadsConversationWikiGeneratorDependency();
   testNormalizesWikiPages();
-testBuildsConversationWikiPageText();
-testParsesConversationWikiResponse();
-testParsesLegacyConversationWikiResponse();
-testRepairsConversationWikiResponseWhenModelUnderfills();
-testFormatsConversationWikiAuditFields();
-testBuildsTurnExchangesAndPrompt();
+  testBuildsConversationWikiPageText();
+  testParsesConversationWikiResponse();
+  testParsesLegacyConversationWikiResponse();
+  testRepairsConversationWikiResponseWhenModelUnderfills();
+  testFormatsConversationWikiAuditFields();
+  testBuildsTurnExchangesAndPrompt();
   await testLoadConversationTurnsForWikiUpdateKeepsConfiguredOverlap();
   testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
