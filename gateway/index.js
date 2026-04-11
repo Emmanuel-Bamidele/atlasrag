@@ -409,6 +409,8 @@ const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSES = parseInt(process.env.CONVERSATI
 const CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_QUESTION_CHARS || "900", 10);
 const CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS = parseInt(process.env.CONVERSATION_WIKI_MAX_EXCHANGE_RESPONSE_CHARS || "1800", 10);
 const CONVERSATION_WIKI_CLEAR_COLLECTION_JOB_TYPE = "conversation_wiki_clear_collection";
+const CONVERSATION_WIKI_CLEAR_LOCK_WAIT_MS = parseInt(process.env.CONVERSATION_WIKI_CLEAR_LOCK_WAIT_MS || "15000", 10);
+const CONVERSATION_WIKI_CLEAR_LOCK_RETRY_MS = parseInt(process.env.CONVERSATION_WIKI_CLEAR_LOCK_RETRY_MS || "250", 10);
 const MEMORY_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RECENCY_HALFLIFE_DAYS || "30");
 const MEMORY_UTILITY_ALPHA = parseFloat(process.env.MEMORY_UTILITY_ALPHA || "0.2");
 const MEMORY_TRUST_STEP = parseFloat(process.env.MEMORY_TRUST_STEP || "0.05");
@@ -8121,6 +8123,25 @@ function collectConversationIdsForCollectionClear(memoryItems = [], jobs = []) {
   return Array.from(ids).sort((left, right) => left.localeCompare(right));
 }
 
+async function waitForConversationWikiLockWithDeps(deps, {
+  tenantId,
+  collection,
+  conversationId,
+  waitMs = CONVERSATION_WIKI_CLEAR_LOCK_WAIT_MS,
+  retryMs = CONVERSATION_WIKI_CLEAR_LOCK_RETRY_MS
+}) {
+  const acquireLock = deps.acquireConversationWikiLock || acquireConversationWikiLock;
+  const sleepFn = deps.sleep || sleep;
+  const deadline = Date.now() + Math.max(0, Number(waitMs) || 0);
+  const retryDelay = Math.max(25, Number(retryMs) || 0);
+  while (true) {
+    const lock = await acquireLock({ tenantId, collection, conversationId });
+    if (lock) return lock;
+    if (Date.now() >= deadline) return null;
+    await sleepFn(retryDelay);
+  }
+}
+
 async function clearConversationMemoryCollectionWithDeps(deps, {
   tenantId,
   collection,
@@ -8130,7 +8151,6 @@ async function clearConversationMemoryCollectionWithDeps(deps, {
   const listItems = deps.listMemoryItemsByCollection || listMemoryItemsByCollection;
   const listJobs = deps.listMemoryJobsByCollection || listMemoryJobsByCollection;
   const deleteJobs = deps.deleteMemoryJobsByCollection || deleteMemoryJobsByCollection;
-  const acquireLock = deps.acquireConversationWikiLock || acquireConversationWikiLock;
   const releaseLock = deps.releaseConversationWikiLock || releaseConversationWikiLock;
   const deleteItem = deps.deleteMemoryItemFully || deleteMemoryItemFully;
   const jobTypes = ["conversation_wiki_update", "delete_reconcile"];
@@ -8140,7 +8160,11 @@ async function clearConversationMemoryCollectionWithDeps(deps, {
   const locks = [];
   try {
     for (const conversationId of conversationIds) {
-      const lock = await acquireLock({ tenantId, collection, conversationId });
+      const lock = await waitForConversationWikiLockWithDeps(deps, {
+        tenantId,
+        collection,
+        conversationId
+      });
       if (!lock) {
         const err = new Error(`Conversation wiki is currently being updated for ${conversationId}`);
         err.status = 409;
