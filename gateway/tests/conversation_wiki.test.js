@@ -292,6 +292,7 @@ function testBuildsTurnExchangesAndPrompt() {
     ]
   });
   assert.match(prompt.system, /Treat answered questions as answered\./);
+  assert.match(prompt.system, /Use a concise, subject-specific article title\./);
   assert.match(prompt.system, /cover each exchange with its own substantial paragraph/);
   assert.match(prompt.system, /Do not mention a user question without also carrying forward the substance of the assistant answer/);
   assert.match(prompt.system, /Do not silently drop an answered exchange from the digest or source exchanges\./);

@@ -2964,7 +2964,7 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       stableJson({
         article: {
           id: "article",
-          title: "Living conversation article",
+          title: "Career growth through managing up and visible execution",
           note: "Optional one-line editorial note or null.",
           paragraphs: [
             "Long, information-dense paragraph one.",
@@ -2975,6 +2975,7 @@ function buildConversationWikiUpdatePrompt({ conversationId, pages, existingWiki
       "Rules:",
       "- Only include information grounded in the previous wiki article and the provided turns.",
       "- Prefer newer turns when they contradict older wiki material, but preserve still-relevant earlier context.",
+      "- Use a concise, subject-specific article title. Avoid generic labels such as 'Conversation wiki' or 'Living conversation article'.",
       "- Write one continuous article, not sections, not lists, not dashboards, and not bucket labels.",
       "- Make it clear what the user asked, what the assistant answered, and how understanding changed over time.",
       "- The article must visibly incorporate both the user's questions and the assistant's answers. Do not treat the user questions as the only source of substance.",
