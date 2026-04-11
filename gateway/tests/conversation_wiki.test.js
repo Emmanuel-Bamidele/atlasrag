@@ -678,6 +678,38 @@ async function testEnqueuesConversationMemoryClearJob() {
   assert.equal(createCalls, 1);
 }
 
+async function testClearConversationMemoryCollectionWaitsForWikiLockRelease() {
+  let attempts = 0;
+  const sleeps = [];
+  const result = await __testHooks.clearConversationMemoryCollectionWithDeps({
+    listMemoryItemsByCollection: async () => [
+      { id: "memory-1", metadata: { conversationId: "conv-1" } }
+    ],
+    listMemoryJobsByCollection: async () => [],
+    acquireConversationWikiLock: async ({ conversationId }) => {
+      assert.equal(conversationId, "conv-1");
+      attempts += 1;
+      return attempts >= 3 ? { id: `lock-${attempts}` } : null;
+    },
+    releaseConversationWikiLock: async () => null,
+    deleteMemoryJobsByCollection: async () => 0,
+    deleteMemoryItemFully: async () => ({ deleted: true, queued: false, vectorsDeleted: 1 }),
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    }
+  }, {
+    tenantId: "tenant-1",
+    collection: "__brain_conv_test",
+    requestId: "req-1",
+    source: "conversation_wiki_api"
+  });
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(sleeps, [250, 250]);
+  assert.equal(result.deletedCount, 1);
+  assert.equal(result.conversationCount, 1);
+}
+
 async function testRunsConversationMemoryClearJob() {
   const updates = [];
   const audits = [];
@@ -764,6 +796,7 @@ async function main() {
   await testPrunesConversationTailAndCountsQueuedDeletes();
   await testClearsConversationMemoryCollection();
   await testEnqueuesConversationMemoryClearJob();
+  await testClearConversationMemoryCollectionWaitsForWikiLockRelease();
   await testRunsConversationMemoryClearJob();
   await testDispatchMemoryJobRoutesConversationWikiUpdates();
   console.log("conversation wiki tests passed");
