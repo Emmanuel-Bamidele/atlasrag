@@ -1,16 +1,25 @@
 const assert = require("assert/strict");
 const Module = require("module");
+const path = require("path");
 
 process.env.COOKIE_SECRET = process.env.COOKIE_SECRET || "test-cookie-secret";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
 
 const originalLoad = Module._load;
 let providerClientsLoadedByIndex = false;
+function isGatewayIndexModule(parent) {
+  const fileName = String(parent?.filename || "");
+  if (!fileName) return false;
+  const normalized = fileName.replace(/\\/g, "/");
+  if (normalized.endsWith("/gateway/index.js")) return true;
+  return path.basename(normalized) === "index.js" && path.basename(path.dirname(normalized)) === "app";
+}
+
 Module._load = function patchedLoad(request, parent, isMain) {
-  if (request === "./plugins" && parent?.filename?.endsWith("/gateway/index.js")) {
+  if (request === "./plugins" && isGatewayIndexModule(parent)) {
     return { mount() {} };
   }
-  if (request === "./provider_clients" && parent?.filename?.endsWith("/gateway/index.js")) {
+  if (request === "./provider_clients" && isGatewayIndexModule(parent)) {
     providerClientsLoadedByIndex = true;
     return originalLoad.apply(this, arguments);
   }
