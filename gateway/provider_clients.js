@@ -96,6 +96,22 @@ function extractAnthropicText(payload) {
     .trim();
 }
 
+function extractOpenAiText(payload) {
+  const direct = String(payload?.output_text || "").trim();
+  if (direct) return direct;
+  const outputs = Array.isArray(payload?.output) ? payload.output : [];
+  return outputs
+    .flatMap((item) => (Array.isArray(item?.content) ? item.content : []))
+    .map((item) => {
+      if (typeof item?.text === "string") return item.text;
+      if (typeof item?.content === "string") return item.content;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
 function extractGeminiText(payload) {
   const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
   const parts = candidates[0]?.content?.parts;
@@ -140,6 +156,20 @@ function extractOpenAiUsage(usage) {
     output_tokens: outputTokens,
     total_tokens: totalTokens
   };
+}
+
+function ensureGeneratedText(text, { provider, model, jsonMode = false } = {}) {
+  const clean = String(text || "").trim();
+  if (clean) return clean;
+  const error = new Error(
+    `${String(provider || "provider").trim() || "provider"}:${String(model || "").trim() || "unknown-model"} returned no text`
+    + (jsonMode ? " for structured generation" : "")
+  );
+  error.code = "EMPTY_GENERATION";
+  error.provider = provider || null;
+  error.model = model || null;
+  error.jsonMode = Boolean(jsonMode);
+  throw error;
 }
 
 function buildOpenAiTextRequestBody({ model, input, temperature, jsonMode = false, maxTokens }) {
@@ -234,7 +264,7 @@ async function generateTextWithOpenAI({ model, input, apiKey, temperature, jsonM
     maxTokens
   }));
   return {
-    text: String(resp?.output_text || "").trim(),
+    text: ensureGeneratedText(extractOpenAiText(resp), { provider: "openai", model, jsonMode }),
     usage: extractOpenAiUsage(resp?.usage)
   };
 }
@@ -267,15 +297,36 @@ async function generateTextWithGemini({ model, input, apiKey, temperature, jsonM
     }
   );
   return {
-    text: extractGeminiText(payload),
+    text: ensureGeneratedText(extractGeminiText(payload), { provider: "gemini", model, jsonMode }),
     usage: extractGeminiUsage(payload)
   };
 }
 
-async function generateTextWithAnthropic({ model, input, apiKey, temperature, maxTokens = 4096 }) {
-  const key = resolveProviderApiKey("anthropic", apiKey);
-  // Support input as { system, user } object or plain string
+function buildAnthropicTextRequestBody({ model, input, temperature, jsonMode = false, maxTokens = 4096 }) {
   const isStructured = input && typeof input === "object" && !Array.isArray(input) && input.system !== undefined;
+  const systemParts = [];
+  if (isStructured && String(input.system || "").trim()) {
+    systemParts.push(String(input.system || "").trim());
+  }
+  if (jsonMode) {
+    systemParts.push("Return only a valid JSON object. Do not wrap the response in Markdown fences. Start with { and end with }.");
+  }
+  const userContent = isStructured ? String(input.user || "") : String(input || "");
+  const messages = [{ role: "user", content: userContent }];
+  if (jsonMode) {
+    messages.push({ role: "assistant", content: "{" });
+  }
+  return {
+    model,
+    max_tokens: maxTokens,
+    ...(systemParts.length ? { system: systemParts.join("\n\n") } : {}),
+    messages,
+    ...(temperature !== undefined ? { temperature } : {})
+  };
+}
+
+async function generateTextWithAnthropic({ model, input, apiKey, temperature, jsonMode = false, maxTokens = 4096 }) {
+  const key = resolveProviderApiKey("anthropic", apiKey);
   const payload = await fetchJson("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -283,19 +334,20 @@ async function generateTextWithAnthropic({ model, input, apiKey, temperature, ma
       "x-api-key": key,
       "anthropic-version": ANTHROPIC_VERSION
     },
-    body: JSON.stringify({
+    body: JSON.stringify(buildAnthropicTextRequestBody({
       model,
-      max_tokens: maxTokens,
-      ...(isStructured ? { system: String(input.system || "") } : {}),
-      messages: [{
-        role: "user",
-        content: isStructured ? String(input.user || "") : String(input || "")
-      }],
-      ...(temperature !== undefined ? { temperature } : {})
-    })
+      input,
+      temperature,
+      jsonMode,
+      maxTokens
+    }))
   });
+  const extracted = extractAnthropicText(payload);
+  const text = jsonMode && extracted && !extracted.trim().startsWith("{")
+    ? `{${extracted}`
+    : extracted;
   return {
-    text: extractAnthropicText(payload),
+    text: ensureGeneratedText(text, { provider: "anthropic", model, jsonMode }),
     usage: extractAnthropicUsage(payload)
   };
 }
@@ -339,6 +391,13 @@ async function generateProviderText({
       };
     } catch (err) {
       lastError = err;
+      if (err?.code === "EMPTY_GENERATION") {
+        if (!retryOnEmptyText || attempt >= retries) {
+          throw err;
+        }
+        await wait(buildRetryDelayMs(attempt, baseDelayMs));
+        continue;
+      }
       if (!isRetryableGenerationError(err) || attempt >= retries) {
         throw err;
       }
@@ -437,12 +496,15 @@ module.exports = {
   embedProviderTexts,
   __testHooks: {
     buildOpenAiTextRequestBody,
+    buildAnthropicTextRequestBody,
     normalizeGeminiModelPath,
     extractGeminiText,
     extractAnthropicText,
+    extractOpenAiText,
     extractGeminiUsage,
     extractAnthropicUsage,
     extractOpenAiUsage,
+    ensureGeneratedText,
     resolveRetryCount,
     resolveRetryDelayMs,
     isRetryableGenerationError,
