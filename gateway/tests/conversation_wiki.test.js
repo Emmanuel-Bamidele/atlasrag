@@ -698,6 +698,22 @@ async function testRunsConversationMemoryClearJob() {
   assert.equal(audits[0].metadata.deletedVectors, 22);
 }
 
+async function testDispatchMemoryJobRoutesConversationWikiUpdates() {
+  const calls = [];
+  await __testHooks.dispatchMemoryJobWithDeps({
+    runConversationWikiUpdateJob: async (jobId, tenantId) => {
+      calls.push({ jobId, tenantId });
+    }
+  }, "job-wiki-1", "tenant-1", "conversation_wiki_update");
+  assert.deepEqual(calls, [{ jobId: "job-wiki-1", tenantId: "tenant-1" }]);
+  assert.equal(
+    __testHooks.resolveMemoryJobRunner("conversation_wiki_update", {
+      runConversationWikiUpdateJob: () => "ok"
+    })(),
+    "ok"
+  );
+}
+
 async function main() {
   testNormalizesWikiPages();
 testBuildsConversationWikiPageText();
@@ -716,6 +732,7 @@ testBuildsTurnExchangesAndPrompt();
   await testClearsConversationMemoryCollection();
   await testEnqueuesConversationMemoryClearJob();
   await testRunsConversationMemoryClearJob();
+  await testDispatchMemoryJobRoutesConversationWikiUpdates();
   console.log("conversation wiki tests passed");
 }
 
