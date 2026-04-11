@@ -149,8 +149,9 @@ function testRepairsConversationWikiResponseWhenModelUnderfills() {
     minAnsweredExchanges: 2,
     fallbackTitle: "Conversation wiki"
   });
-  assert.equal(repairedFromUnderfilled.paragraphs.length, 2);
-  assert.match(repairedFromUnderfilled.note || "", /did not preserve every recent answered interaction/i);
+  assert.equal(repairedFromUnderfilled.paragraphs.length, 1);
+  assert.equal(repairedFromUnderfilled.paragraphs[0], "One short paragraph that drops the rest.");
+  assert.equal(repairedFromUnderfilled.note || "", "");
 }
 
 function testFormatsConversationWikiAuditFields() {

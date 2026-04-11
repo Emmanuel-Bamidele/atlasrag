@@ -2729,11 +2729,11 @@ function repairConversationWikiArticleDraft(article, {
   minAnsweredExchanges = 0,
   fallbackTitle = "Conversation wiki"
 } = {}) {
+  void minAnsweredExchanges;
   const normalized = normalizeConversationWikiArticle(article, {
     fallbackId: CONVERSATION_WIKI_ARTICLE_PAGE,
     fallbackTitle
   });
-  const requiredParagraphs = Math.max(0, Math.floor(Number(minAnsweredExchanges) || 0));
   const exchangeParagraphs = buildConversationWikiFallbackParagraphs(sourceExchanges, {
     label: "conversationWiki.repair.sourceExchanges"
   });
@@ -2742,10 +2742,7 @@ function repairConversationWikiArticleDraft(article, {
     { label: "conversationWiki.repair.previousWiki.paragraphs" }
   );
   const hasReadableParagraphs = Array.isArray(normalized.paragraphs) && normalized.paragraphs.length > 0;
-  const isUnderfilled = requiredParagraphs > 0
-    && normalized.paragraphs.length < requiredParagraphs
-    && exchangeParagraphs.length >= requiredParagraphs;
-  if (hasReadableParagraphs && !isUnderfilled) {
+  if (hasReadableParagraphs) {
     return normalized;
   }
   const fallbackParagraphs = exchangeParagraphs.length ? exchangeParagraphs : previousParagraphs;
@@ -2756,11 +2753,7 @@ function repairConversationWikiArticleDraft(article, {
     article: {
       id: CONVERSATION_WIKI_ARTICLE_PAGE,
       title: normalized.title || fallbackTitle,
-      note: normalized.note || (
-        hasReadableParagraphs
-          ? "Rebuilt directly from captured exchanges because the generated article did not preserve every recent answered interaction."
-          : "Rebuilt directly from captured exchanges because the generator returned no readable article."
-      ),
+      note: normalized.note || "Rebuilt directly from captured exchanges because the generator returned no readable article.",
       paragraphs: fallbackParagraphs
     }
   }, {
