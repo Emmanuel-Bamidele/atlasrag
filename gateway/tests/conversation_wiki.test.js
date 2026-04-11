@@ -221,6 +221,107 @@ function testBuildsTurnExchangesAndPrompt() {
   assert.match(prompt.user, /Question and response exchanges JSON:/);
 }
 
+async function testLoadConversationTurnsForWikiUpdateKeepsConfiguredOverlap() {
+  const allTurns = [
+    {
+      id: "turn-user-1",
+      externalId: "turn-user-1",
+      role: "user",
+      createdAt: "2026-04-07T01:00:00.000Z",
+      text: "Message:\nHow can I demonstrate consistency in my work?"
+    },
+    {
+      id: "turn-assistant-1",
+      externalId: "turn-assistant-1",
+      role: "assistant",
+      createdAt: "2026-04-07T01:01:00.000Z",
+      text: "Message:\nShow a repeatable pattern of follow-through, clear communication, and reliable outcomes."
+    },
+    {
+      id: "turn-user-2",
+      externalId: "turn-user-2",
+      role: "user",
+      createdAt: "2026-04-07T01:02:00.000Z",
+      text: "Message:\nWhen should I draw the line between performance and compensation?"
+    },
+    {
+      id: "turn-assistant-2",
+      externalId: "turn-assistant-2",
+      role: "assistant",
+      createdAt: "2026-04-07T01:03:00.000Z",
+      text: "Message:\nDraw the line when your compensation no longer reflects the level of ownership and outcomes you consistently carry."
+    },
+    {
+      id: "turn-user-3",
+      externalId: "turn-user-3",
+      role: "user",
+      createdAt: "2026-04-07T01:04:00.000Z",
+      text: "Message:\nHow should I frame that conversation?"
+    },
+    {
+      id: "turn-assistant-3",
+      externalId: "turn-assistant-3",
+      role: "assistant",
+      createdAt: "2026-04-07T01:05:00.000Z",
+      text: "Message:\nFrame it around sustained scope, outcomes, and what needs to change."
+    },
+    {
+      id: "turn-user-4",
+      externalId: "turn-user-4",
+      role: "user",
+      createdAt: "2026-04-07T01:06:00.000Z",
+      text: "Message:\nWhat if they still delay?"
+    },
+    {
+      id: "turn-assistant-4",
+      externalId: "turn-assistant-4",
+      role: "assistant",
+      createdAt: "2026-04-07T01:07:00.000Z",
+      text: "Message:\nSet a clear timeline and decide what you will do if nothing changes."
+    }
+  ];
+  const byId = new Map(allTurns.map((turn) => [turn.externalId, turn]));
+  const toItem = (turn) => ({
+    id: turn.id,
+    external_id: turn.externalId,
+    created_at: turn.createdAt,
+    metadata: { role: turn.role },
+    namespace_id: `${turn.id}-ns`
+  });
+
+  const result = await __testHooks.loadConversationTurnsForWikiUpdate({
+    tenantId: "tenant-1",
+    collection: "__brain_conv_test",
+    conversationId: "conv-1",
+    principalId: null,
+    checkpointTurnExternalId: "turn-assistant-2",
+    keepRecentTurns: 4
+  }, {
+    getMemoryItemByExternalId: async ({ externalId }) => ({ created_at: byId.get(externalId)?.createdAt || null }),
+    listConversationTurnItems: async () => allTurns.slice(4).map(toItem),
+    listRecentConversationTurnItems: async ({ limit }) => allTurns.slice(-limit).map(toItem),
+    loadConversationTurnTexts: async (items = []) => items.map((item) => byId.get(item.external_id)).filter(Boolean)
+  });
+
+  assert.deepEqual(result.newTurns.map((turn) => turn.externalId), [
+    "turn-user-3",
+    "turn-assistant-3",
+    "turn-user-4",
+    "turn-assistant-4"
+  ]);
+  assert.deepEqual(result.promptTurns.map((turn) => turn.externalId), [
+    "turn-user-1",
+    "turn-assistant-1",
+    "turn-user-2",
+    "turn-assistant-2",
+    "turn-user-3",
+    "turn-assistant-3",
+    "turn-user-4",
+    "turn-assistant-4"
+  ]);
+  assert.equal(__testHooks.countConversationWikiTurnExchanges(result.promptTurns), 4);
+}
+
 function testConversationWikiMetricsHelpers() {
   const snapshot = __testHooks.recordConversationWikiMetrics("tenant-1", {
     succeeded: 1,
@@ -549,6 +650,7 @@ async function main() {
   testParsesLegacyConversationWikiResponse();
   testFormatsConversationWikiAuditFields();
   testBuildsTurnExchangesAndPrompt();
+  await testLoadConversationTurnsForWikiUpdateKeepsConfiguredOverlap();
   testConversationWikiMetricsHelpers();
   if (__testHooks.finalizeJobFailureWithDeps) {
     await testConversationWikiJobRetryableFailureRequeues();

@@ -7841,10 +7841,14 @@ async function loadConversationTurnsForWikiUpdate({
   principalId,
   checkpointTurnExternalId,
   keepRecentTurns = 0
-}) {
+}, deps = {}) {
+  const getByExternalId = deps.getMemoryItemByExternalId || getMemoryItemByExternalId;
+  const listTurns = deps.listConversationTurnItems || listConversationTurnItems;
+  const listRecentTurns = deps.listRecentConversationTurnItems || listRecentConversationTurnItems;
+  const loadTurnTexts = deps.loadConversationTurnTexts || loadConversationTurnTexts;
   const safeKeepRecentExchanges = Math.max(0, Math.floor(Number(keepRecentTurns) || 0));
   if (checkpointTurnExternalId) {
-    const checkpoint = await getMemoryItemByExternalId({
+    const checkpoint = await getByExternalId({
       tenantId,
       collection,
       externalId: checkpointTurnExternalId,
@@ -7852,7 +7856,7 @@ async function loadConversationTurnsForWikiUpdate({
     });
     const since = checkpoint?.created_at || null;
     if (since) {
-      const recent = await listConversationTurnItems({
+      const recent = await listTurns({
         tenantId,
         collection,
         conversationId,
@@ -7860,28 +7864,29 @@ async function loadConversationTurnsForWikiUpdate({
         limit: CONVERSATION_WIKI_MAX_SOURCE_TURNS,
         principalId
       });
-      const newTurns = await loadConversationTurnTexts(recent);
+      const newTurns = await loadTurnTexts(recent);
       if (!safeKeepRecentExchanges) {
         return {
           newTurns,
           promptTurns: newTurns
         };
       }
+      const overlapExchangeTurnBudget = Math.max(
+        CONVERSATION_WIKI_TURNS_PER_EXCHANGE,
+        safeKeepRecentExchanges * CONVERSATION_WIKI_TURNS_PER_EXCHANGE
+      );
       const overlapTurnLimit = Math.min(
         CONVERSATION_WIKI_MAX_SOURCE_TURNS,
-        Math.max(
-          CONVERSATION_WIKI_TURNS_PER_EXCHANGE,
-          safeKeepRecentExchanges * CONVERSATION_WIKI_TURNS_PER_EXCHANGE
-        )
+        Math.max(overlapExchangeTurnBudget, newTurns.length + overlapExchangeTurnBudget)
       );
-      const overlap = await listRecentConversationTurnItems({
+      const overlap = await listRecentTurns({
         tenantId,
         collection,
         conversationId,
         limit: overlapTurnLimit,
         principalId
       });
-      const overlapTurns = await loadConversationTurnTexts(overlap);
+      const overlapTurns = await loadTurnTexts(overlap);
       return {
         newTurns,
         promptTurns: mergeConversationWikiPromptTurns(
@@ -7893,14 +7898,14 @@ async function loadConversationTurnsForWikiUpdate({
       };
     }
   }
-  const recent = await listRecentConversationTurnItems({
+  const recent = await listRecentTurns({
     tenantId,
     collection,
     conversationId,
     limit: CONVERSATION_WIKI_MAX_SOURCE_TURNS,
     principalId
   });
-  const turns = await loadConversationTurnTexts(recent);
+  const turns = await loadTurnTexts(recent);
   return {
     newTurns: turns,
     promptTurns: turns
@@ -14160,6 +14165,7 @@ module.exports = {
     countConversationWikiTurnExchanges,
     sliceConversationWikiTurnsToRecentExchanges,
     mergeConversationWikiPromptTurns,
+    loadConversationTurnsForWikiUpdate,
     normalizeConversationWikiStoredExchanges,
     mergeConversationWikiStoredExchanges,
     resolveConversationWikiSourceCheckpoint,
