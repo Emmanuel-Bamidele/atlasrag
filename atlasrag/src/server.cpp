@@ -156,8 +156,9 @@ static std::atomic<long long> g_vdel_prefix_count{0};     // VDELPREFIX commands
 static std::atomic<long long> g_vclear_count{0};          // VCLEAR commands
 static std::atomic<long long> g_vsearch_count{0};         // VSEARCH commands
 
-// Controls whether vector operations are written to WAL (durability vs speed)
-static bool g_vector_wal_enabled = true;
+// Controls whether vector operations are written to WAL.
+// Default is off for the OSS profile; set VECTOR_WAL=1 to enable durability.
+static bool g_vector_wal_enabled = false;
 
 // Serialize mutating commands that change in-memory state and the WAL.
 // This keeps snapshot rewrites from racing with concurrent writers.
@@ -649,10 +650,10 @@ int main()
           : "wal.log";
   WAL wal(wal_path);     // durability log file
 
-  // VECTOR_WAL=0 disables vector WAL to speed up indexing
+  // VECTOR_WAL=1 enables vector WAL; default is off.
   const char* vector_wal_env = std::getenv("VECTOR_WAL");
-  if (vector_wal_env && std::string(vector_wal_env) == "0") {
-    g_vector_wal_enabled = false;
+  if (vector_wal_env && std::string(vector_wal_env) == "1") {
+    g_vector_wal_enabled = true;
   }
 
   // Load previous data from wal.log

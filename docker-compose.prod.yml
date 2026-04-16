@@ -6,7 +6,7 @@ services:
     image: supavector/vector-store
     restart: unless-stopped
     environment:
-      VECTOR_WAL: ${VECTOR_WAL:-1}
+      VECTOR_WAL: ${VECTOR_WAL:-0}
       WAL_PATH: "/data/wal.log"
     volumes:
       - vector_data:/data
