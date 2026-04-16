@@ -71,7 +71,7 @@ Recommended baseline:
 
 - 4 CPU cores
 - 8 GB RAM
-- persistent disk for Postgres and vector WAL data
+- persistent disk for Postgres and, if enabled, vector WAL data
 
 ## Quickstart Path
 
@@ -116,6 +116,7 @@ COMPACT_MODEL=gpt-5-nano
 `BOOLEAN_ASK_MODEL` falls back to `ANSWER_MODEL` when blank. `COMPACT_MODEL` falls back to `REFLECT_MODEL` when blank.
 `EMBED_MODEL` is instance-wide. Because SupaVector stores all vectors in one embedding space, changing `EMBED_MODEL` requires a reindex. Fresh CLI-managed installs and the example env files pin `EMBED_MODEL=text-embedding-3-large`; older installs should pin it explicitly before changing it.
 On startup, SupaVector also rebuilds vectors automatically if it detects that the live vector store count or dimension no longer matches the stored chunks for the current embedding model.
+The default OSS profile keeps `VECTOR_WAL=0` and relies on reindex-from-Postgres on startup. Set `VECTOR_WAL=1` only if you want vector WAL durability across restart.
 `ANSWER_PROVIDER`, `BOOLEAN_ASK_PROVIDER`, `REFLECT_PROVIDER`, and `COMPACT_PROVIDER` can be `openai`, `gemini`, or `anthropic`. `EMBED_PROVIDER` can be `openai` or `gemini`. Anthropic is generation-only today because SupaVector still needs a provider-native embedding endpoint for indexing and retrieval.
 Common generation presets include:
 - OpenAI: `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`

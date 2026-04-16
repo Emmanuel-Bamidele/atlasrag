@@ -3379,7 +3379,7 @@ SUPAVECTOR_API_KEY=YOUR_SERVICE_TOKEN</pre>
                   <ul>
                     <li><span class="mono">gateway</span> runs the HTTP API, auth, docs UI, jobs, and orchestration.</li>
                     <li><span class="mono">postgres</span> stores relational state such as users, tenants, chunks, memory metadata, jobs, and audit logs.</li>
-                    <li><span class="mono">redis</span> in this repo is actually the SupaVector vector-store process and keeps vector WAL data.</li>
+                    <li><span class="mono">redis</span> in this repo is actually the SupaVector vector-store process and keeps vector retrieval state plus optional WAL data when <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>All three are started by <span class="mono">docker compose up</span>.</li>
                   </ul>
                 </div>
@@ -3442,7 +3442,7 @@ docker compose exec gateway node scripts/bootstrap_instance.js \
                   <div class="doc-label">What to persist</div>
                   <ul>
                     <li>The Postgres volume.</li>
-                    <li>The vector-store WAL volume.</li>
+                    <li>The vector-store WAL volume if you enable <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>Your <span class="mono">.env</span> secrets outside git.</li>
                     <li>The issued service token in a secret manager, not in code.</li>
                   </ul>
@@ -3501,7 +3501,7 @@ docker compose -f docker-compose.external-postgres.yml exec gateway \
                   <div class="doc-label">Recommended guardrails</div>
                   <ul>
                     <li>Give SupaVector its own database or schema boundary.</li>
-                    <li>Back up Postgres and the vector-store WAL on the same cadence.</li>
+                    <li>Back up Postgres and, if enabled, the vector-store WAL on the same cadence.</li>
                     <li>Keep DB migrations enabled on controlled rollout environments unless you have a separate migration process.</li>
                     <li>Treat embedding model changes as a reindex event, not a normal hot change.</li>
                   </ul>
@@ -3519,7 +3519,7 @@ docker compose -f docker-compose.external-postgres.yml exec gateway \
                     <li>Set <span class="mono">PUBLIC_BASE_URL</span> to the externally reachable HTTPS URL.</li>
                     <li>Set <span class="mono">COOKIE_SECURE=1</span> when served behind HTTPS.</li>
                     <li>Terminate TLS at a reverse proxy or load balancer.</li>
-                    <li>Persist Postgres and vector-store data on durable storage.</li>
+                    <li>Persist Postgres and, if enabled, vector-store WAL data on durable storage.</li>
                     <li>Keep provider keys and service tokens in a proper secret manager.</li>
                   </ul>
                 </div>
@@ -3527,7 +3527,7 @@ docker compose -f docker-compose.external-postgres.yml exec gateway \
                   <div class="doc-label">Operator expectations</div>
                   <ul>
                     <li>Back up Postgres.</li>
-                    <li>Back up the vector WAL data.</li>
+                    <li>Back up the vector WAL data if <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>Monitor <span class="mono">/health</span>, job backlog, storage growth, and login failures.</li>
                     <li>Keep one break-glass local admin if the deployment uses SSO.</li>
                   </ul>
@@ -3545,7 +3545,7 @@ docker compose -f docker-compose.external-postgres.yml exec gateway \
                 <div class="doc-block">
                   <div class="doc-label">Upgrade approach</div>
                   <ol>
-                    <li>Back up Postgres and vector WAL data.</li>
+                    <li>Back up Postgres and vector WAL data if <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>Pull the new code or image.</li>
                     <li>Review env changes and model changes.</li>
                     <li>Restart the gateway and let migrations run.</li>
@@ -3710,7 +3710,7 @@ SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                   <div class="doc-label">What the vector-store owns</div>
                   <ul>
                     <li>Embedding vectors.</li>
-                    <li>Vector WAL persistence.</li>
+                    <li>Optional vector WAL persistence when <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>Similarity search state used during retrieval.</li>
                   </ul>
                 </div>
@@ -3720,7 +3720,7 @@ SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Operational implication</div>
-                  <p>If you back up Postgres but not the vector WAL, you do not have a full restore story. The reverse is also true.</p>
+                  <p>With the default OSS profile, Postgres is the restore source of truth and the gateway can reindex vectors on startup. If you enable <span class="mono">VECTOR_WAL=1</span>, back up Postgres and the vector WAL together.</p>
                 </div>
               </div>
             </details>
@@ -3783,13 +3783,13 @@ SUPAVECTOR_API_KEY=supav_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                   <div class="doc-label">Minimum backup story</div>
                   <ul>
                     <li>Back up Postgres.</li>
-                    <li>Back up vector WAL data.</li>
+                    <li>Back up vector WAL data if <span class="mono">VECTOR_WAL=1</span>.</li>
                     <li>Back up your deployment secrets separately.</li>
                   </ul>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Recovery rule</div>
-                  <p>A useful recovery plan restores relational state and vector state together, then validates health, search, and a known-good ask request before opening traffic fully.</p>
+                  <p>A useful recovery plan restores Postgres first, then either restores vector WAL if enabled or lets the gateway reindex vectors, and finally validates health, search, and a known-good ask request before opening traffic fully.</p>
                 </div>
               </div>
             </details>
