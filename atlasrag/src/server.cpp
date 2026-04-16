@@ -5,15 +5,16 @@
 #define ASIO_STANDALONE
 
 #include <asio.hpp>      // Networking library (TCP sockets)
+#include <atomic>        // std::atomic
+#include <chrono>        // time utilities
+#include <cstdlib>       // std::strtof (string -> float)
 #include <iostream>      // std::cout, std::cerr
+#include <mutex>         // std::mutex, std::lock_guard
 #include <sstream>       // std::istringstream
 #include <string>        // std::string
 #include <thread>        // std::thread
-#include <vector>        // std::vector
-#include <chrono>        // time utilities
-#include <atomic>        // std::atomic
 #include <utility>       // std::pair
-#include <cstdlib>       // std::strtof (string -> float)
+#include <vector>        // std::vector
 
 #include "db.h"          // string KV database (TTL, etc.)
 #include "wal.h"         // write-ahead log
@@ -84,6 +85,61 @@ static std::vector<float> parse_floats(
 }
 
 ////////////////////////////////////////////////////////////
+// Serialize the current vector state into WAL VSET format.
+////////////////////////////////////////////////////////////
+static std::string build_vset_wal_line(
+    const std::string& id,
+    const std::vector<float>& vec)
+{
+  std::string wal_line = "VSET " + id + " " + std::to_string(vec.size());
+  for (float x : vec) {
+    wal_line += " " + std::to_string(x);
+  }
+  return wal_line;
+}
+
+////////////////////////////////////////////////////////////
+// Build a full WAL snapshot from the in-memory DBs.
+////////////////////////////////////////////////////////////
+static std::vector<std::string> build_wal_snapshot(DB& db, const VectorDB& vdb)
+{
+  auto kv_entries = db.snapshot();
+  auto vector_entries = vdb.snapshot();
+
+  std::vector<std::string> lines;
+  lines.reserve(kv_entries.size() + vector_entries.size());
+
+  for (const auto& entry : kv_entries) {
+    std::string line = "SET " + entry.key + " " + entry.value;
+    if (entry.ttl_seconds) {
+      line += " EX " + std::to_string(*entry.ttl_seconds);
+    }
+    lines.push_back(line);
+  }
+
+  for (const auto& entry : vector_entries) {
+    lines.push_back(build_vset_wal_line(entry.first, entry.second));
+  }
+
+  return lines;
+}
+
+////////////////////////////////////////////////////////////
+// Rewrite the WAL from the current in-memory state.
+// If compaction fails, fall back to appending the latest mutation line.
+////////////////////////////////////////////////////////////
+static void compact_wal(
+    DB& db,
+    WAL& wal,
+    const VectorDB& vdb,
+    const std::string& fallback_line)
+{
+  if (!wal.rewrite_lines(build_wal_snapshot(db, vdb))) {
+    wal.append_line(fallback_line);
+  }
+}
+
+////////////////////////////////////////////////////////////
 // METRICS (atomic counters are safe across threads)
 ////////////////////////////////////////////////////////////
 static std::atomic<long long> g_total_connections{0};     // total accepted since start
@@ -102,6 +158,10 @@ static std::atomic<long long> g_vsearch_count{0};         // VSEARCH commands
 
 // Controls whether vector operations are written to WAL (durability vs speed)
 static bool g_vector_wal_enabled = true;
+
+// Serialize mutating commands that change in-memory state and the WAL.
+// This keeps snapshot rewrites from racing with concurrent writers.
+static std::mutex g_mutation_mu;
 
 // Start time for uptime calculation
 static auto g_start_time = std::chrono::steady_clock::now();
@@ -184,6 +244,8 @@ static std::string handle_command(
     const std::string& key = parts[1];
     const std::string& val = parts[2];
 
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     // Save to disk first (WAL)
     wal.append_line("SET " + key + " " + val);
 
@@ -205,6 +267,8 @@ static std::string handle_command(
 
     // Convert string -> int
     int ttl = std::stoi(parts[4]);
+
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
 
     wal.append_line("SET " + key + " " + val + " EX " + parts[4]);
 
@@ -238,6 +302,8 @@ static std::string handle_command(
 
     const std::string& key = parts[1];
 
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     wal.append_line("DEL " + key);
 
     bool removed = db.del(key);
@@ -270,18 +336,14 @@ static std::string handle_command(
       return "ERR bad vector\n";
     }
 
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     // Optional: keep dimensions consistent after first insert
     // VectorDB itself enforces "one dims" behavior by storing dims_
     bool inserted = vdb.add_or_update(id, vec);
 
     if (g_vector_wal_enabled) {
-      // Log to WAL (NOTE: this will make wal.log big; OK for MVP)
-      // Build line back exactly (dim + floats)
-      std::string wal_line = "VSET " + id + " " + std::to_string(dim);
-      for (float x : vec) {
-        wal_line += " " + std::to_string(x);
-      }
-      wal.append_line(wal_line);
+      wal.append_line(build_vset_wal_line(id, vec));
     }
 
     return inserted ? "OK new\n" : "OK updated\n";
@@ -296,11 +358,16 @@ static std::string handle_command(
 
     const std::string& id = parts[1];
 
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     bool removed = vdb.remove(id);
 
-    // Log to WAL
     if (g_vector_wal_enabled) {
-      wal.append_line("VDEL " + id);
+      if (removed && vdb.size() == 0) {
+        compact_wal(db, wal, vdb, "VDEL " + id);
+      } else {
+        wal.append_line("VDEL " + id);
+      }
     }
 
     return removed ? "1\n" : "0\n";
@@ -314,10 +381,17 @@ static std::string handle_command(
     g_vdel_prefix_count.fetch_add(1);
 
     const std::string& prefix = parts[1];
+
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     std::size_t removed = vdb.remove_prefix(prefix);
 
     if (g_vector_wal_enabled) {
-      wal.append_line("VDELPREFIX " + prefix);
+      if (removed > 0) {
+        compact_wal(db, wal, vdb, "VDELPREFIX " + prefix);
+      } else {
+        wal.append_line("VDELPREFIX " + prefix);
+      }
     }
 
     return std::to_string(removed) + "\n";
@@ -330,10 +404,12 @@ static std::string handle_command(
 
     g_vclear_count.fetch_add(1);
 
+    std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+
     vdb.clear();
 
     if (g_vector_wal_enabled) {
-      wal.append_line("VCLEAR");
+      compact_wal(db, wal, vdb, "VCLEAR");
     }
 
     return "OK\n";
@@ -433,40 +509,46 @@ static std::string handle_command(
 ////////////////////////////////////////////////////////////
 static void replay_wal(DB& db, const WAL& wal, VectorDB& vdb)
 {
-  for (const auto& line : wal.read_all_lines()) {
+  wal.for_each_line([&db, &vdb](const std::string& line) {
 
     auto parts = split_words(line);
-    if (parts.empty()) continue;
+    if (parts.empty()) return;
 
     // STRING SET
     if (parts.size() == 3 && parts[0] == "SET") {
       db.set(parts[1], parts[2]);
-      continue;
+      return;
     }
 
     // STRING SET with TTL
     if (parts.size() == 5 && parts[0] == "SET" && parts[3] == "EX") {
       int ttl = std::stoi(parts[4]);
       db.set_with_ttl(parts[1], parts[2], ttl);
-      continue;
+      return;
     }
 
     // STRING DEL
     if (parts.size() == 2 && parts[0] == "DEL") {
       db.del(parts[1]);
-      continue;
+      return;
+    }
+
+    // VECTOR VCLEAR
+    if (parts.size() == 1 && parts[0] == "VCLEAR") {
+      vdb.clear();
+      return;
     }
 
     // VECTOR VDEL
     if (parts.size() == 2 && parts[0] == "VDEL") {
       vdb.remove(parts[1]);
-      continue;
+      return;
     }
 
     // VECTOR VDELPREFIX
     if (parts.size() == 2 && parts[0] == "VDELPREFIX") {
       vdb.remove_prefix(parts[1]);
-      continue;
+      return;
     }
 
     // VECTOR VSET
@@ -480,11 +562,11 @@ static void replay_wal(DB& db, const WAL& wal, VectorDB& vdb)
       if (!vec.empty()) {
         vdb.add_or_update(id, vec);
       }
-      continue;
+      return;
     }
 
     // Unknown WAL line: ignore (safe for MVP)
-  }
+  });
 }
 
 ////////////////////////////////////////////////////////////
@@ -498,7 +580,10 @@ void ttl_cleanup_thread(DB& db)
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Remove expired keys
-    db.cleanup_expired();
+    {
+      std::lock_guard<std::mutex> mutation_guard(g_mutation_mu);
+      db.cleanup_expired();
+    }
   }
 }
 
