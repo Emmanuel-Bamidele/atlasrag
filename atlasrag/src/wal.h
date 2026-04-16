@@ -1,6 +1,7 @@
 #pragma once
 // Prevent multiple inclusion
 
+#include <cstdio>    // std::remove, std::rename
 #include <fstream>   // file input/output
 #include <mutex>     // std::mutex, std::lock_guard
 #include <string>    // std::string
@@ -30,7 +31,24 @@ public:
     if (!out.is_open()) return;
 
     out << line << "\n";   // write command
-    out.flush();           // force write to disk
+    out.flush();             // force write to disk
+  }
+
+  // Stream WAL file one line at a time.
+  // This avoids loading very large WAL files into memory all at once.
+  template <typename Fn>
+  void for_each_line(Fn&& fn) const {
+    std::lock_guard<std::mutex> guard(mu_);
+
+    std::ifstream in(path_);
+    if (!in.is_open()) return;
+
+    std::string line;
+    while (std::getline(in, line)) {
+      if (!line.empty()) {
+        fn(line);
+      }
+    }
   }
 
   // Read entire WAL file
@@ -38,19 +56,42 @@ public:
 
     std::vector<std::string> lines;
 
-    std::ifstream in(path_);
-    if (!in.is_open()) return lines;
+    for_each_line([&lines](const std::string& line) {
+      lines.push_back(line);
+    });
 
-    std::string line;
+    return lines;
+  }
 
-    // Read file line-by-line
-    while (std::getline(in, line)) {
-      if (!line.empty()) {
-        lines.push_back(line);
+  // Rewrite the WAL from scratch using the provided snapshot lines.
+  // The rewrite uses a temporary file and then atomically swaps it in.
+  bool rewrite_lines(const std::vector<std::string>& lines) {
+    std::lock_guard<std::mutex> guard(mu_);
+
+    const std::string tmp_path = path_ + ".tmp";
+
+    {
+      std::ofstream out(tmp_path, std::ios::trunc);
+      if (!out.is_open()) return false;
+
+      for (const auto& line : lines) {
+        out << line << "\n";
+      }
+      out.flush();
+
+      if (!out.good()) {
+        out.close();
+        std::remove(tmp_path.c_str());
+        return false;
       }
     }
 
-    return lines;
+    if (std::rename(tmp_path.c_str(), path_.c_str()) != 0) {
+      std::remove(tmp_path.c_str());
+      return false;
+    }
+
+    return true;
   }
 
 private:

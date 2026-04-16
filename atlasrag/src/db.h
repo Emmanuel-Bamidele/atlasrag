@@ -1,14 +1,21 @@
 #pragma once
 // Prevent multiple inclusion
+#include <atomic>          // std::atomic
+#include <chrono>          // time types
 #include <optional>        // std::optional
-#include <shared_mutex>    // std::shared_mutex, std::unique_lock
+#include <shared_mutex>    // std::shared_mutex, std::shared_lock, std::unique_lock
 #include <string>          // std::string
 #include <unordered_map>   // std::unordered_map
-#include <chrono>          // time types
-#include <atomic>          // std::atomic
+#include <vector>          // std::vector
 
 class DB {
 public:
+  struct SnapshotEntry {
+    std::string key;
+    std::string value;
+    std::optional<int> ttl_seconds;
+  };
+
   void set(const std::string& key,
            const std::string& value) {
 
@@ -33,13 +40,9 @@ public:
 
   std::optional<std::string> get(const std::string& key) {
 
-    std::unique_lock lock(mu_);
+    std::shared_lock lock(mu_);
 
-    // If expired -> delete and count it
     if (is_expired_nolock(key)) {
-      kv_.erase(key);
-      expirations_.erase(key);
-      expired_removed_.fetch_add(1); // atomic increment
       return std::nullopt;
     }
 
@@ -72,9 +75,46 @@ public:
     }
   }
 
+  // Build a consistent snapshot of the current string state.
+  // TTL entries are encoded as remaining seconds so the WAL can be compacted
+  // without dropping active expirations.
+  std::vector<SnapshotEntry> snapshot() {
+    std::unique_lock lock(mu_);
+
+    std::vector<SnapshotEntry> entries;
+    entries.reserve(kv_.size());
+
+    const auto now = std::chrono::steady_clock::now();
+
+    for (auto it = kv_.begin(); it != kv_.end();) {
+      auto exp_it = expirations_.find(it->first);
+
+      if (exp_it != expirations_.end() && now > exp_it->second) {
+        expirations_.erase(exp_it);
+        it = kv_.erase(it);
+        expired_removed_.fetch_add(1);
+        continue;
+      }
+
+      SnapshotEntry entry{it->first, it->second, std::nullopt};
+
+      if (exp_it != expirations_.end()) {
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(exp_it->second - now);
+        int ttl = (int)remaining.count();
+        if (ttl <= 0) ttl = 1;
+        entry.ttl_seconds = ttl;
+      }
+
+      entries.push_back(entry);
+      ++it;
+    }
+
+    return entries;
+  }
+
   // How many keys currently exist
   std::size_t size() const {
-    std::unique_lock lock(mu_);   // lock because kv_ can change
+    std::shared_lock lock(mu_);
     return kv_.size();
   }
 
@@ -84,7 +124,7 @@ public:
   }
 
 private:
-  bool is_expired_nolock(const std::string& key) {
+  bool is_expired_nolock(const std::string& key) const {
     auto it = expirations_.find(key);
     if (it == expirations_.end()) return false;
     return std::chrono::steady_clock::now() > it->second;

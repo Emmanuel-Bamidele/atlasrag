@@ -89,8 +89,7 @@ static std::string handle_command(
 //
 static void replay_wal(DB& db, const WAL& wal) {
 
-  for (const auto& line : wal.read_all_lines()) {
-
+  wal.for_each_line([&db](const std::string& line) {
     auto parts = split_words(line);
 
     if (parts.size() == 3 && parts[0] == "SET") {
@@ -99,7 +98,7 @@ static void replay_wal(DB& db, const WAL& wal) {
     else if (parts.size() == 2 && parts[0] == "DEL") {
       db.del(parts[1]);
     }
-  }
+  });
 }
 
 //

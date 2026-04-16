@@ -111,6 +111,21 @@ public:
     dims_ = 0;
   }
 
+  // Return a full copy of the current vector state for WAL compaction.
+  std::vector<std::pair<std::string, std::vector<float>>> snapshot() const
+  {
+    std::shared_lock lock(mu_);
+
+    std::vector<std::pair<std::string, std::vector<float>>> entries;
+    entries.reserve(vectors_.size());
+
+    for (const auto& item : vectors_) {
+      entries.push_back(item);
+    }
+
+    return entries;
+  }
+
   // -------------------------
   // size()
   // -------------------------
