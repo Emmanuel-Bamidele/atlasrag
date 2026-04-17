@@ -6,6 +6,8 @@ This project follows Keep a Changelog principles and uses semantic versioning fo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-17
+
 ### Fixed
 
 - Made the CLI admin test harness independent from saved local CLI config so machine-specific `tenantId` values do not leak into test assertions.

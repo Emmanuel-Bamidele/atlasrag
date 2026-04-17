@@ -1,6 +1,6 @@
 {
   "name": "@supavector/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SupaVector Node.js SDK",
   "license": "MIT",
   "main": "src/index.js",
