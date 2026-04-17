@@ -8,7 +8,18 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "benchmark-jwt-secret";
 
 const __testHooks = require("../hybrid_retrieval");
 
-const fixturePath = path.join(__dirname, "..", "..", "experiments", "fixtures", "hybrid_retrieval_cases.json");
+function resolveFixturePath() {
+  const candidates = [
+    path.join(__dirname, "..", "..", "experiments", "fixtures", "hybrid_retrieval_cases.json"),
+    path.join(__dirname, "..", "experiments", "fixtures", "hybrid_retrieval_cases.json")
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`hybrid retrieval fixture not found; tried: ${candidates.join(", ")}`);
+}
+
+const fixturePath = resolveFixturePath();
 const fixtures = JSON.parse(fs.readFileSync(fixturePath, "utf8")).cases || [];
 
 function buildCandidates(testCase) {
