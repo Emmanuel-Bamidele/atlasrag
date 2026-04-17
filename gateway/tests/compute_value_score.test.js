@@ -1,4 +1,8 @@
 const assert = require("assert");
+
+process.env.COOKIE_SECRET = process.env.COOKIE_SECRET || "test-cookie-secret";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
+
 const { __testHooks } = require("../index");
 
 assert(__testHooks, "expected __testHooks export from gateway/index.js");

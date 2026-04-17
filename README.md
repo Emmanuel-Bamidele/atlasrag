@@ -372,9 +372,21 @@ HYBRID_LEXICAL_MULTIPLIER=2
 HYBRID_LEXICAL_CAP=120
 HYBRID_RERANK_OVERLAP_BOOST=0.12
 HYBRID_RERANK_EXACT_BOOST=0.08
+RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED=1
+MEMORY_RETRIEVAL_RECENCY_WEIGHT=0.3
+MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS=14
 ```
 
-`rrf` is the default fusion mode for hybrid retrieval. It fuses dense vector rank with Postgres full-text rank and keeps exact identifiers more competitive without removing semantic recall. Set `HYBRID_RETRIEVAL_ENABLED=0` to preserve vector-only retrieval behavior, or switch `HYBRID_FUSION_MODE=weighted` to use the legacy normalized score blend.
+`rrf` is the default fusion mode for hybrid retrieval. It fuses dense vector rank with Postgres full-text rank and keeps exact identifiers more competitive without removing semantic recall. Set `HYBRID_RETRIEVAL_ENABLED=0` to preserve vector-only retrieval behavior, or switch `HYBRID_FUSION_MODE=weighted` to use the legacy normalized score blend. `RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED=1` lets obviously freshness-sensitive queries such as "latest incident status" or "current pricing" automatically opt into recency-aware ranking unless the caller explicitly turns it off.
+
+For fixture-driven retrieval quality checks, run:
+
+```bash
+cd gateway
+npm run eval:retrieval
+```
+
+That evaluation harness reports recall@k, MRR, nDCG, latency, and evidence-hit rate from `experiments/fixtures/retrieval_correctness_cases.json`.
 
 Common maintenance checks:
 
@@ -399,6 +411,8 @@ supavector boolean_ask --question "Does SupaVector store memory for agents?" --c
 ```
 
 `search`, `ask`, `code`, `boolean_ask`, and memory recall now use hybrid retrieval by default: dense vector search from the C++ store plus lexical full-text search from Postgres, fused with reciprocal rank fusion. This especially helps short identifiers, SKUs, error codes, and mixed natural-language-plus-identifier queries.
+
+The CLI now exposes the same first-class retrieval filters as the API. Use `--doc-ids`, `--namespace-ids`, `--tags`, `--agent-id`, `--source-type`, `--document-type`, `--since`, `--until`, `--time-field`, and `--favor-recency` on `search`, `ask`, `code`, and `boolean_ask` when retrieval scope matters.
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
@@ -621,7 +635,9 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
 
 Set `"favorRecency": true` when fresher matching evidence should outrank older matches. This is useful for continuously updated facts such as product catalogs, release notes, incident timelines, or chat-state-like memory. Synced Memory sources stamp `syncedAt` automatically, and direct writes can also provide timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
 
-Hybrid retrieval configuration is documented in [docs/hybrid-retrieval.md](docs/hybrid-retrieval.md).
+Search-backed endpoints also accept first-class retrieval filters: `docIds`, `namespaceIds`, `tags`, `agentId`, `sourceTypes`, `documentTypes`, `since`, `until`, and `timeField`. `timeField` defaults to `createdAt`; set it to `freshness` when the time window should use metadata freshness timestamps instead of original ingest time.
+
+Hybrid retrieval configuration is documented in [docs/hybrid-retrieval.md](docs/hybrid-retrieval.md). Filtering, recency scoring, and the evaluation harness are documented in [docs/retrieval-correctness.md](docs/retrieval-correctness.md).
 
 ### 5a. Ask A Code Question
 

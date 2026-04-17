@@ -297,6 +297,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/search?q=memory&k=5&collection=default&polic
 
 Search is hybrid by default: the gateway combines vector retrieval from the C++ store with lexical full-text retrieval from Postgres and fuses the rankings with reciprocal rank fusion. That gives better recall for exact identifiers, error codes, ticket ids, and mixed semantic-plus-exact queries without dropping semantic-only retrieval.
 
+Search, ask, code, boolean_ask, and memory recall now share the same retrieval filter surface: `docIds`, `namespaceIds`, `tags`, `agentId`, `sourceTypes`, `documentTypes`, `since`, `until`, and `timeField`. Use `timeField: "freshness"` when the time window should follow metadata timestamps such as `updatedAt` or `syncedAt` instead of original ingest time.
+
 ### Ask
 
 ```bash
@@ -317,6 +319,8 @@ Add `"favorRecency": true` when newer matching evidence should rank ahead of old
 
 If you operate the server yourself, the main hybrid retrieval flags are `HYBRID_RETRIEVAL_ENABLED`, `HYBRID_FUSION_MODE`, `HYBRID_RRF_K`, `HYBRID_VECTOR_WEIGHT`, and `HYBRID_LEXICAL_WEIGHT`. `HYBRID_RETRIEVAL_ENABLED=0` keeps the prior vector-only behavior.
 
+If you operate the server yourself, `RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED`, `MEMORY_RETRIEVAL_RECENCY_WEIGHT`, and `MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS` control automatic freshness-sensitive ranking. See [`retrieval-correctness.md`](retrieval-correctness.md) for the full filtering and evaluation workflow.
+
 ### Code
 
 ```bash
@@ -334,7 +338,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/code" \
   }'
 ```
 
-`/v1/code` shares the same retrieval controls as `/v1/ask`, including `favorRecency`, but shapes the answer for debugging, structure, review, and implementation guidance.
+`/v1/code` shares the same retrieval controls as `/v1/ask`, including the first-class filters and `favorRecency`, but shapes the answer for debugging, structure, review, and implementation guidance.
 
 ### True/False Only
 

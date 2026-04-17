@@ -65,6 +65,36 @@ const MEMORY_ITEM_STORAGE_BYTES_EXPR = `(
   octet_length(COALESCE(metadata::text, ''))
 )`;
 
+const MEMORY_DOCUMENT_TYPE_SQL = "LOWER(COALESCE(metadata->>'documentType', metadata->>'document_type', metadata->>'docType', metadata->>'doc_type', ''))";
+const FRESHNESS_METADATA_KEYS = [
+  "updatedAt",
+  "updated_at",
+  "lastUpdatedAt",
+  "last_updated_at",
+  "modifiedAt",
+  "modified_at",
+  "publishedAt",
+  "published_at",
+  "effectiveAt",
+  "effective_at",
+  "sourceUpdatedAt",
+  "source_updated_at",
+  "syncedAt",
+  "synced_at",
+  "lastSyncedAt",
+  "last_synced_at"
+];
+const MEMORY_FRESHNESS_SQL = `COALESCE(
+  ${FRESHNESS_METADATA_KEYS.map((key) => `sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'${key}' END)`).join(",\n  ")},
+  created_at
+)`;
+
+function resolveMemoryTimeFieldSql(field = "created_at") {
+  return String(field || "").trim().toLowerCase() === "freshness"
+    ? MEMORY_FRESHNESS_SQL
+    : "created_at";
+}
+
 // Save a chunk row
 async function saveChunk({ chunkId, docId, idx, text }) {
   await pool.query(
@@ -387,11 +417,7 @@ async function upsertMemoryItem({
   return res.rows[0] || { id, namespace_id: namespaceId || id };
 }
 
-async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until, excludeExpired, principalId, privileges, tags, agentId }) {
-  if (!namespaceIds || namespaceIds.length === 0) return new Map();
-
-  const clauses = ["namespace_id = ANY($1)"];
-  const params = [namespaceIds];
+function appendVisibilityClauses(clauses, params, { principalId, privileges } = {}) {
   const aclPrincipals = new Set();
   if (Array.isArray(privileges)) {
     for (const item of privileges) {
@@ -401,30 +427,6 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
   }
   if (principalId) {
     aclPrincipals.add(principalId);
-  }
-
-  if (types && types.length) {
-    params.push(types);
-    clauses.push(`item_type = ANY($${params.length})`);
-  }
-  if (agentId) {
-    params.push(agentId);
-    clauses.push(`agent_id = $${params.length}`);
-  }
-  if (tags && tags.length) {
-    params.push(tags);
-    clauses.push(`tags && $${params.length}`);
-  }
-  if (since) {
-    params.push(since);
-    clauses.push(`created_at >= $${params.length}`);
-  }
-  if (until) {
-    params.push(until);
-    clauses.push(`created_at <= $${params.length}`);
-  }
-  if (excludeExpired) {
-    clauses.push(`(expires_at IS NULL OR expires_at > NOW())`);
   }
   if (principalId || aclPrincipals.size > 0) {
     const visibilityClauses = [
@@ -443,16 +445,185 @@ async function getMemoryItemsByNamespaceIds({ namespaceIds, types, since, until,
     }
     clauses.push(`(${visibilityClauses.join(" OR ")})`);
   }
+}
+
+function buildMemoryItemFilter({
+  tenantId,
+  collection,
+  namespaceIds,
+  externalIds,
+  tier,
+  types,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId
+}) {
+  const clauses = [];
+  const params = [];
+
+  if (tenantId) {
+    params.push(tenantId);
+    clauses.push(`tenant_id = $${params.length}`);
+  }
+  if (collection) {
+    params.push(collection);
+    clauses.push(`collection = $${params.length}`);
+  }
+  if (namespaceIds && namespaceIds.length) {
+    params.push(namespaceIds);
+    clauses.push(`namespace_id = ANY($${params.length})`);
+  }
+  if (externalIds && externalIds.length) {
+    params.push(externalIds);
+    clauses.push(`external_id = ANY($${params.length})`);
+  }
+  if (tier) {
+    params.push(String(tier).trim().toUpperCase());
+    clauses.push(`tier = $${params.length}`);
+  }
+  if (types && types.length) {
+    params.push(types);
+    clauses.push(`item_type = ANY($${params.length})`);
+  }
+  if (sourceTypes && sourceTypes.length) {
+    params.push(sourceTypes.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
+    clauses.push(`LOWER(COALESCE(source_type, '')) = ANY($${params.length})`);
+  }
+  if (documentTypes && documentTypes.length) {
+    params.push(documentTypes.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
+    clauses.push(`${MEMORY_DOCUMENT_TYPE_SQL} = ANY($${params.length})`);
+  }
+  if (agentId) {
+    params.push(agentId);
+    clauses.push(`agent_id = $${params.length}`);
+  }
+  if (tags && tags.length) {
+    params.push(tags);
+    clauses.push(`tags && $${params.length}`);
+  }
+  const timeSql = resolveMemoryTimeFieldSql(timeField);
+  if (since) {
+    params.push(since);
+    clauses.push(`${timeSql} >= $${params.length}`);
+  }
+  if (until) {
+    params.push(until);
+    clauses.push(`${timeSql} <= $${params.length}`);
+  }
+  if (excludeExpired) {
+    clauses.push(`(expires_at IS NULL OR expires_at > NOW())`);
+  }
+  appendVisibilityClauses(clauses, params, { principalId, privileges });
+  return { clauses, params };
+}
+
+async function listMemoryItemsBySelectors({
+  tenantId,
+  collection,
+  namespaceIds,
+  externalIds,
+  tier,
+  types,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId,
+  limit,
+  orderBy = "value"
+}) {
+  const { clauses, params } = buildMemoryItemFilter({
+    tenantId,
+    collection,
+    namespaceIds,
+    externalIds,
+    tier,
+    types,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
+    excludeExpired,
+    principalId,
+    privileges,
+    tags,
+    agentId
+  });
+  const cleanLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
+  if (cleanLimit > 0) {
+    params.push(cleanLimit);
+  }
+  const mode = String(orderBy || "value").trim().toLowerCase();
+  let orderClause = "ORDER BY value_score DESC NULLS LAST, id ASC";
+  if (mode === "lru") {
+    orderClause = "ORDER BY COALESCE(last_used_at, created_at) DESC NULLS LAST, id ASC";
+  } else if (mode === "freshness") {
+    orderClause = `ORDER BY ${resolveMemoryTimeFieldSql("freshness")} DESC NULLS LAST, value_score DESC NULLS LAST, id ASC`;
+  } else if (mode === "created_at") {
+    orderClause = "ORDER BY created_at DESC NULLS LAST, id ASC";
+  }
+  const limitClause = cleanLimit > 0 ? `LIMIT $${params.length}` : "";
+  const whereClause = clauses.length ? clauses.join(" AND ") : "TRUE";
 
   const res = await pool.query(
     `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
      FROM memory_items
-     WHERE ${clauses.join(" AND ")}`,
+     WHERE ${whereClause}
+     ${orderClause}
+     ${limitClause}`,
     params
   );
+  return res.rows;
+}
 
+async function getMemoryItemsByNamespaceIds({
+  tenantId,
+  collection,
+  namespaceIds,
+  types,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  excludeExpired,
+  principalId,
+  privileges,
+  tags,
+  agentId
+}) {
+  if (!namespaceIds || namespaceIds.length === 0) return new Map();
+  const rows = await listMemoryItemsBySelectors({
+    tenantId,
+    collection,
+    namespaceIds,
+    types,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
+    excludeExpired,
+    principalId,
+    privileges,
+    tags,
+    agentId
+  });
   const map = new Map();
-  for (const row of res.rows) {
+  for (const row of rows) {
     map.set(row.namespace_id, row);
   }
   return map;
@@ -469,70 +640,31 @@ function buildTierScopedMemoryFilter({
   principalId,
   privileges,
   tags,
-  agentId
+  agentId,
+  namespaceIds,
+  externalIds,
+  sourceTypes,
+  documentTypes,
+  timeField = "created_at"
 }) {
-  const clauses = ["tenant_id = $1"];
-  const params = [tenantId];
-  const aclPrincipals = new Set();
-  if (Array.isArray(privileges)) {
-    for (const item of privileges) {
-      const clean = String(item || "").trim();
-      if (clean) aclPrincipals.add(clean);
-    }
-  }
-  if (principalId) {
-    aclPrincipals.add(principalId);
-  }
-
-  if (collection) {
-    params.push(collection);
-    clauses.push(`collection = $${params.length}`);
-  }
-  if (tier) {
-    params.push(String(tier).trim().toUpperCase());
-    clauses.push(`tier = $${params.length}`);
-  }
-  if (types && types.length) {
-    params.push(types);
-    clauses.push(`item_type = ANY($${params.length})`);
-  }
-  if (agentId) {
-    params.push(agentId);
-    clauses.push(`agent_id = $${params.length}`);
-  }
-  if (tags && tags.length) {
-    params.push(tags);
-    clauses.push(`tags && $${params.length}`);
-  }
-  if (since) {
-    params.push(since);
-    clauses.push(`created_at >= $${params.length}`);
-  }
-  if (until) {
-    params.push(until);
-    clauses.push(`created_at <= $${params.length}`);
-  }
-  if (excludeExpired) {
-    clauses.push(`(expires_at IS NULL OR expires_at > NOW())`);
-  }
-  if (principalId || aclPrincipals.size > 0) {
-    const visibilityClauses = [
-      "visibility IS NULL",
-      "visibility = 'tenant'"
-    ];
-    if (principalId) {
-      params.push(principalId);
-      const idx = params.length;
-      visibilityClauses.push(`(visibility = 'private' AND principal_id = $${idx})`);
-    }
-    if (aclPrincipals.size > 0) {
-      params.push(Array.from(aclPrincipals));
-      const idx = params.length;
-      visibilityClauses.push(`(visibility = 'acl' AND (principal_id = ANY($${idx}) OR COALESCE(acl_principals, ARRAY[]::TEXT[]) && $${idx}))`);
-    }
-    clauses.push(`(${visibilityClauses.join(" OR ")})`);
-  }
-  return { clauses, params };
+  return buildMemoryItemFilter({
+    tenantId,
+    collection,
+    namespaceIds,
+    externalIds,
+    tier,
+    types,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
+    excludeExpired,
+    principalId,
+    privileges,
+    tags,
+    agentId
+  });
 }
 
 async function listMemoryItemsByTier({
@@ -547,16 +679,26 @@ async function listMemoryItemsByTier({
   privileges,
   tags,
   agentId,
+  namespaceIds,
+  externalIds,
+  sourceTypes,
+  documentTypes,
+  timeField = "created_at",
   limit,
   sample
 }) {
   const { clauses, params } = buildTierScopedMemoryFilter({
     tenantId,
     collection,
+    namespaceIds,
+    externalIds,
     tier,
     types,
+    sourceTypes,
+    documentTypes,
     since,
     until,
+    timeField,
     excludeExpired,
     principalId,
     privileges,
@@ -568,10 +710,11 @@ async function listMemoryItemsByTier({
     params.push(cleanLimit);
   }
   const sampleMode = String(sample || "").trim().toLowerCase();
-  // Keep default ordering index-friendly; optionally switch to recency ordering for LRU-style retrieval experiments.
   const orderBy = sampleMode === "lru"
     ? "ORDER BY COALESCE(last_used_at, created_at) DESC NULLS LAST, id ASC"
-    : "ORDER BY value_score DESC NULLS LAST, id ASC";
+    : (sampleMode === "freshness"
+      ? `ORDER BY ${resolveMemoryTimeFieldSql("freshness")} DESC NULLS LAST, value_score DESC NULLS LAST, id ASC`
+      : "ORDER BY value_score DESC NULLS LAST, id ASC");
   const limitClause = cleanLimit > 0 ? `LIMIT $${params.length}` : "";
   const res = await pool.query(
     `SELECT ${MEMORY_ITEM_SELECT_COLUMNS}
@@ -595,15 +738,25 @@ async function countMemoryItemsByTier({
   principalId,
   privileges,
   tags,
-  agentId
+  agentId,
+  namespaceIds,
+  externalIds,
+  sourceTypes,
+  documentTypes,
+  timeField = "created_at"
 }) {
   const { clauses, params } = buildTierScopedMemoryFilter({
     tenantId,
     collection,
+    namespaceIds,
+    externalIds,
     tier,
     types,
+    sourceTypes,
+    documentTypes,
     since,
     until,
+    timeField,
     excludeExpired,
     principalId,
     privileges,

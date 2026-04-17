@@ -206,7 +206,7 @@
                 <div class="doc-grid">
                   <div class="doc-card">
                     <h3>Index and search</h3>
-                    <p>Ingest raw text, local files through the CLI/UI, or URL content, then retrieve top-k grounded chunks with collection and doc filters.</p>
+                    <p>Ingest raw text, local files through the CLI/UI, or URL content, then retrieve top-k grounded chunks with collection, namespace, source, document-type, tag, and time-window filters.</p>
                   </div>
                   <div class="doc-card">
                     <h3>Grounded answers</h3>
@@ -643,6 +643,9 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   Request-scoped provider-key headers such as <span class="mono">X-OpenAI-API-Key</span>, <span class="mono">X-Gemini-API-Key</span>, and <span class="mono">X-Anthropic-API-Key</span> are supported on sync routes such as docs, search, ask, code, boolean_ask, memory write, and memory recall.
                   They are currently rejected by async <span class="mono">/v1/memory/reflect</span> and <span class="mono">/v1/memory/compact</span>.
                 </p>
+                <p class="hint">
+                  Search, ask, code, boolean ask, and memory recall share the same retrieval filters: <span class="mono">docIds</span>, <span class="mono">namespaceIds</span>, <span class="mono">tags</span>, <span class="mono">agentId</span>, <span class="mono">sourceTypes</span>, <span class="mono">documentTypes</span>, <span class="mono">since</span>, <span class="mono">until</span>, and <span class="mono">timeField</span>. Use <span class="mono">timeField=freshness</span> when the time window should follow metadata timestamps such as <span class="mono">updatedAt</span> or <span class="mono">syncedAt</span>.
+                </p>
                 <ul>
                   <li><span class="mono">/v1/docs</span> index + list documents</li>
                   <li><span class="mono">/v1/docs/url</span> index content from a URL</li>
@@ -723,7 +726,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                       </tr>
                     </tbody>
                   </table>
-                  <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used. Use <span class="mono">favorRecency</span> for continuously updated facts such as product data, release notes, and incident timelines.</p>
+                  <p class="hint"><span class="mono">auto</span> adapts answer size to available evidence. The response includes <span class="mono">data.answerLength</span> with the effective mode used. Use <span class="mono">favorRecency</span> for continuously updated facts such as product data, release notes, and incident timelines. Add <span class="mono">namespaceIds</span>, <span class="mono">sourceTypes</span>, <span class="mono">documentTypes</span>, or <span class="mono">timeField=freshness</span> when retrieval correctness matters more than broad recall.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">POST /v1/code request fields</div>
@@ -775,7 +778,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                       </tr>
                     </tbody>
                   </table>
-                  <p class="hint"><span class="mono">/v1/code</span> shares the same recency controls as ask and search, but shapes the answer for debugging, review, structure, and implementation guidance.</p>
+                  <p class="hint"><span class="mono">/v1/code</span> shares the same retrieval filters and recency controls as ask and search, but shapes the answer for debugging, review, structure, and implementation guidance.</p>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">POST /v1/boolean_ask request fields</div>
@@ -833,7 +836,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                       </tr>
                     </tbody>
                   </table>
-                  <p class="hint">The response <span class="mono">data.answer</span> is always one of <span class="mono">true</span>, <span class="mono">false</span>, or <span class="mono">invalid</span>. The response also includes <span class="mono">data.supportingChunks</span> with the chunk text used for the decision.</p>
+                  <p class="hint">The response <span class="mono">data.answer</span> is always one of <span class="mono">true</span>, <span class="mono">false</span>, or <span class="mono">invalid</span>. The response also includes <span class="mono">data.supportingChunks</span> with the chunk text used for the decision, and it accepts the same retrieval filters as ask/search when the evidence scope should be narrowed.</p>
                 </div>
                 <p class="hint">Response format (v1): all <span class="mono">/v1</span> endpoints return a consistent envelope.</p>
                 <div class="doc-block">
@@ -1068,7 +1071,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Search</div>
-                  <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default&favorRecency=true" \
+                  <pre class="doc-code">curl "http://localhost:3000/v1/search?q=write-ahead%20logging&k=5&collection=default&documentTypes=guide&tags=storage&favorRecency=true&timeField=freshness" \
   -H "X-API-Key: YOUR_SERVICE_TOKEN"</pre>
                 </div>
                 <div class="doc-block">
@@ -1076,21 +1079,21 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How is durability handled?", "k": 7, "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "How is durability handled?", "k": 7, "answerLength": "medium", "policy": "amvl", "sourceTypes": ["url"], "documentTypes": ["guide"], "favorRecency": true, "timeField": "freshness" }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Code</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/code \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Why would newer synced product records rank first here?", "k": 6, "task": "debug", "answerLength": "medium", "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Why would newer synced product records rank first here?", "k": 6, "task": "debug", "answerLength": "medium", "policy": "amvl", "paths": ["src/search.ts"], "favorRecency": true, "timeField": "freshness" }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Boolean ask</div>
                   <pre class="doc-code">curl -X POST http://localhost:3000/v1/boolean_ask \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "Is write-ahead logging enabled?", "k": 7, "policy": "amvl", "favorRecency": true }'</pre>
+  -d '{ "question": "Is write-ahead logging enabled?", "k": 7, "policy": "amvl", "namespaceIds": ["default:docs:wal-guide"], "favorRecency": true }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Delete a document</div>
@@ -1108,7 +1111,7 @@ X-Anthropic-API-Key: YOUR_ANTHROPIC_KEY</pre>
 curl -X POST http://localhost:3000/v1/memory/recall \
   -H "X-API-Key: YOUR_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "query": "release day", "policy": "amvl", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "favorRecency": true, "k": 5 }'</pre>
+  -d '{ "query": "release day", "policy": "amvl", "types": ["semantic"], "tags": ["release"], "agentId": "agent:release-bot", "sourceTypes": ["url"], "documentTypes": ["release-note"], "favorRecency": true, "timeField": "freshness", "k": 5 }'</pre>
                 </div>
                 <div class="doc-block">
                   <div class="doc-label">Memory feedback</div>
@@ -1124,7 +1127,7 @@ curl -X POST http://localhost:3000/v1/memory/recall \
   -H "Content-Type: application/json" \
   -d '{ "memoryId": "mem_123", "eventType": "task_success", "eventValue": 0.9 }'</pre>
                 </div>
-                <p class="hint">Recall filters support <span class="mono">types</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, <span class="mono">collection</span>, and optional <span class="mono">favorRecency</span> when fresher matches should rank first.</p>
+                <p class="hint">Recall filters support <span class="mono">types</span>, <span class="mono">namespaceIds</span>, time range (<span class="mono">since</span>/<span class="mono">until</span>), <span class="mono">tags</span>, <span class="mono">agentId</span>, <span class="mono">sourceTypes</span>, <span class="mono">documentTypes</span>, <span class="mono">timeField</span>, <span class="mono">collection</span>, and optional <span class="mono">favorRecency</span> when fresher matches should rank first.</p>
                 <p class="hint">Supported memory types: <span class="mono">artifact</span>, <span class="mono">semantic</span>, <span class="mono">procedural</span>, <span class="mono">episodic</span>, <span class="mono">conversation</span>, <span class="mono">summary</span>.</p>
                 <p class="hint">Optional memory <span class="mono">policy</span> values are <span class="mono">amvl</span>, <span class="mono">ttl</span>, and <span class="mono">lru</span>. If omitted, Supavector uses <span class="mono">amvl</span>.</p>
                 <div class="doc-block">

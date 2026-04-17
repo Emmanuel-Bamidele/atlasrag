@@ -118,3 +118,27 @@ npm run benchmark:hybrid
 ```
 
 This compares legacy weighted score fusion against the default reciprocal rank fusion on the curated fixture set in `experiments/fixtures/hybrid_retrieval_cases.json`.
+
+## Retrieval Correctness Evaluation Harness
+
+For the Phase 2 retrieval correctness fixture, run:
+
+```bash
+cd gateway
+npm run eval:retrieval
+```
+
+This evaluates the curated fixture set in `experiments/fixtures/retrieval_correctness_cases.json` and reports:
+
+- recall@k
+- MRR
+- nDCG@k
+- average / p50 / p95 latency
+- evidence-hit rate
+
+Use JSON output when you want to diff or archive results:
+
+```bash
+cd gateway
+node scripts/evaluate_retrieval.js --json
+```

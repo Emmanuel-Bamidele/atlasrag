@@ -96,6 +96,17 @@ Common flags:
   --collection NAME            Override collection scope; folder writes use folder name if omitted
   --replace                    Replace matching docs before re-indexing
   --sync                       Reconcile a folder collection to exactly match local files
+  --doc-ids a,b                Restrict retrieval to specific document ids
+  --namespace-ids a,b          Restrict retrieval to fully-qualified namespace ids
+  --tags a,b                   Require tag overlap during retrieval
+  --agent-id ID                Restrict retrieval to one agent-scoped source
+  --source-type TYPE[,TYPE]    Restrict retrieval by sourceType
+  --document-type TYPE[,TYPE]  Restrict retrieval by metadata documentType
+  --since ISO_TIMESTAMP        Apply a lower time bound during retrieval
+  --until ISO_TIMESTAMP        Apply an upper time bound during retrieval
+  --time-field createdAt|freshness
+                               Choose created_at or metadata freshness timestamps for since/until
+  --favor-recency true|false   Prefer fresher matching evidence when ranking
   --restart                    Restart the local AtlasRAG stack after changing local settings
   --yes                        Skip destructive action confirmation prompts
   --json                       Print JSON output where supported
@@ -2339,6 +2350,67 @@ function parseListFlag(value) {
     .filter(Boolean);
 }
 
+function maybeCliStringFlag(parsed, ...names) {
+  for (const name of names) {
+    const value = getFlag(parsed, name);
+    if (value === undefined) continue;
+    if (value === true) {
+      throw new Error(`--${name} requires a value.`);
+    }
+    return String(value).trim();
+  }
+  return undefined;
+}
+
+function maybeCliBooleanFlag(parsed, ...names) {
+  for (const name of names) {
+    const value = getFlag(parsed, name);
+    if (value === undefined) continue;
+    return boolFromFlag(value, value === true);
+  }
+  return undefined;
+}
+
+function buildRetrievalParams(parsed, overrides = {}) {
+  const params = {
+    policy: getFlag(parsed, "policy"),
+    docIds: parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds")),
+    namespaceIds: parseListFlag(getFlag(parsed, "namespace-ids") || getFlag(parsed, "namespaceIds")),
+    tags: parseListFlag(getFlag(parsed, "tags")),
+    agentId: maybeCliStringFlag(parsed, "agent-id"),
+    sourceTypes: parseListFlag(
+      getFlag(parsed, "source-types")
+      || getFlag(parsed, "source-type")
+      || getFlag(parsed, "sourceType")
+      || getFlag(parsed, "source")
+    ),
+    documentTypes: parseListFlag(
+      getFlag(parsed, "document-types")
+      || getFlag(parsed, "document-type")
+      || getFlag(parsed, "documentTypes")
+      || getFlag(parsed, "documentType")
+      || getFlag(parsed, "doc-types")
+      || getFlag(parsed, "doc-type")
+      || getFlag(parsed, "docType")
+    ),
+    since: maybeCliStringFlag(parsed, "since"),
+    until: maybeCliStringFlag(parsed, "until"),
+    timeField: maybeCliStringFlag(parsed, "time-field", "timeField"),
+    favorRecency: maybeCliBooleanFlag(parsed, "favor-recency", "favorRecency")
+  };
+  const merged = { ...params, ...overrides };
+  for (const key of Object.keys(merged)) {
+    if (merged[key] === undefined) {
+      delete merged[key];
+      continue;
+    }
+    if (Array.isArray(merged[key]) && merged[key].length === 0) {
+      delete merged[key];
+    }
+  }
+  return merged;
+}
+
 function resolveEffectiveCollection(client, payload) {
   return payload?.meta?.collection || client.collection || "default";
 }
@@ -2749,9 +2821,7 @@ async function handleSearch(parsed) {
   if (!Number.isFinite(k) || k <= 0) {
     throw new Error("search requires --k to be a positive integer.");
   }
-  const policy = getFlag(parsed, "policy");
-  const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.search(query, { k, policy, docIds });
+  const payload = await client.search(query, buildRetrievalParams(parsed, { k }));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2784,7 +2854,6 @@ async function handleAsk(parsed) {
   if (!Number.isFinite(k) || k <= 0) {
     throw new Error("ask requires --k to be a positive integer.");
   }
-  const policy = getFlag(parsed, "policy");
   const answerLength = String(getFlag(parsed, "answer-length") || getFlag(parsed, "answerLength") || "auto");
   const provider = (() => {
     const raw = getFlag(parsed, "provider") ?? getFlag(parsed, "answer-provider");
@@ -2797,15 +2866,12 @@ async function handleAsk(parsed) {
     "",
     { allowInherit: false, kind: "generation" }
   );
-  const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.ask(question, {
+  const payload = await client.ask(question, buildRetrievalParams(parsed, {
     k,
-    policy,
     answerLength,
-    docIds,
     provider: provider || undefined,
     model: model || undefined
-  });
+  }));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
@@ -2843,7 +2909,6 @@ async function handleBooleanAsk(parsed) {
   if (!Number.isFinite(k) || k <= 0) {
     throw new Error("boolean_ask requires --k to be a positive integer.");
   }
-  const policy = getFlag(parsed, "policy");
   const provider = (() => {
     const raw = getFlag(parsed, "provider") ?? getFlag(parsed, "boolean-ask-provider");
     if (raw === undefined) return "";
@@ -2855,14 +2920,11 @@ async function handleBooleanAsk(parsed) {
     "",
     { allowInherit: false, kind: "generation" }
   );
-  const docIds = parseListFlag(getFlag(parsed, "doc-ids") || getFlag(parsed, "docIds"));
-  const payload = await client.booleanAsk(question, {
+  const payload = await client.booleanAsk(question, buildRetrievalParams(parsed, {
     k,
-    policy,
-    docIds,
     provider: provider || undefined,
     model: model || undefined
-  });
+  }));
 
   if (boolFromFlag(getFlag(parsed, "json"), false)) {
     console.log(JSON.stringify(payload, null, 2));
