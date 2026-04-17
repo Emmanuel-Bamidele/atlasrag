@@ -15,8 +15,18 @@ const {
   matchesRetrievalFilters
 } = require("../retrieval_planner");
 
-const fixturePath = path.join(__dirname, "..", "..", "experiments", "fixtures", "retrieval_correctness_cases.json");
-const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+function resolveFixturePath() {
+  const candidates = [
+    path.join(__dirname, "..", "..", "experiments", "fixtures", "retrieval_correctness_cases.json"),
+    path.join(__dirname, "..", "experiments", "fixtures", "retrieval_correctness_cases.json")
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`retrieval correctness fixture not found; tried: ${candidates.join(", ")}`);
+}
+
+const fixture = JSON.parse(fs.readFileSync(resolveFixturePath(), "utf8"));
 
 function testTenantIsolationFixture() {
   const testCase = fixture.cases.find((item) => item.name === "tenant_isolation_exact_identifier");
