@@ -6,6 +6,8 @@ This project follows Keep a Changelog principles and uses semantic versioning fo
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-17
+
 ### Added
 
 - Phase 2 retrieval correctness improvements: first-class retrieval filters for namespace, source type, document type, tags, agent-scoped sources, and configurable time windows across search-backed endpoints.
