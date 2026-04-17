@@ -295,6 +295,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/search?q=memory&k=5&collection=default&polic
   -H "X-API-Key: ${SUPAVECTOR_API_KEY}"
 ```
 
+Search is hybrid by default: the gateway combines vector retrieval from the C++ store with lexical full-text retrieval from Postgres and fuses the rankings with reciprocal rank fusion. That gives better recall for exact identifiers, error codes, ticket ids, and mixed semantic-plus-exact queries without dropping semantic-only retrieval.
+
 ### Ask
 
 ```bash
@@ -312,6 +314,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
 ```
 
 Add `"favorRecency": true` when newer matching evidence should rank ahead of older chunks. This is especially useful for continuously updated facts such as product catalogs, release notes, incident timelines, and conversation-like state. Synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+If you operate the server yourself, the main hybrid retrieval flags are `HYBRID_RETRIEVAL_ENABLED`, `HYBRID_FUSION_MODE`, `HYBRID_RRF_K`, `HYBRID_VECTOR_WEIGHT`, and `HYBRID_LEXICAL_WEIGHT`. `HYBRID_RETRIEVAL_ENABLED=0` keeps the prior vector-only behavior.
 
 ### Code
 

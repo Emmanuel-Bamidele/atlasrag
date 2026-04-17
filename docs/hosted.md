@@ -203,6 +203,8 @@ If you are self-hosting or automating outside the browser session, use the under
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is especially useful for continuously updated facts such as company product data, release notes, incident timelines, and conversation-like state. Hosted synced sources attach `syncedAt` automatically, and direct writes can also include timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
 
+Hosted retrieval is hybrid by default. SupaVector combines semantic vector retrieval with lexical full-text retrieval and fuses the rankings with reciprocal rank fusion, which makes exact identifiers and mixed identifier-plus-natural-language lookups more reliable without sacrificing semantic-only recall.
+
 The hosted instance supplies the AI provider by default. If you send a matching request-scoped provider key such as `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync routes, the request can use your provider key instead of the hosted default. On hosted deployments, that changes AI generation billing for that request, but it does not move storage out of SupaVector-hosted infrastructure.
 
 ## Using Your Own Provider Key On Hosted

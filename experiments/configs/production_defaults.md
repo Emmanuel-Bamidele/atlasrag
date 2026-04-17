@@ -29,6 +29,15 @@ This file records the default policy-relevant settings used by experiments. Sour
 - `MEMORY_NEGATIVE_STEP=0.08`
 - `MEMORY_RECENCY_HALFLIFE_DAYS=30`
 - `MEMORY_VALUE_DECAY_LAMBDA=ln(2)/halflife_days` (default `~0.0231`)
+- `HYBRID_RETRIEVAL_ENABLED=1`
+- `HYBRID_FUSION_MODE=rrf`
+- `HYBRID_RRF_K=60`
+- `HYBRID_VECTOR_WEIGHT=0.72`
+- `HYBRID_LEXICAL_WEIGHT=0.28`
+- `HYBRID_LEXICAL_MULTIPLIER=2`
+- `HYBRID_LEXICAL_CAP=120`
+- `HYBRID_RERANK_OVERLAP_BOOST=0.12`
+- `HYBRID_RERANK_EXACT_BOOST=0.08`
 
 ## TTL baseline override (experiment only)
 
@@ -50,3 +59,4 @@ Config file: `experiments/configs/policies/lru_baseline.json`
 
 - No production default files are modified by this experiment harness.
 - All experiment behavior changes are applied only via per-run env override files generated under `experiments/runs/<suite_id>/<run>/compose.env`.
+- Hybrid retrieval benchmark fixtures live in `experiments/fixtures/hybrid_retrieval_cases.json` and can be exercised with `cd gateway && npm run benchmark:hybrid`.

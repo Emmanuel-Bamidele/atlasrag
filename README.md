@@ -1,6 +1,6 @@
 # SupaVector
 
-SupaVector is the retrieval and memory backend behind AI apps, agents, and internal tools. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest data, search it, ask grounded questions, and manage long-term memory through one API.
+SupaVector is the retrieval and memory backend behind AI apps, agents, and internal tools. It combines a C++ vector store, a Node.js gateway, and Postgres-backed metadata/auth/jobs so teams can ingest data, run hybrid vector plus lexical retrieval, ask grounded questions, and manage long-term memory through one API.
 
 Open-source repo scope: self-hosted runtime, CLI, and SDKs. If you are using a running SupaVector deployment instead of operating the server yourself, start with the hosted/shared-deployment guides and the SDKs.
 
@@ -360,6 +360,22 @@ Fresh CLI-managed installs write `EMBED_MODEL=text-embedding-3-large` by default
 On startup, SupaVector now also rebuilds vectors automatically when it detects a vector-count or vector-dimension mismatch against the stored chunks for the current embedding model.
 The GPT-5 presets are supported for `ask`, `boolean_ask`, reflect, and compaction. SupaVector omits unsupported `temperature` parameters automatically for those models.
 
+Hybrid retrieval defaults you can change in the env:
+
+```env
+HYBRID_RETRIEVAL_ENABLED=1
+HYBRID_FUSION_MODE=rrf
+HYBRID_RRF_K=60
+HYBRID_VECTOR_WEIGHT=0.72
+HYBRID_LEXICAL_WEIGHT=0.28
+HYBRID_LEXICAL_MULTIPLIER=2
+HYBRID_LEXICAL_CAP=120
+HYBRID_RERANK_OVERLAP_BOOST=0.12
+HYBRID_RERANK_EXACT_BOOST=0.08
+```
+
+`rrf` is the default fusion mode for hybrid retrieval. It fuses dense vector rank with Postgres full-text rank and keeps exact identifiers more competitive without removing semantic recall. Set `HYBRID_RETRIEVAL_ENABLED=0` to preserve vector-only retrieval behavior, or switch `HYBRID_FUSION_MODE=weighted` to use the legacy normalized score blend.
+
 Common maintenance checks:
 
 ```bash
@@ -381,6 +397,8 @@ supavector search --q "memory for agents" --collection local-demo --k 5
 supavector ask --question "What does SupaVector store?" --collection local-demo
 supavector boolean_ask --question "Does SupaVector store memory for agents?" --collection local-demo
 ```
+
+`search`, `ask`, `code`, `boolean_ask`, and memory recall now use hybrid retrieval by default: dense vector search from the C++ store plus lexical full-text search from Postgres, fused with reciprocal rank fusion. This especially helps short identifiers, SKUs, error codes, and mixed natural-language-plus-identifier queries.
 
 You can also ingest a whole folder of supported files. The CLI reads plain text files directly and extracts text from `.pdf` and `.docx` files before indexing. If you omit `--collection`, the folder name becomes the collection name:
 
@@ -581,6 +599,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/docs" \
 
 `/v1/docs` stays text-first by default. If you are sending source code directly, you can also include optional fields such as `sourceType`, `title`, `sourceUrl`, and `metadata`. Set `"sourceType":"code"` only when the payload is actually code and you want code-aware chunking for that document.
 
+`GET /v1/search` and the retrieval step behind `ask`, `code`, `boolean_ask`, and memory recall use hybrid retrieval by default. Exact identifiers and quoted terms can surface through Postgres lexical search even when the embedding signal is weak, while semantic-only queries still retain vector recall.
+
 ### 5. Ask A Question From Your App Or Agent
 
 ```bash
@@ -600,6 +620,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
 `provider` and `model` are optional. Use them when one request should use a different generation provider/model without changing the tenant default.
 
 Set `"favorRecency": true` when fresher matching evidence should outrank older matches. This is useful for continuously updated facts such as product catalogs, release notes, incident timelines, or chat-state-like memory. Synced Memory sources stamp `syncedAt` automatically, and direct writes can also provide timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+Hybrid retrieval configuration is documented in [docs/hybrid-retrieval.md](docs/hybrid-retrieval.md).
 
 ### 5a. Ask A Code Question
 

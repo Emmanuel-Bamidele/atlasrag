@@ -47,9 +47,9 @@ SupaVector expects standard Postgres behavior including:
 - `ON CONFLICT`
 - `JSONB`
 - array columns
-- full-text search via `to_tsvector` and `websearch_to_tsquery`
+- full-text search via `to_tsvector` and `websearch_to_tsquery` for the lexical side of hybrid retrieval
 
-You do not need a separate vector extension for SupaVector's current architecture because vector storage is handled by the bundled vector service, not by Postgres.
+You do not need a separate vector extension for SupaVector's current architecture because vector storage is handled by the bundled vector service, not by Postgres. Postgres provides the lexical retrieval half of the default hybrid search path.
 
 ## Minimum Runtime Env
 

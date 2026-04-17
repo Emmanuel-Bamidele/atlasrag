@@ -7,6 +7,15 @@ const net = require("net");
 
 const { embedTexts, resolveEmbedDimension } = require("./ai");
 const { chunkText } = require("./chunk");
+const {
+  normalizeRangeScore,
+  resolveHybridFusionMode,
+  resolveHybridFusionWeights,
+  tokenizeForRerank,
+  computeTokenOverlapScore,
+  reciprocalRankContribution,
+  rankSearchCandidates
+} = require("./hybrid_retrieval");
 const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
@@ -490,6 +499,8 @@ const CHUNK_OVERLAP_TOKENS = parseInt(process.env.CHUNK_OVERLAP_TOKENS || "40", 
 const CODE_CHUNK_MAX_TOKENS = parseInt(process.env.CODE_CHUNK_MAX_TOKENS || "360", 10);
 const CODE_CHUNK_OVERLAP_TOKENS = parseInt(process.env.CODE_CHUNK_OVERLAP_TOKENS || "72", 10);
 const HYBRID_RETRIEVAL_ENABLED = process.env.HYBRID_RETRIEVAL_ENABLED !== "0";
+const HYBRID_FUSION_MODE = resolveHybridFusionMode(process.env.HYBRID_FUSION_MODE || "rrf");
+const HYBRID_RRF_K = parseInt(process.env.HYBRID_RRF_K || "60", 10);
 const HYBRID_VECTOR_WEIGHT = parseFloat(process.env.HYBRID_VECTOR_WEIGHT || "0.72");
 const HYBRID_LEXICAL_WEIGHT = parseFloat(process.env.HYBRID_LEXICAL_WEIGHT || "0.28");
 const HYBRID_LEXICAL_MULTIPLIER = parseInt(process.env.HYBRID_LEXICAL_MULTIPLIER || "2", 10);
@@ -4445,13 +4456,6 @@ function clampNumber(value, min, max) {
   return n;
 }
 
-function normalizeRangeScore(value, min, max) {
-  if (!Number.isFinite(value)) return 0;
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return 0;
-  if (max <= min) return 1;
-  return (value - min) / (max - min);
-}
-
 function normalizeTier(tier, fallback = "WARM") {
   const clean = String(tier || "").trim().toUpperCase();
   if (clean === "HOT" || clean === "WARM" || clean === "COLD") return clean;
@@ -4547,24 +4551,6 @@ function emitTierTransitionTelemetry(item, fromTier, toTier, details = {}, conte
     source: context.source || "tier_transition",
     requestId: context.requestId || null
   });
-}
-
-function tokenizeForRerank(text) {
-  return String(text || "")
-    .toLowerCase()
-    .match(/[a-z0-9_]+/g) || [];
-}
-
-function computeTokenOverlapScore(queryTokens, text) {
-  if (!queryTokens || queryTokens.length === 0) return 0;
-  const textTokens = new Set(tokenizeForRerank(text));
-  if (textTokens.size === 0) return 0;
-
-  let hits = 0;
-  for (const token of queryTokens) {
-    if (textTokens.has(token)) hits += 1;
-  }
-  return hits / queryTokens.length;
 }
 
 function buildChunkingOptions() {
@@ -5682,7 +5668,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   }
 
   const candidates = new Map();
-  function addCandidate(row, vectorScore, lexicalScore) {
+  function addCandidate(row, vectorScore, lexicalScore, vectorRank, lexicalRank) {
     if (!row?.chunk_id || !row?.doc_id) return;
     const parsed = parseNamespacedDocId(row.doc_id);
     if (!parsed || parsed.tenantId !== tenantId) return;
@@ -5695,7 +5681,9 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
       parsed,
       memory: null,
       vectorScore: null,
-      lexicalScore: null
+      lexicalScore: null,
+      vectorRank: null,
+      lexicalRank: null
     };
     existing.row = row;
     existing.parsed = parsed;
@@ -5705,98 +5693,51 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
         ? Math.max(existing.vectorScore, vectorScore)
         : vectorScore;
     }
+    if (Number.isFinite(vectorRank)) {
+      existing.vectorRank = Number.isFinite(existing.vectorRank)
+        ? Math.min(existing.vectorRank, vectorRank)
+        : vectorRank;
+    }
     if (Number.isFinite(lexicalScore)) {
       existing.lexicalScore = Number.isFinite(existing.lexicalScore)
         ? Math.max(existing.lexicalScore, lexicalScore)
         : lexicalScore;
     }
+    if (Number.isFinite(lexicalRank)) {
+      existing.lexicalRank = Number.isFinite(existing.lexicalRank)
+        ? Math.min(existing.lexicalRank, lexicalRank)
+        : lexicalRank;
+    }
     candidates.set(key, existing);
   }
 
-  for (const match of denseMatches) {
+  for (let index = 0; index < denseMatches.length; index += 1) {
+    const match = denseMatches[index];
     const row = denseChunkMap.get(match.id);
     if (!row) continue;
-    addCandidate(row, match.score, null);
+    addCandidate(row, match.score, null, index + 1, null);
   }
-  for (const row of lexicalRows) {
-    addCandidate(row, null, Number(row.lexical_score));
+  for (let index = 0; index < lexicalRows.length; index += 1) {
+    const row = lexicalRows[index];
+    addCandidate(row, null, Number(row.lexical_score), null, index + 1);
   }
-
-  const denseScores = [];
-  const lexicalScores = [];
-  for (const candidate of candidates.values()) {
-    if (Number.isFinite(candidate.vectorScore)) denseScores.push(candidate.vectorScore);
-    if (Number.isFinite(candidate.lexicalScore)) lexicalScores.push(candidate.lexicalScore);
-  }
-  const denseMin = denseScores.length ? Math.min(...denseScores) : 0;
-  const denseMax = denseScores.length ? Math.max(...denseScores) : 0;
-  const lexicalMin = lexicalScores.length ? Math.min(...lexicalScores) : 0;
-  const lexicalMax = lexicalScores.length ? Math.max(...lexicalScores) : 0;
 
   const useHybrid = HYBRID_RETRIEVAL_ENABLED;
-  let vectorWeight = useHybrid ? clampNumber(HYBRID_VECTOR_WEIGHT, 0, 1) : 1;
-  let lexicalWeight = useHybrid ? clampNumber(HYBRID_LEXICAL_WEIGHT, 0, 1) : 0;
-  if ((vectorWeight + lexicalWeight) === 0) {
-    vectorWeight = 1;
-    lexicalWeight = 0;
-  }
-  const totalWeight = vectorWeight + lexicalWeight;
-  vectorWeight /= totalWeight;
-  lexicalWeight /= totalWeight;
-
-  const overlapBoostScale = clampNumber(HYBRID_RERANK_OVERLAP_BOOST, 0, 1);
-  const exactBoostScale = clampNumber(HYBRID_RERANK_EXACT_BOOST, 0, 1);
-  const recencyWeight = clampNumber(MEMORY_RETRIEVAL_RECENCY_WEIGHT, 0, 0.8);
-  const applyRerank = useHybrid;
-  const cleanQuery = String(query || "").trim().toLowerCase();
-  const queryTokens = tokenizeForRerank(cleanQuery);
-  const recencyNow = Date.now();
-
-  const ranked = Array.from(candidates.values()).map((candidate) => {
-    const vectorNorm = Number.isFinite(candidate.vectorScore)
-      ? normalizeRangeScore(candidate.vectorScore, denseMin, denseMax)
-      : 0;
-    const lexicalNorm = Number.isFinite(candidate.lexicalScore)
-      ? normalizeRangeScore(candidate.lexicalScore, lexicalMin, lexicalMax)
-      : 0;
-    const overlapScore = applyRerank ? computeTokenOverlapScore(queryTokens, candidate.row.text) : 0;
-    const hasExactMatch = applyRerank && cleanQuery.length >= 8 && String(candidate.row.text || "").toLowerCase().includes(cleanQuery);
-    const fusedScore = (vectorNorm * vectorWeight)
-      + (lexicalNorm * lexicalWeight)
-      + (overlapScore * overlapBoostScale)
-      + (hasExactMatch ? exactBoostScale : 0);
-    const recencyMode = determineRecencyBoostMode({
-      explicitFavorRecency: favorRecency,
-      memory: candidate.memory,
-      candidateTypes
-    });
-    const recencyScore = recencyMode === "off"
-      ? 0
-      : computeMemoryRetrievalRecencyScore(candidate.memory, recencyNow, MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS);
-    const finalScore = recencyMode === "off"
-      ? fusedScore
-      : ((fusedScore * (1 - recencyWeight)) + (recencyScore * recencyWeight));
-
-    return {
-      ...candidate,
-      fusedScore,
-      recencyMode,
-      recencyScore,
-      finalScore
-    };
-  });
-
-  ranked.sort((a, b) => {
-    if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
-    if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore;
-    if (b.recencyScore !== a.recencyScore) return b.recencyScore - a.recencyScore;
-    const av = Number.isFinite(a.vectorScore) ? a.vectorScore : -Infinity;
-    const bv = Number.isFinite(b.vectorScore) ? b.vectorScore : -Infinity;
-    if (bv !== av) return bv - av;
-    const al = Number.isFinite(a.lexicalScore) ? a.lexicalScore : -Infinity;
-    const bl = Number.isFinite(b.lexicalScore) ? b.lexicalScore : -Infinity;
-    if (bl !== al) return bl - al;
-    return (a.row.idx || 0) - (b.row.idx || 0);
+  const ranked = rankSearchCandidates(Array.from(candidates.values()), {
+    query,
+    useHybrid,
+    fusionMode: HYBRID_FUSION_MODE,
+    vectorWeight: HYBRID_VECTOR_WEIGHT,
+    lexicalWeight: HYBRID_LEXICAL_WEIGHT,
+    rankConstant: HYBRID_RRF_K,
+    overlapBoostScale: HYBRID_RERANK_OVERLAP_BOOST,
+    exactBoostScale: HYBRID_RERANK_EXACT_BOOST,
+    favorRecency,
+    candidateTypes,
+    recencyWeight: MEMORY_RETRIEVAL_RECENCY_WEIGHT,
+    recencyHalfLifeDays: MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS,
+    determineRecencyBoostMode,
+    computeMemoryRetrievalRecencyScore
   });
 
   const results = ranked.slice(0, topK).map((candidate) => ({
@@ -14307,6 +14248,13 @@ module.exports = {
     isVectorCommandReplyOk,
     runBatchedCommandSet,
     buildSearchPreview,
+    resolveHybridFusionMode,
+    resolveHybridFusionWeights,
+    reciprocalRankContribution,
+    rankSearchCandidates,
+    normalizeRangeScore,
+    tokenizeForRerank,
+    computeTokenOverlapScore,
     normalizeTier,
     resolveTierThresholds,
     resolveTierForValue,

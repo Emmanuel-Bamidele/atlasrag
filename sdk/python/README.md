@@ -188,6 +188,8 @@ You can set a default principal on the client with `set_principal()`, but the se
 Reflection jobs accept `docId`, `artifactId`, or `conversationId` as the source.
 Memory writes accept `agentId`, `tags` (array of strings), `importanceHint`, `pinned`, and `policy` (`amvl`, `ttl`, or `lru`; defaults to `amvl`).
 Ask, code, and boolean_ask requests also accept `provider` and `model` for a per-request generation override. Search, ask, code, boolean_ask, and memory recall also accept `favorRecency` when fresher matching evidence should rank ahead of older matches. Memory recall requests accept `policy` to choose retrieval mode per request.
+
+Search-backed endpoints use SupaVector hybrid retrieval by default: vector retrieval plus lexical full-text retrieval fused with reciprocal rank fusion. This improves exact identifiers and mixed natural-language-plus-identifier queries without requiring client changes.
 Reflection and compaction requests accept `policy` for the memories they create.
 Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
