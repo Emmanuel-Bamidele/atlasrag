@@ -2,6 +2,8 @@
 
 This note describes the Phase 1 retrieval change shipped in SupaVector.
 
+Phase 2 retrieval correctness work builds on this baseline with first-class filters, freshness-aware time windows, and a fixture-driven evaluation harness. See [`retrieval-correctness.md`](retrieval-correctness.md) for those additions.
+
 ## Flow
 
 1. `searchChunks(...)` embeds the query and builds the tenant-scoped candidate set from memory policy gating.

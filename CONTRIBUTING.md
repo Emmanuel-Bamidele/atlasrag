@@ -43,6 +43,7 @@ Gateway-only work can be done from `gateway/`:
 cd gateway
 npm ci
 npm run test:unit
+npm run eval:retrieval
 ```
 
 If the full stack is running, also run:
@@ -60,6 +61,7 @@ Run the smallest test set that matches your change:
 - Docs-only changes: verify the edited docs manually and make sure commands, file paths, and links still match the repository.
 - CLI or root workflow changes: run `npm run test:cli` from the repository root.
 - Gateway behavior changes: run `npm run test:prepush` from the repository root.
+- Retrieval ranking/filtering changes: also run `cd gateway && npm run eval:retrieval`.
 - Installer, onboarding, or quickstart-path changes: also run `npm run test:quickstart-smoke`.
 - Public OSS packaging, install, or release-path changes: also run `npm run test:oss-smoke`.
 

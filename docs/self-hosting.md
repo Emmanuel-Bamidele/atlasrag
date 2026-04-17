@@ -141,6 +141,16 @@ HYBRID_RERANK_EXACT_BOOST=0.08
 
 Hybrid retrieval is on by default for search, ask, code, boolean_ask, and memory recall. `rrf` fuses dense vector rank from the vector store with lexical rank from Postgres full-text search. Set `HYBRID_RETRIEVAL_ENABLED=0` to keep vector-only ranking, or switch `HYBRID_FUSION_MODE=weighted` to use the legacy normalized score fusion.
 
+For freshness-sensitive queries, you can also tune:
+
+```env
+RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED=1
+MEMORY_RETRIEVAL_RECENCY_WEIGHT=0.3
+MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS=14
+```
+
+Search-backed endpoints now accept the same filter surface: `docIds`, `namespaceIds`, `tags`, `agentId`, `sourceTypes`, `documentTypes`, `since`, `until`, and `timeField`.
+
 Useful optional values:
 
 - `PUBLIC_BASE_URL`
@@ -239,6 +249,8 @@ Set `"favorRecency": true` when newer matching evidence should outrank older mat
 
 The default retrieval path is hybrid, not vector-only: semantic vector matches and lexical full-text matches are fused before recency is applied. This improves exact identifiers and mixed identifier-plus-natural-language lookups while keeping semantic-only queries working the same way.
 
+If you need the time range to follow freshness metadata instead of ingest time, send `"timeField":"freshness"` together with `since` / `until`.
+
 ### 7a. Ask A Code Question
 
 ```bash
@@ -256,7 +268,7 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/code" \
   }'
 ```
 
-`/v1/code` accepts the same retrieval controls as `/v1/ask`, including `favorRecency`, but returns code-aware grounded answers for debugging, review, structure, and implementation guidance.
+`/v1/code` accepts the same retrieval controls as `/v1/ask`, including first-class filters and `favorRecency`, but returns code-aware grounded answers for debugging, review, structure, and implementation guidance.
 
 On the CLI, `supavector ask --model ...` and `supavector boolean_ask --model ...` also accept the same numbered shortcuts shown by `supavector changemodel`. The live preset catalog is available from `GET /v1/models`.
 

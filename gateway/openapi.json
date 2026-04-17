@@ -817,6 +817,14 @@
             "type": "boolean",
             "description": "When true, retrieval applied an additional freshness bias."
           },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "freshness"
+            ],
+            "description": "Time field used for any applied since/until filtering."
+          },
           "results": {
             "type": "array",
             "items": {
@@ -856,6 +864,49 @@
             "items": {
               "type": "string"
             }
+          },
+          "namespaceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "sourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "documentTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "freshness"
+            ],
+            "description": "Use freshness to apply since/until against metadata timestamps such as updatedAt or syncedAt."
           },
           "answerLength": {
             "type": "string",
@@ -946,6 +997,13 @@
           },
           "favorRecency": {
             "type": "boolean"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "freshness"
+            ]
           }
         }
       },
@@ -963,6 +1021,49 @@
             "items": {
               "type": "string"
             }
+          },
+          "namespaceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "sourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "documentTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "freshness"
+            ],
+            "description": "Use freshness to apply since/until against metadata timestamps such as updatedAt or syncedAt."
           },
           "answerLength": {
             "type": "string",
@@ -1130,6 +1231,13 @@
           "favorRecency": {
             "type": "boolean"
           },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "freshness"
+            ]
+          },
           "answerConfidence": {
             "type": "string"
           }
@@ -1200,6 +1308,49 @@
               "type": "string"
             }
           },
+          "namespaceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "sourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "documentTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "freshness"
+            ],
+            "description": "Use freshness to apply since/until against metadata timestamps such as updatedAt or syncedAt."
+          },
           "policy": {
             "$ref": "#/components/schemas/MemoryPolicy"
           },
@@ -1235,6 +1386,13 @@
           },
           "favorRecency": {
             "type": "boolean"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "freshness"
+            ]
           },
           "citations": {
             "type": "array",
@@ -1581,9 +1739,35 @@
               "type": "string"
             }
           },
+          "namespaceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "documentTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "favorRecency": {
             "type": "boolean",
             "description": "When true, recall adds a freshness bias so newer matching memories rank higher."
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "freshness"
+            ],
+            "description": "Use freshness to apply since/until against metadata timestamps such as updatedAt or syncedAt."
           },
           "collection": {
             "type": "string"
@@ -1607,6 +1791,13 @@
           },
           "favorRecency": {
             "type": "boolean"
+          },
+          "timeField": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "freshness"
+            ]
           },
           "results": {
             "type": "array",
@@ -2764,6 +2955,14 @@
           },
           {
             "in": "query",
+            "name": "policy",
+            "schema": {
+              "$ref": "#/components/schemas/MemoryPolicy"
+            },
+            "description": "Optional retrieval policy: amvl, ttl, or lru."
+          },
+          {
+            "in": "query",
             "name": "docIds",
             "schema": {
               "type": "string"
@@ -2773,11 +2972,83 @@
           },
           {
             "in": "query",
+            "name": "namespaceIds",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated namespace ids.",
+            "example": "tenant-a:docs:onboarding"
+          },
+          {
+            "in": "query",
+            "name": "tags",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated tags; retrieval requires overlap with the stored tag list.",
+            "example": "release,pricing"
+          },
+          {
+            "in": "query",
+            "name": "agentId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Restrict retrieval to one agent-scoped source."
+          },
+          {
+            "in": "query",
+            "name": "sourceTypes",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated source types such as url, file, or ticket."
+          },
+          {
+            "in": "query",
+            "name": "documentTypes",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated metadata document types."
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Lower bound for createdAt or freshness filtering."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Upper bound for createdAt or freshness filtering."
+          },
+          {
+            "in": "query",
+            "name": "timeField",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "createdAt",
+                "freshness"
+              ]
+            },
+            "description": "Use freshness to apply since/until against metadata timestamps such as updatedAt or syncedAt."
+          },
+          {
+            "in": "query",
             "name": "favorRecency",
             "schema": {
               "type": "boolean"
             },
-            "description": "Bias retrieval toward fresher matching items. This defaults on for episodic and conversation-heavy recall."
+            "description": "Bias retrieval toward fresher matching items. Query-sensitive freshness auto mode can also turn this on when enabled at the server."
           },
           {
             "in": "query",
@@ -2819,7 +3090,7 @@
             }
           }
         },
-        "description": "Run hybrid vector plus lexical retrieval and return ranked chunk hits."
+        "description": "Run hybrid vector plus lexical retrieval with namespace, source, document-type, tag, and time-window filters, then return ranked chunk hits."
       }
     },
     "/v1/ask": {
@@ -2840,6 +3111,12 @@
                 "k": 7,
                 "answerLength": "auto",
                 "favorRecency": true,
+                "namespaceIds": [
+                  "default:docs:welcome"
+                ],
+                "documentTypes": [
+                  "guide"
+                ],
                 "policy": "amvl",
                 "collection": "default",
                 "provider": "gemini",
@@ -2871,7 +3148,7 @@
             }
           }
         },
-        "description": "Retrieve relevant chunks and generate a grounded answer with citations. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
+        "description": "Retrieve relevant chunks and generate a grounded answer with citations. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model, and supports first-class filters plus freshness-aware time windows."
       }
     },
     "/v1/code": {
@@ -2893,6 +3170,10 @@
                 "task": "debug",
                 "answerLength": "medium",
                 "favorRecency": true,
+                "sourceTypes": [
+                  "url"
+                ],
+                "timeField": "freshness",
                 "policy": "amvl",
                 "collection": "default",
                 "provider": "openai",
@@ -2924,7 +3205,7 @@
             }
           }
         },
-        "description": "Retrieve relevant chunks and generate a grounded code-aware answer. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
+        "description": "Retrieve relevant chunks and generate a grounded code-aware answer. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model, and supports first-class filters plus freshness-aware time windows."
       }
     },
     "/v1/boolean_ask": {
@@ -2944,6 +3225,9 @@
                 "question": "Is SupaVector designed for agent memory retrieval?",
                 "k": 7,
                 "favorRecency": true,
+                "tags": [
+                  "docs"
+                ],
                 "policy": "amvl",
                 "collection": "default",
                 "provider": "anthropic",
@@ -2975,7 +3259,7 @@
             }
           }
         },
-        "description": "Retrieve relevant chunks and return a grounded answer constrained to true, false, or invalid, including supporting chunks. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model."
+        "description": "Retrieve relevant chunks and return a grounded answer constrained to true, false, or invalid, including supporting chunks. `provider` and `model` can override the tenant or instance generation defaults for this request. Retrieval still uses the instance-wide embedding provider/model, and supports first-class filters plus freshness-aware time windows."
       }
     },
     "/v1/memory/write": {
@@ -3062,6 +3346,7 @@
                 "policy": "amvl",
                 "k": 3,
                 "favorRecency": true,
+                "timeField": "freshness",
                 "types": [
                   "semantic"
                 ],

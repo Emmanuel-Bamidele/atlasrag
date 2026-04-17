@@ -11,6 +11,21 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks(doc_id);
 CREATE INDEX IF NOT EXISTS chunks_text_fts_idx ON chunks USING GIN (to_tsvector('simple', text));
 
+CREATE OR REPLACE FUNCTION sv_try_timestamptz(value TEXT)
+RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  IF value IS NULL OR btrim(value) = '' THEN
+    RETURN NULL;
+  END IF;
+  RETURN value::timestamptz;
+EXCEPTION WHEN OTHERS THEN
+  RETURN NULL;
+END;
+$$;
+
 -- Tenants and users (production auth)
 CREATE TABLE IF NOT EXISTS tenants (
   tenant_id TEXT PRIMARY KEY,
@@ -404,8 +419,39 @@ CREATE INDEX IF NOT EXISTS memory_items_agent_idx ON memory_items(tenant_id, age
 CREATE INDEX IF NOT EXISTS memory_items_visibility_idx ON memory_items(tenant_id, visibility);
 CREATE INDEX IF NOT EXISTS memory_items_tier_idx ON memory_items(tenant_id, tier);
 CREATE INDEX IF NOT EXISTS memory_items_tier_value_idx ON memory_items(tenant_id, tier, value_score DESC, id);
+CREATE INDEX IF NOT EXISTS memory_items_source_type_idx ON memory_items(tenant_id, collection, source_type);
+CREATE INDEX IF NOT EXISTS memory_items_created_at_idx ON memory_items(tenant_id, collection, created_at DESC, id);
 CREATE INDEX IF NOT EXISTS memory_items_acl_idx ON memory_items USING GIN (acl_principals);
 CREATE INDEX IF NOT EXISTS memory_items_tags_idx ON memory_items USING GIN (tags);
+CREATE INDEX IF NOT EXISTS memory_items_document_type_idx
+  ON memory_items(tenant_id, collection, (LOWER(COALESCE(metadata->>'documentType', metadata->>'document_type', metadata->>'docType', metadata->>'doc_type', ''))));
+CREATE INDEX IF NOT EXISTS memory_items_freshness_idx
+  ON memory_items(
+    tenant_id,
+    collection,
+    (
+      COALESCE(
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'updatedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'updated_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'lastUpdatedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'last_updated_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'modifiedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'modified_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'publishedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'published_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'effectiveAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'effective_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'sourceUpdatedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'source_updated_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'syncedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'synced_at' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'lastSyncedAt' END),
+        sv_try_timestamptz(CASE WHEN metadata IS NOT NULL THEN metadata->>'last_synced_at' END),
+        created_at
+      )
+    ) DESC,
+    id
+  );
 CREATE INDEX IF NOT EXISTS memory_jobs_status_next_run_idx ON memory_jobs(status, next_run_at);
 DO $$
 BEGIN

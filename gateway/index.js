@@ -16,6 +16,15 @@ const {
   reciprocalRankContribution,
   rankSearchCandidates
 } = require("./hybrid_retrieval");
+const {
+  buildRetrievalPlan,
+  determineRecencyBoostMode,
+  matchesRetrievalFilters,
+  memoryFreshnessTimestampMs,
+  normalizeRetrievalTimeField,
+  resolveMemoryFavorRecencyPreference,
+  resolveMemoryKnowledgeType
+} = require("./retrieval_planner");
 const { sendCmd, sendCmdBatch, buildVset, buildVsearchIn, buildVdel, buildVclear, parseVsearchReply } = require("./tcp");
 
 const {
@@ -509,6 +518,7 @@ const HYBRID_RERANK_OVERLAP_BOOST = parseFloat(process.env.HYBRID_RERANK_OVERLAP
 const HYBRID_RERANK_EXACT_BOOST = parseFloat(process.env.HYBRID_RERANK_EXACT_BOOST || "0.08");
 const MEMORY_RETRIEVAL_RECENCY_WEIGHT = parseFloat(process.env.MEMORY_RETRIEVAL_RECENCY_WEIGHT || "0.3");
 const MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS = parseFloat(process.env.MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS || "14");
+const RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED = process.env.RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED !== "0";
 const CHUNK_UPSERT_BATCH_SIZE = 128;
 const VECTOR_WRITE_BATCH_SIZE = 8;
 const VECTOR_WRITE_BATCH_CONCURRENCY = 2;
@@ -4377,6 +4387,95 @@ function parseStringListInput(raw, { maxItems = 16, maxItemLength = 240, label =
   return out;
 }
 
+function parseNamespaceFilter(raw) {
+  const values = parseStringListInput(raw, {
+    label: "namespaceIds",
+    maxItems: 64,
+    maxItemLength: 320
+  });
+  const out = [];
+  for (const value of values) {
+    if (!/^[a-z0-9._:@-]+$/i.test(value)) {
+      throw new Error("namespaceIds contain unsupported characters");
+    }
+    out.push(value);
+  }
+  return out;
+}
+
+function parseSourceTypeFilter(raw) {
+  const values = parseStringListInput(raw, {
+    label: "sourceTypes",
+    maxItems: 24,
+    maxItemLength: 80
+  });
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const clean = normalizeDocumentSourceType(value, "");
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+  }
+  return out;
+}
+
+function parseDocumentTypeFilter(raw) {
+  const values = parseStringListInput(raw, {
+    label: "documentTypes",
+    maxItems: 24,
+    maxItemLength: 80
+  });
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const clean = String(value || "").trim().toLowerCase();
+    if (!clean) continue;
+    if (!/^[a-z0-9._:/-]+$/i.test(clean)) {
+      throw new Error("documentTypes contain unsupported characters");
+    }
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+  }
+  return out;
+}
+
+function parseRetrievalFilterInput(input = {}) {
+  const rawNamespaceIds = input?.namespaceIds
+    ?? input?.namespace_ids
+    ?? input?.namespaceId
+    ?? input?.namespace_id
+    ?? input?.namespace;
+  const rawSourceTypes = input?.sourceTypes
+    ?? input?.source_types
+    ?? input?.sourceType
+    ?? input?.source_type
+    ?? input?.source;
+  const rawDocumentTypes = input?.documentTypes
+    ?? input?.document_types
+    ?? input?.documentType
+    ?? input?.document_type
+    ?? input?.docTypes
+    ?? input?.doc_types
+    ?? input?.docType
+    ?? input?.doc_type;
+  const rawTimeField = input?.timeField
+    ?? input?.time_field
+    ?? input?.timeRangeField
+    ?? input?.time_range_field;
+  return {
+    namespaceIds: parseNamespaceFilter(rawNamespaceIds),
+    tags: parseTagsInput(input?.tags),
+    agentId: normalizeAgentId(input?.agentId ?? input?.agent_id),
+    sourceTypes: parseSourceTypeFilter(rawSourceTypes),
+    documentTypes: parseDocumentTypeFilter(rawDocumentTypes),
+    since: parseTimeInput(input?.since, "since"),
+    until: parseTimeInput(input?.until, "until"),
+    timeField: normalizeRetrievalTimeField(rawTimeField, "created_at")
+  };
+}
+
 function parseCodeRepositoryInput(raw) {
   if (raw === undefined || raw === null || raw === "") return null;
   if (typeof raw === "string") {
@@ -4412,10 +4511,12 @@ function parseCodeContextInput(raw) {
 }
 
 function parseCodeInput(body = {}) {
+  const retrievalFilters = parseRetrievalFilterInput(body);
   return {
     question: parseQuestionInput(body),
     k: parseInt(body?.k || "5", 10),
     docIds: parseDocFilter(body?.docIds ?? body?.doc_ids),
+    namespaceIds: retrievalFilters.namespaceIds,
     answerLength: parseAnswerLength(body?.answerLength || body?.responseLength),
     citationMode: parseCitationMode(body?.citationMode ?? body?.citation_mode),
     task: normalizeCodeTask(body?.task ?? body?.mode, "general"),
@@ -4444,7 +4545,14 @@ function parseCodeInput(body = {}) {
     provider: resolveAskProviderOverride(body),
     model: resolveAskModelOverride(body),
     policy: resolveRequestedMemoryPolicy(body),
-    favorRecency: resolveRequestedFavorRecency(body)
+    favorRecency: resolveRequestedFavorRecency(body),
+    tags: retrievalFilters.tags,
+    agentId: retrievalFilters.agentId,
+    sourceTypes: retrievalFilters.sourceTypes,
+    documentTypes: retrievalFilters.documentTypes,
+    since: retrievalFilters.since,
+    until: retrievalFilters.until,
+    timeField: retrievalFilters.timeField
   };
 }
 
@@ -5301,67 +5409,6 @@ function recencyTimestampMs(memory) {
   return 0;
 }
 
-function parseTimestampMs(value) {
-  if (value === undefined || value === null || value === "") return NaN;
-  const millis = value instanceof Date ? value.getTime() : new Date(value).getTime();
-  return Number.isFinite(millis) ? millis : NaN;
-}
-
-function memoryMetadataValue(memory, keys = []) {
-  const metadata = memory?.metadata && typeof memory.metadata === "object" && !Array.isArray(memory.metadata)
-    ? memory.metadata
-    : null;
-  if (!metadata) return undefined;
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
-      return metadata[key];
-    }
-  }
-  return undefined;
-}
-
-function resolveMemoryKnowledgeType(memory) {
-  const raw = memoryMetadataValue(memory, ["knowledgeType", "knowledge_type"]);
-  const clean = String(raw || "").trim().toLowerCase();
-  if (clean === "semantic" || clean === "procedural" || clean === "episodic" || clean === "conversation" || clean === "summary") {
-    return clean;
-  }
-  return null;
-}
-
-function resolveMemoryFavorRecencyPreference(memory) {
-  try {
-    return parseOptionalBooleanFlag(memoryMetadataValue(memory, ["favorRecency", "favor_recency"]), "favorRecency");
-  } catch {
-    return null;
-  }
-}
-
-function memoryFreshnessTimestampMs(memory) {
-  const metadataTs = parseTimestampMs(memoryMetadataValue(memory, [
-    "updatedAt",
-    "updated_at",
-    "lastUpdatedAt",
-    "last_updated_at",
-    "modifiedAt",
-    "modified_at",
-    "publishedAt",
-    "published_at",
-    "effectiveAt",
-    "effective_at",
-    "sourceUpdatedAt",
-    "source_updated_at",
-    "syncedAt",
-    "synced_at",
-    "lastSyncedAt",
-    "last_synced_at"
-  ]));
-  if (Number.isFinite(metadataTs) && metadataTs > 0) return metadataTs;
-  const created = memory?.created_at ? new Date(memory.created_at).getTime() : NaN;
-  if (Number.isFinite(created)) return created;
-  return 0;
-}
-
 function computeMemoryRetrievalRecencyScore(memory, now = Date.now(), halfLifeDays = MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS) {
   const freshnessTs = memoryFreshnessTimestampMs(memory);
   if (!Number.isFinite(freshnessTs) || freshnessTs <= 0) return 0;
@@ -5373,42 +5420,28 @@ function computeMemoryRetrievalRecencyScore(memory, now = Date.now(), halfLifeDa
   );
 }
 
-function isRecencyBiasedType(type) {
-  const clean = String(type || "").trim().toLowerCase();
-  return clean === "episodic" || clean === "conversation";
-}
-
-function determineRecencyBoostMode({ explicitFavorRecency, memory, candidateTypes }) {
-  if (explicitFavorRecency === false) return "off";
-  if (explicitFavorRecency === true) return "all";
-  const memoryPreference = resolveMemoryFavorRecencyPreference(memory);
-  if (memoryPreference === false) return "off";
-  if (memoryPreference === true) return "memory";
-  if (isRecencyBiasedType(memory?.item_type) || isRecencyBiasedType(resolveMemoryKnowledgeType(memory))) {
-    return "memory";
-  }
-  const requestedTypes = Array.isArray(candidateTypes) ? candidateTypes : [];
-  return requestedTypes.some(isRecencyBiasedType) ? "context" : "off";
-}
-
 function selectWarmCandidates(items, size, selection = MEMORY_RETRIEVAL_WARM_SELECTION) {
   const list = Array.isArray(items) ? items.slice() : [];
   const k = Number.isFinite(size) && size > 0 ? Math.floor(size) : 0;
-  const sampleMode = String(selection || "").trim().toLowerCase() === "lru" ? "lru" : "random";
+  const requestedMode = String(selection || "").trim().toLowerCase();
+  const sampleMode = requestedMode === "lru"
+    ? "lru"
+    : (requestedMode === "freshness" ? "freshness" : "random");
+  const rankByRecency = sampleMode === "lru";
+  const rankByFreshness = sampleMode === "freshness";
+  const sortBySelectedRecency = (a, b) => {
+    const diff = rankByFreshness
+      ? (memoryFreshnessTimestampMs(b) - memoryFreshnessTimestampMs(a))
+      : (recencyTimestampMs(b) - recencyTimestampMs(a));
+    if (diff !== 0) return diff;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  };
   if (!k || list.length <= k) {
-    if (sampleMode !== "lru") return list;
-    return list.sort((a, b) => {
-      const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
-      if (diff !== 0) return diff;
-      return String(a?.id || "").localeCompare(String(b?.id || ""));
-    });
+    if (!rankByRecency && !rankByFreshness) return list;
+    return list.sort(sortBySelectedRecency);
   }
-  if (sampleMode === "lru") {
-    list.sort((a, b) => {
-      const diff = recencyTimestampMs(b) - recencyTimestampMs(a);
-      if (diff !== 0) return diff;
-      return String(a?.id || "").localeCompare(String(b?.id || ""));
-    });
+  if (rankByRecency || rankByFreshness) {
+    list.sort(sortBySelectedRecency);
     return list.slice(0, k);
   }
   return sampleItems(list, k);
@@ -5419,11 +5452,16 @@ async function getTierBoundedRetrievalSet({
   collection,
   principalId,
   privileges,
+  namespaceIds,
   tags,
   agentId,
+  sourceTypes,
+  documentTypes,
   types,
   since,
   until,
+  timeField = "created_at",
+  preferFreshnessOrdering = false,
   warmSampleSize,
   docIds,
   policy
@@ -5433,28 +5471,52 @@ async function getTierBoundedRetrievalSet({
     ? Math.floor(warmSampleSize)
     : (Number.isFinite(policyConfig.retrievalWarmSampleK) && policyConfig.retrievalWarmSampleK > 0 ? policyConfig.retrievalWarmSampleK : 8);
   const typeFilter = Array.isArray(types) && types.length ? types : null;
+  const directNamespaceIds = Array.isArray(namespaceIds) && namespaceIds.length
+    ? namespaceIds
+    : (Array.isArray(docIds) && docIds.length && collection ? docIds.map((docId) => namespaceDocId(tenantId, collection, docId)) : []);
+  const directExternalIds = Array.isArray(docIds) && docIds.length && !directNamespaceIds.length ? docIds : [];
+  const warmSelectionMode = preferFreshnessOrdering ? "freshness" : policyConfig.retrievalWarmSelection;
 
-  if (Array.isArray(docIds) && docIds.length && collection) {
-    const namespaceIds = docIds.map((docId) => namespaceDocId(tenantId, collection, docId));
-    const map = await getMemoryItemsByNamespaceIds({
-      namespaceIds,
+  if (directNamespaceIds.length || directExternalIds.length) {
+    const hot = await listMemoryItemsByTier({
+      tenantId,
+      collection,
+      namespaceIds: directNamespaceIds.length ? directNamespaceIds : null,
+      externalIds: directExternalIds.length ? directExternalIds : null,
+      tier: "HOT",
       types: typeFilter,
+      sourceTypes,
+      documentTypes,
       since,
       until,
+      timeField,
       excludeExpired: true,
       principalId,
       privileges,
       agentId,
-      tags
+      tags,
+      sample: preferFreshnessOrdering ? "freshness" : null
     });
-    const hot = [];
-    const warm = [];
-    for (const memory of map.values()) {
-      const tier = normalizeTier(memory.tier, "WARM");
-      if (tier === "HOT") hot.push(memory);
-      else if (tier === "WARM") warm.push(memory);
-    }
-    const sampledWarm = selectWarmCandidates(warm, warmK, policyConfig.retrievalWarmSelection);
+    const warm = await listMemoryItemsByTier({
+      tenantId,
+      collection,
+      namespaceIds: directNamespaceIds.length ? directNamespaceIds : null,
+      externalIds: directExternalIds.length ? directExternalIds : null,
+      tier: "WARM",
+      types: typeFilter,
+      sourceTypes,
+      documentTypes,
+      since,
+      until,
+      timeField,
+      excludeExpired: true,
+      principalId,
+      privileges,
+      agentId,
+      tags,
+      sample: warmSelectionMode
+    });
+    const sampledWarm = selectWarmCandidates(warm, warmK, warmSelectionMode);
     return {
       hot,
       warm: sampledWarm,
@@ -5468,9 +5530,14 @@ async function getTierBoundedRetrievalSet({
   const baseFilters = {
     tenantId,
     collection,
+    namespaceIds: null,
+    externalIds: Array.isArray(docIds) && docIds.length ? docIds : null,
     types: typeFilter,
+    sourceTypes,
+    documentTypes,
     since,
     until,
+    timeField,
     excludeExpired: true,
     principalId,
     privileges,
@@ -5479,26 +5546,28 @@ async function getTierBoundedRetrievalSet({
   };
   const hot = await listMemoryItemsByTier({
     ...baseFilters,
-    tier: "HOT"
+    tier: "HOT",
+    sample: preferFreshnessOrdering ? "freshness" : null
   });
   const warmPoolMultiplier = Number.isFinite(policyConfig.retrievalWarmSamplePoolMultiplier)
     ? Math.max(1, Math.floor(policyConfig.retrievalWarmSamplePoolMultiplier))
     : 4;
-  const warmPoolLimit = policyConfig.retrievalWarmSelection === "lru"
+  const warmPoolLimit = warmSelectionMode === "lru"
     ? warmK
     : warmK * warmPoolMultiplier;
   const warmPool = await listMemoryItemsByTier({
     ...baseFilters,
     tier: "WARM",
     limit: warmPoolLimit,
-    sample: policyConfig.retrievalWarmSelection
+    sample: warmSelectionMode
   });
-  const warm = selectWarmCandidates(warmPool, warmK, policyConfig.retrievalWarmSelection);
+  const warm = selectWarmCandidates(warmPool, warmK, warmSelectionMode);
   const coldProbe = Number.isFinite(policyConfig.retrievalColdProbeEpsilon) && policyConfig.retrievalColdProbeEpsilon > 0
     ? await listMemoryItemsByTier({
       ...baseFilters,
       tier: "COLD",
-      limit: policyConfig.retrievalColdProbeEpsilon * warmPoolMultiplier
+      limit: policyConfig.retrievalColdProbeEpsilon * warmPoolMultiplier,
+      sample: preferFreshnessOrdering ? "freshness" : null
     })
     : [];
   const sampledColdProbe = sampleItems(coldProbe, policyConfig.retrievalColdProbeEpsilon);
@@ -5513,7 +5582,31 @@ async function getTierBoundedRetrievalSet({
   };
 }
 
-async function searchChunks({ tenantId, collection, query, k, docIds, principalId, privileges, enforceArtifactVisibility, telemetry, candidateTypes, tags, agentId, since, until, policy, favorRecency, apiKey, embedProvider, embedModel }) {
+async function searchChunks({
+  tenantId,
+  collection,
+  query,
+  k,
+  docIds,
+  namespaceIds,
+  principalId,
+  privileges,
+  enforceArtifactVisibility,
+  telemetry,
+  candidateTypes,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  policy,
+  favorRecency,
+  apiKey,
+  embedProvider,
+  embedModel
+}) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -5536,17 +5629,42 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   recordEmbeddingUsage(tenantId, usage, telemetryContext);
 
   const cleanDocIds = Array.isArray(docIds) ? docIds : [];
+  const cleanNamespaceIds = Array.isArray(namespaceIds) ? namespaceIds : [];
   const topK = Number.isFinite(k) && k > 0 ? k : 5;
+  const retrievalPlan = buildRetrievalPlan({
+    query,
+    explicitFavorRecency: favorRecency,
+    candidateTypes,
+    timeField,
+    queryRecencyAutoEnabled: RETRIEVAL_QUERY_RECENCY_AUTO_ENABLED
+  });
+  const retrievalFilters = {
+    collection,
+    docIds: cleanDocIds,
+    namespaceIds: cleanNamespaceIds,
+    tags: Array.isArray(tags) ? tags : [],
+    agentId: agentId || null,
+    sourceTypes: Array.isArray(sourceTypes) ? sourceTypes : [],
+    documentTypes: Array.isArray(documentTypes) ? documentTypes : [],
+    since: since || null,
+    until: until || null,
+    timeField: retrievalPlan.timeField
+  };
   const retrievalSet = await getTierBoundedRetrievalSet({
     tenantId,
     collection,
     principalId,
     privileges,
+    namespaceIds: cleanNamespaceIds,
     tags,
     agentId,
+    sourceTypes,
+    documentTypes,
     types: Array.isArray(candidateTypes) ? candidateTypes : null,
     since,
     until,
+    timeField: retrievalPlan.timeField,
+    preferFreshnessOrdering: retrievalPlan.preferFreshnessOrdering,
     warmSampleSize: Math.max(topK, Number.isFinite(policyConfig.retrievalWarmSampleK) ? policyConfig.retrievalWarmSampleK : 0),
     docIds: cleanDocIds,
     policy: policyConfig.policy
@@ -5685,9 +5803,10 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
       vectorRank: null,
       lexicalRank: null
     };
+    existing.memory = memoryByNamespaceId.get(row.doc_id) || existing.memory;
+    if (!matchesRetrievalFilters(existing, retrievalFilters)) return;
     existing.row = row;
     existing.parsed = parsed;
-    existing.memory = memoryByNamespaceId.get(row.doc_id) || existing.memory;
     if (Number.isFinite(vectorScore)) {
       existing.vectorScore = Number.isFinite(existing.vectorScore)
         ? Math.max(existing.vectorScore, vectorScore)
@@ -5732,7 +5851,7 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
     rankConstant: HYBRID_RRF_K,
     overlapBoostScale: HYBRID_RERANK_OVERLAP_BOOST,
     exactBoostScale: HYBRID_RERANK_EXACT_BOOST,
-    favorRecency,
+    favorRecency: retrievalPlan.effectiveFavorRecency,
     candidateTypes,
     recencyWeight: MEMORY_RETRIEVAL_RECENCY_WEIGHT,
     recencyHalfLifeDays: MEMORY_RETRIEVAL_RECENCY_HALFLIFE_DAYS,
@@ -5752,6 +5871,8 @@ async function searchChunks({ tenantId, collection, query, k, docIds, principalI
   if (enforceArtifactVisibility && (principalId || (privileges && privileges.length))) {
     const namespaceIds = results.map(r => r._row.doc_id);
     const artifactMap = await getMemoryItemsByNamespaceIds({
+      tenantId,
+      collection,
       namespaceIds,
       types: ["artifact"],
       excludeExpired: true,
@@ -6561,7 +6682,31 @@ function buildCodeRelationshipSummary(files = [], options = {}) {
   };
 }
 
-async function buildAnswerContext({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, favorRecency, apiKey, operation, retrievalSource, embedProvider, embedModel }) {
+async function buildAnswerContext({
+  tenantId,
+  collection,
+  question,
+  k,
+  docIds,
+  namespaceIds,
+  principalId,
+  privileges,
+  telemetry,
+  policy,
+  favorRecency,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  apiKey,
+  operation,
+  retrievalSource,
+  embedProvider,
+  embedModel
+}) {
   const telemetryContext = buildTelemetryContext({
     requestId: telemetry?.requestId,
     tenantId,
@@ -6575,10 +6720,18 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
     query: question,
     k,
     docIds,
+    namespaceIds,
     principalId,
     privileges,
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
+    tags,
+    agentId,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
     policy,
     favorRecency,
     apiKey,
@@ -6594,11 +6747,13 @@ async function buildAnswerContext({ tenantId, collection, question, k, docIds, p
 
   let memoryMap = new Map();
   const usedItems = [];
-  const namespaceIds = results.map(r => r._row.doc_id);
-  if (namespaceIds.length) {
+  const retrievedNamespaceIds = results.map(r => r._row.doc_id);
+  if (retrievedNamespaceIds.length) {
     try {
       memoryMap = await getMemoryItemsByNamespaceIds({
-        namespaceIds,
+        tenantId,
+        collection,
+        namespaceIds: retrievedNamespaceIds,
         types: ["artifact"],
         excludeExpired: true,
         principalId,
@@ -6671,11 +6826,19 @@ async function buildCodeAnswerContext({
   question,
   k,
   docIds,
+  namespaceIds,
   principalId,
   privileges,
   telemetry,
   policy,
   favorRecency,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
   apiKey,
   operation,
   retrievalSource,
@@ -6728,10 +6891,18 @@ async function buildCodeAnswerContext({
     query: retrievalQuery,
     k: retrievalK,
     docIds,
+    namespaceIds,
     principalId,
     privileges,
     enforceArtifactVisibility: true,
     candidateTypes: ["artifact"],
+    tags,
+    agentId,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
     policy,
     favorRecency,
     apiKey,
@@ -6747,11 +6918,13 @@ async function buildCodeAnswerContext({
 
   let memoryMap = new Map();
   const usedItems = [];
-  const namespaceIds = results.map((result) => result._row.doc_id);
-  if (namespaceIds.length) {
+  const retrievedNamespaceIds = results.map((result) => result._row.doc_id);
+  if (retrievedNamespaceIds.length) {
     try {
       memoryMap = await getMemoryItemsByNamespaceIds({
-        namespaceIds,
+        tenantId,
+        collection,
+        namespaceIds: retrievedNamespaceIds,
         types: ["artifact"],
         excludeExpired: true,
         principalId,
@@ -6973,7 +7146,34 @@ function mapSupportingChunks(chunks) {
   }).filter((chunk) => chunk.chunkId || chunk.text);
 }
 
-async function answerQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, answerLength, citationMode = "inline", telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
+async function answerQuestion({
+  tenantId,
+  collection,
+  question,
+  k,
+  docIds,
+  namespaceIds,
+  principalId,
+  privileges,
+  answerLength,
+  citationMode = "inline",
+  telemetry,
+  policy,
+  favorRecency,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  generationApiKey,
+  generationBillable = true,
+  embedApiKey,
+  model,
+  provider,
+  models
+}) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -6991,11 +7191,19 @@ async function answerQuestion({ tenantId, collection, question, k, docIds, princ
     question,
     k,
     docIds,
+    namespaceIds,
     principalId,
     privileges,
     telemetry,
     policy,
     favorRecency,
+    tags,
+    agentId,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -7079,6 +7287,7 @@ async function answerCodeQuestion({
   question,
   k,
   docIds,
+  namespaceIds,
   principalId,
   privileges,
   answerLength,
@@ -7086,6 +7295,13 @@ async function answerCodeQuestion({
   telemetry,
   policy,
   favorRecency,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
   generationApiKey,
   generationBillable = true,
   embedApiKey,
@@ -7123,11 +7339,19 @@ async function answerCodeQuestion({
     question,
     k,
     docIds,
+    namespaceIds,
     principalId,
     privileges,
     telemetry,
     policy,
     favorRecency,
+    tags,
+    agentId,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -7236,7 +7460,32 @@ async function answerCodeQuestion({
   };
 }
 
-async function answerBooleanAskQuestion({ tenantId, collection, question, k, docIds, principalId, privileges, telemetry, policy, favorRecency, generationApiKey, generationBillable = true, embedApiKey, model, provider, models }) {
+async function answerBooleanAskQuestion({
+  tenantId,
+  collection,
+  question,
+  k,
+  docIds,
+  namespaceIds,
+  principalId,
+  privileges,
+  telemetry,
+  policy,
+  favorRecency,
+  tags,
+  agentId,
+  sourceTypes,
+  documentTypes,
+  since,
+  until,
+  timeField = "created_at",
+  generationApiKey,
+  generationBillable = true,
+  embedApiKey,
+  model,
+  provider,
+  models
+}) {
   const effectiveModels = models || await getEffectiveTenantModels(tenantId);
   const requestedAnswerConfig = resolveRequestedGenerationConfig({
     provider,
@@ -7254,11 +7503,19 @@ async function answerBooleanAskQuestion({ tenantId, collection, question, k, doc
     question,
     k,
     docIds,
+    namespaceIds,
     principalId,
     privileges,
     telemetry,
     policy,
     favorRecency,
+    tags,
+    agentId,
+    sourceTypes,
+    documentTypes,
+    since,
+    until,
+    timeField,
     apiKey: embedApiKey,
     embedModel: effectiveModels.embedModel,
     embedProvider: effectiveModels.embedProvider,
@@ -9486,6 +9743,8 @@ async function compactLowValueGroup(seed, options = {}) {
 
   const namespaceIds = results.map(r => r._row.doc_id);
   const memoryMap = await getMemoryItemsByNamespaceIds({
+    tenantId: seed.tenant_id,
+    collection: seed.collection,
     namespaceIds,
     types: MEMORY_TYPES.filter(t => t !== "artifact"),
     excludeExpired: true
@@ -9743,6 +10002,8 @@ async function computeRedundancyForItem(item) {
 
   const namespaceIds = results.map(r => r._row.doc_id);
   const memoryMap = await getMemoryItemsByNamespaceIds({
+    tenantId: item.tenant_id,
+    collection: item.collection,
     namespaceIds,
     types: MEMORY_TYPES.filter(t => t !== "artifact"),
     excludeExpired: true
@@ -12367,6 +12628,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
@@ -12384,12 +12646,20 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       question,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
       citationMode,
       policy,
       favorRecency,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       model,
       provider,
       models: effectiveModels,
@@ -12414,6 +12684,7 @@ app.post("/ask", requireJwt, requireRole("reader"), async (req, res) => {
       provider: result.provider,
       model: result.model,
       favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField,
       tenantId,
       collection
     });
@@ -12447,6 +12718,7 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveAskProviderOverride(req.body);
     const model = resolveAskModelOverride(req.body);
@@ -12463,12 +12735,20 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       question,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength,
       citationMode,
       policy,
       favorRecency,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       model,
       provider,
       models: effectiveModels,
@@ -12492,7 +12772,8 @@ app.post("/v1/ask", requireJwt, requireRole("reader"), async (req, res) => {
       provider: result.provider,
       model: result.model,
       k,
-      favorRecency: favorRecency === null ? undefined : favorRecency
+      favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "ASK_FAILED", tenantId, collection);
@@ -12529,12 +12810,20 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       question: input.question,
       k: input.k,
       docIds: input.docIds,
+      namespaceIds: input.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength: input.answerLength,
       citationMode: input.citationMode,
       policy: input.policy,
       favorRecency: input.favorRecency,
+      tags: input.tags,
+      agentId: input.agentId,
+      sourceTypes: input.sourceTypes,
+      documentTypes: input.documentTypes,
+      since: input.since,
+      until: input.until,
+      timeField: input.timeField,
       task: input.task,
       language: input.language,
       deployment: input.deployment,
@@ -12574,6 +12863,7 @@ app.post("/code", requireJwt, requireRole("reader"), async (req, res) => {
       provider: result.provider,
       model: result.model,
       favorRecency: input.favorRecency === null ? undefined : input.favorRecency,
+      timeField: input.timeField,
       tenantId,
       collection
     });
@@ -12614,12 +12904,20 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       question: input.question,
       k: input.k,
       docIds: input.docIds,
+      namespaceIds: input.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       answerLength: input.answerLength,
       citationMode: input.citationMode,
       policy: input.policy,
       favorRecency: input.favorRecency,
+      tags: input.tags,
+      agentId: input.agentId,
+      sourceTypes: input.sourceTypes,
+      documentTypes: input.documentTypes,
+      since: input.since,
+      until: input.until,
+      timeField: input.timeField,
       task: input.task,
       language: input.language,
       deployment: input.deployment,
@@ -12661,6 +12959,7 @@ app.post("/v1/code", requireJwt, requireRole("reader"), async (req, res) => {
       model: result.model,
       k: input.k,
       favorRecency: input.favorRecency === null ? undefined : input.favorRecency,
+      timeField: input.timeField,
       answerConfidence: result.answerConfidence || "high"
     }, tenantId, collection);
   } catch (e) {
@@ -12683,6 +12982,7 @@ async function handleBooleanAskLegacy(req, res) {
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
@@ -12700,10 +13000,18 @@ async function handleBooleanAskLegacy(req, res) {
       question,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
       favorRecency,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       model,
       provider,
       models: effectiveModels,
@@ -12728,6 +13036,7 @@ async function handleBooleanAskLegacy(req, res) {
       provider: result.provider,
       model: result.model,
       favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField,
       tenantId,
       collection
     });
@@ -12753,6 +13062,7 @@ async function handleBooleanAskV1(req, res) {
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const effectiveModels = await getEffectiveTenantModels(tenantId);
     const provider = resolveBooleanAskProviderOverride(req.body);
     const model = resolveBooleanAskModelOverride(req.body);
@@ -12769,10 +13079,18 @@ async function handleBooleanAskV1(req, res) {
       question,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       policy,
       favorRecency,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       model,
       provider,
       models: effectiveModels,
@@ -12795,7 +13113,8 @@ async function handleBooleanAskV1(req, res) {
       provider: result.provider,
       model: result.model,
       k,
-      favorRecency: favorRecency === null ? undefined : favorRecency
+      favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "BOOLEAN_ASK_FAILED", tenantId, collection);
@@ -12956,6 +13275,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
     const collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
     const favorRecency = resolveRequestedFavorRecency(req.query);
+    const retrievalFilters = parseRetrievalFilterInput(req.query || {});
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
 
     const results = await searchChunks({
@@ -12964,6 +13284,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       query: q,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       policy,
       favorRecency,
       apiKey: embedConfig.apiKey,
@@ -12973,6 +13294,13 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       enforceArtifactVisibility: true,
       candidateTypes: ["artifact"],
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -12991,6 +13319,7 @@ app.get("/search", requireJwt, requireRole("reader"), async (req, res) => {
         preview: r.preview
       })),
       favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField,
       tenantId,
       collection
     });
@@ -13014,6 +13343,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
     collection = resolveCollectionScope(req, { defaultAll: true });
     const policy = resolveRequestedMemoryPolicy(req.query);
     const favorRecency = resolveRequestedFavorRecency(req.query);
+    const retrievalFilters = parseRetrievalFilterInput(req.query || {});
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
     const results = await searchChunks({
       tenantId,
@@ -13021,6 +13351,7 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       query: q,
       k,
       docIds,
+      namespaceIds: retrievalFilters.namespaceIds,
       policy,
       favorRecency,
       apiKey: embedConfig.apiKey,
@@ -13030,6 +13361,13 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
       privileges: access.privileges,
       enforceArtifactVisibility: true,
       candidateTypes: ["artifact"],
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       telemetry: buildTelemetryContext({
         requestId: req.requestId,
         tenantId,
@@ -13046,7 +13384,8 @@ app.get("/v1/search", requireJwt, requireRole("reader"), async (req, res) => {
         collection: r.collection,
         preview: r.preview
       })),
-      favorRecency: favorRecency === null ? undefined : favorRecency
+      favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "SEARCH_FAILED", tenantId, collection);
@@ -13133,7 +13472,7 @@ app.post(["/memory", "/memory/write"], requireJwt, requireRole("indexer"), memor
 app.post(["/v1/memory", "/v1/memory/write"], requireJwt, requireRole("indexer"), memoryWriteV1);
 
 app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) => {
-  const { query, k, types, since, until } = req.body || {};
+  const { query, k, types } = req.body || {};
   const limit = parseInt(k || "5", 10);
 
   if (!query || !String(query).trim()) {
@@ -13153,10 +13492,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       source: "memory_recall_legacy"
     });
     const typeFilter = parseTypeFilter(types);
-    const sinceTime = parseTimeInput(since, "since");
-    const untilTime = parseTimeInput(until, "until");
-    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
-    const tags = parseTagsInput(req.body?.tags);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
@@ -13167,13 +13503,17 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       query,
       k: limit,
       docIds: [],
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       candidateTypes: typeFilter.length ? typeFilter : MEMORY_TYPES,
-      tags,
-      agentId,
-      since: sinceTime,
-      until: untilTime,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       policy,
       favorRecency,
       apiKey: embedConfig.apiKey,
@@ -13184,15 +13524,20 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
 
     const namespaceIds = results.map(r => r._row.doc_id);
     const memoryMap = await getMemoryItemsByNamespaceIds({
+      tenantId,
+      collection,
       namespaceIds,
       types: typeFilter,
-      since: sinceTime,
-      until: untilTime,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       excludeExpired: true,
       principalId: access.principalId,
       privileges: access.privileges,
-      agentId,
-      tags
+      agentId: retrievalFilters.agentId,
+      tags: retrievalFilters.tags
     });
 
     const recalled = [];
@@ -13235,6 +13580,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
       results: recalled,
       k: limit,
       favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField,
       tenantId,
       collection
     });
@@ -13244,7 +13590,7 @@ app.post("/memory/recall", requireJwt, requireRole("reader"), async (req, res) =
 });
 
 app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res) => {
-  const { query, k, types, since, until } = req.body || {};
+  const { query, k, types } = req.body || {};
   const limit = parseInt(k || "5", 10);
 
   if (!query || !String(query).trim()) {
@@ -13264,10 +13610,7 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       source: "memory_recall_v1"
     });
     const typeFilter = parseTypeFilter(types);
-    const sinceTime = parseTimeInput(since, "since");
-    const untilTime = parseTimeInput(until, "until");
-    const agentId = normalizeAgentId(req.body?.agentId ?? req.body?.agent_id);
-    const tags = parseTagsInput(req.body?.tags);
+    const retrievalFilters = parseRetrievalFilterInput(req.body || {});
     const policy = resolveRequestedMemoryPolicy(req.body);
     const favorRecency = resolveRequestedFavorRecency(req.body);
     const embedConfig = await getRequestEmbeddingConfig(req, tenantId);
@@ -13278,13 +13621,17 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       query,
       k: limit,
       docIds: [],
+      namespaceIds: retrievalFilters.namespaceIds,
       principalId: access.principalId,
       privileges: access.privileges,
       candidateTypes: typeFilter.length ? typeFilter : MEMORY_TYPES,
-      tags,
-      agentId,
-      since: sinceTime,
-      until: untilTime,
+      tags: retrievalFilters.tags,
+      agentId: retrievalFilters.agentId,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       policy,
       favorRecency,
       apiKey: embedConfig.apiKey,
@@ -13295,15 +13642,20 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
 
     const namespaceIds = results.map(r => r._row.doc_id);
     const memoryMap = await getMemoryItemsByNamespaceIds({
+      tenantId,
+      collection,
       namespaceIds,
       types: typeFilter,
-      since: sinceTime,
-      until: untilTime,
+      sourceTypes: retrievalFilters.sourceTypes,
+      documentTypes: retrievalFilters.documentTypes,
+      since: retrievalFilters.since,
+      until: retrievalFilters.until,
+      timeField: retrievalFilters.timeField,
       excludeExpired: true,
       principalId: access.principalId,
       privileges: access.privileges,
-      agentId,
-      tags
+      agentId: retrievalFilters.agentId,
+      tags: retrievalFilters.tags
     });
 
     const recalled = [];
@@ -13344,7 +13696,8 @@ app.post("/v1/memory/recall", requireJwt, requireRole("reader"), async (req, res
       query,
       results: recalled,
       k: limit,
-      favorRecency: favorRecency === null ? undefined : favorRecency
+      favorRecency: favorRecency === null ? undefined : favorRecency,
+      timeField: retrievalFilters.timeField
     }, tenantId, collection);
   } catch (e) {
     sendError(res, 400, e, "MEMORY_RECALL_FAILED", tenantId, collection);
@@ -14237,6 +14590,13 @@ module.exports = {
     enqueueConversationWikiUpdateJobWithDeps,
     pruneConversationTurnsForWikiWithDeps,
     resolveMemoryPolicyConfig,
+    parseNamespaceFilter,
+    parseSourceTypeFilter,
+    parseDocumentTypeFilter,
+    parseRetrievalFilterInput,
+    buildRetrievalPlan,
+    matchesRetrievalFilters,
+    normalizeRetrievalTimeField,
     resolveMemoryKnowledgeType,
     resolveMemoryFavorRecencyPreference,
     memoryFreshnessTimestampMs,

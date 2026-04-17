@@ -205,6 +205,8 @@ Set `"favorRecency": true` when newer matching evidence should outrank older mat
 
 Hosted retrieval is hybrid by default. SupaVector combines semantic vector retrieval with lexical full-text retrieval and fuses the rankings with reciprocal rank fusion, which makes exact identifiers and mixed identifier-plus-natural-language lookups more reliable without sacrificing semantic-only recall.
 
+Hosted search-backed endpoints also accept the same retrieval filters as self-hosted deployments: `docIds`, `namespaceIds`, `tags`, `agentId`, `sourceTypes`, `documentTypes`, `since`, `until`, and `timeField`. Use `timeField: "freshness"` when the time range should follow metadata timestamps instead of original ingest time.
+
 The hosted instance supplies the AI provider by default. If you send a matching request-scoped provider key such as `X-OpenAI-API-Key`, `X-Gemini-API-Key`, or `X-Anthropic-API-Key` on supported sync routes, the request can use your provider key instead of the hosted default. On hosted deployments, that changes AI generation billing for that request, but it does not move storage out of SupaVector-hosted infrastructure.
 
 ## Using Your Own Provider Key On Hosted

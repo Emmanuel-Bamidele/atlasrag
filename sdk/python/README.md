@@ -191,12 +191,27 @@ Ask, code, and boolean_ask requests also accept `provider` and `model` for a per
 
 Search-backed endpoints use SupaVector hybrid retrieval by default: vector retrieval plus lexical full-text retrieval fused with reciprocal rank fusion. This improves exact identifiers and mixed natural-language-plus-identifier queries without requiring client changes.
 Reflection and compaction requests accept `policy` for the memories they create.
-Memory recall filters include `types`, `since`/`until`, `tags`, `agentId`, and `collection`.
+Search-backed endpoints share the same retrieval filters: `docIds`, `namespaceIds`, `tags`, `agentId`, `sourceTypes`, `documentTypes`, `since`, `until`, and `timeField`. Memory recall also accepts `types`.
 Job retries are idempotent: reruns replace derived memories instead of duplicating them.
 Supported memory types: `artifact`, `semantic`, `procedural`, `episodic`, `conversation`, `summary`.
 Supported memory policies: `amvl`, `ttl`, `lru`.
 Feedback accepts `{ memoryId, feedback }` where `feedback` is `positive` or `negative` (optional `eventValue` to weight the signal).
 Tenant settings accept `models.answerProvider`, `models.answerModel`, `models.booleanAskProvider`, `models.booleanAskModel`, `models.reflectProvider`, `models.reflectModel`, `models.compactProvider`, and `models.compactModel`. `embedProvider` and `embedModel` are instance-wide and should be changed in the self-hosted env or with `supavector changemodel`.
+
+Freshness-aware recall example:
+
+```python
+recall = client.memory_recall({
+    "query": "current product pricing",
+    "collection": "default",
+    "types": ["semantic"],
+    "sourceTypes": ["url"],
+    "documentTypes": ["pricing-page"],
+    "favorRecency": True,
+    "timeField": "freshness",
+    "k": 8,
+})
+```
 
 ## Local File And Folder Ingest
 

@@ -51,6 +51,8 @@ SupaVector expects standard Postgres behavior including:
 
 You do not need a separate vector extension for SupaVector's current architecture because vector storage is handled by the bundled vector service, not by Postgres. Postgres provides the lexical retrieval half of the default hybrid search path.
 
+Phase 2 retrieval correctness also leans on Postgres for pre-retrieval filtering and freshness-aware ordering. The bundled schema now adds source-type, document-type, created-at, and freshness expression indexes so namespace, tag, document-type, source-type, and time-window filtering stay practical on external Postgres deployments too.
+
 ## Minimum Runtime Env
 
 At minimum, the gateway needs:

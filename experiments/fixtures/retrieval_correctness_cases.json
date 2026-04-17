@@ -1,0 +1,195 @@
+{
+  "defaultK": 3,
+  "cases": [
+    {
+      "name": "tenant_isolation_exact_identifier",
+      "query": "OPS-431 migration status",
+      "filters": {
+        "tenantId": "tenant-alpha",
+        "collection": "ops"
+      },
+      "relevantChunkIds": ["alpha-ops-431#0"],
+      "evidenceChunkIds": ["alpha-ops-431#0"],
+      "chunks": [
+        {
+          "chunkId": "alpha-ops-431#0",
+          "namespaceId": "tenant-alpha:ops:ops-431",
+          "externalId": "ops-431",
+          "tenantId": "tenant-alpha",
+          "collection": "ops",
+          "sourceType": "ticket",
+          "tags": ["ops", "migration"],
+          "metadata": {
+            "documentType": "ticket"
+          },
+          "createdAt": "2026-04-10T00:00:00.000Z",
+          "text": "OPS-431 migration status is green for tenant alpha."
+        },
+        {
+          "chunkId": "beta-ops-431#0",
+          "namespaceId": "tenant-beta:ops:ops-431",
+          "externalId": "ops-431",
+          "tenantId": "tenant-beta",
+          "collection": "ops",
+          "sourceType": "ticket",
+          "tags": ["ops", "migration"],
+          "metadata": {
+            "documentType": "ticket"
+          },
+          "createdAt": "2026-04-12T00:00:00.000Z",
+          "text": "OPS-431 migration status is blocked for tenant beta."
+        }
+      ],
+      "vectorResults": [
+        { "chunkId": "beta-ops-431#0", "score": 0.985 },
+        { "chunkId": "alpha-ops-431#0", "score": 0.941 }
+      ],
+      "lexicalResults": [
+        { "chunkId": "beta-ops-431#0", "score": 21.0 },
+        { "chunkId": "alpha-ops-431#0", "score": 19.4 }
+      ]
+    },
+    {
+      "name": "filter_combo_release_window",
+      "query": "release checklist payment sync",
+      "filters": {
+        "tenantId": "tenant-alpha",
+        "collection": "product",
+        "namespaceIds": ["tenant-alpha:product:release-2026-04"],
+        "sourceTypes": ["url"],
+        "documentTypes": ["release-note"],
+        "tags": ["release"],
+        "since": "2026-04-10T00:00:00.000Z",
+        "until": "2026-04-20T00:00:00.000Z",
+        "timeField": "freshness"
+      },
+      "relevantChunkIds": ["release-2026-04#0"],
+      "evidenceChunkIds": ["release-2026-04#0"],
+      "chunks": [
+        {
+          "chunkId": "release-2026-04#0",
+          "namespaceId": "tenant-alpha:product:release-2026-04",
+          "externalId": "release-2026-04",
+          "tenantId": "tenant-alpha",
+          "collection": "product",
+          "sourceType": "url",
+          "tags": ["release", "payments"],
+          "metadata": {
+            "documentType": "release-note",
+            "updatedAt": "2026-04-16T10:00:00.000Z"
+          },
+          "createdAt": "2026-04-01T00:00:00.000Z",
+          "text": "Release checklist confirms payment sync shipped on April 16."
+        },
+        {
+          "chunkId": "release-2026-04-internal#0",
+          "namespaceId": "tenant-alpha:product:release-2026-04-internal",
+          "externalId": "release-2026-04-internal",
+          "tenantId": "tenant-alpha",
+          "collection": "product",
+          "sourceType": "file",
+          "tags": ["release"],
+          "metadata": {
+            "documentType": "release-note",
+            "updatedAt": "2026-04-17T08:00:00.000Z"
+          },
+          "createdAt": "2026-04-01T00:00:00.000Z",
+          "text": "Internal release checklist mentions payment sync and deployment timing."
+        },
+        {
+          "chunkId": "release-2026-03#0",
+          "namespaceId": "tenant-alpha:product:release-2026-03",
+          "externalId": "release-2026-03",
+          "tenantId": "tenant-alpha",
+          "collection": "product",
+          "sourceType": "url",
+          "tags": ["release"],
+          "metadata": {
+            "documentType": "release-note",
+            "updatedAt": "2026-03-28T12:00:00.000Z"
+          },
+          "createdAt": "2026-03-20T00:00:00.000Z",
+          "text": "Release checklist from March mentions payment sync before the April rollout."
+        },
+        {
+          "chunkId": "pricing-2026-04#0",
+          "namespaceId": "tenant-alpha:product:pricing-2026-04",
+          "externalId": "pricing-2026-04",
+          "tenantId": "tenant-alpha",
+          "collection": "product",
+          "sourceType": "url",
+          "tags": ["pricing"],
+          "metadata": {
+            "documentType": "pricing-page",
+            "updatedAt": "2026-04-15T09:00:00.000Z"
+          },
+          "createdAt": "2026-04-02T00:00:00.000Z",
+          "text": "Payment sync pricing page update for April."
+        }
+      ],
+      "vectorResults": [
+        { "chunkId": "release-2026-03#0", "score": 0.973 },
+        { "chunkId": "pricing-2026-04#0", "score": 0.964 },
+        { "chunkId": "release-2026-04-internal#0", "score": 0.952 },
+        { "chunkId": "release-2026-04#0", "score": 0.947 }
+      ],
+      "lexicalResults": [
+        { "chunkId": "release-2026-03#0", "score": 22.0 },
+        { "chunkId": "release-2026-04#0", "score": 20.5 },
+        { "chunkId": "release-2026-04-internal#0", "score": 19.9 },
+        { "chunkId": "pricing-2026-04#0", "score": 18.3 }
+      ]
+    },
+    {
+      "name": "recent_status_beats_stale_status",
+      "query": "current incident status",
+      "filters": {
+        "tenantId": "tenant-alpha",
+        "collection": "status",
+        "timeField": "freshness"
+      },
+      "relevantChunkIds": ["incident-current#0"],
+      "evidenceChunkIds": ["incident-current#0"],
+      "chunks": [
+        {
+          "chunkId": "incident-stale#0",
+          "namespaceId": "tenant-alpha:status:incident-2026-03",
+          "externalId": "incident-2026-03",
+          "tenantId": "tenant-alpha",
+          "collection": "status",
+          "sourceType": "url",
+          "tags": ["incident", "status"],
+          "metadata": {
+            "documentType": "incident-note",
+            "updatedAt": "2026-03-02T08:00:00.000Z"
+          },
+          "createdAt": "2026-03-02T08:00:00.000Z",
+          "text": "Incident status remained degraded while the queue drained."
+        },
+        {
+          "chunkId": "incident-current#0",
+          "namespaceId": "tenant-alpha:status:incident-2026-04",
+          "externalId": "incident-2026-04",
+          "tenantId": "tenant-alpha",
+          "collection": "status",
+          "sourceType": "url",
+          "tags": ["incident", "status"],
+          "metadata": {
+            "documentType": "incident-note",
+            "updatedAt": "2026-04-16T08:00:00.000Z"
+          },
+          "createdAt": "2026-04-16T08:00:00.000Z",
+          "text": "Incident status is current and stable after recovery completed."
+        }
+      ],
+      "vectorResults": [
+        { "chunkId": "incident-stale#0", "score": 0.931 },
+        { "chunkId": "incident-current#0", "score": 0.931 }
+      ],
+      "lexicalResults": [
+        { "chunkId": "incident-current#0", "score": 14.5 },
+        { "chunkId": "incident-stale#0", "score": 14.5 }
+      ]
+    }
+  ]
+}
