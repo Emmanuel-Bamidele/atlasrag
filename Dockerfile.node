@@ -6,6 +6,7 @@ WORKDIR /app
 COPY gateway/package*.json ./
 RUN npm ci --omit=dev
 COPY gateway/ .
+COPY experiments/fixtures/ ./experiments/fixtures/
 
 USER node
 

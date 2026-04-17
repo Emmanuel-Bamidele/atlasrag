@@ -125,6 +125,22 @@ Common generation presets include:
 The GPT-5 family is compatible with SupaVector. The gateway omits unsupported `temperature` parameters automatically for those models.
 You can inspect the live preset catalog and instance defaults at `GET /v1/models`.
 
+Retrieval defaults you can also tune in the env:
+
+```env
+HYBRID_RETRIEVAL_ENABLED=1
+HYBRID_FUSION_MODE=rrf
+HYBRID_RRF_K=60
+HYBRID_VECTOR_WEIGHT=0.72
+HYBRID_LEXICAL_WEIGHT=0.28
+HYBRID_LEXICAL_MULTIPLIER=2
+HYBRID_LEXICAL_CAP=120
+HYBRID_RERANK_OVERLAP_BOOST=0.12
+HYBRID_RERANK_EXACT_BOOST=0.08
+```
+
+Hybrid retrieval is on by default for search, ask, code, boolean_ask, and memory recall. `rrf` fuses dense vector rank from the vector store with lexical rank from Postgres full-text search. Set `HYBRID_RETRIEVAL_ENABLED=0` to keep vector-only ranking, or switch `HYBRID_FUSION_MODE=weighted` to use the legacy normalized score fusion.
+
 Useful optional values:
 
 - `PUBLIC_BASE_URL`
@@ -220,6 +236,8 @@ curl -sS "${SUPAVECTOR_BASE_URL}/v1/ask" \
 `provider` and `model` are optional and override the tenant or instance ask provider/model for that single request.
 
 Set `"favorRecency": true` when newer matching evidence should outrank older matches. This is useful for continuously updated facts such as product catalogs, changelogs, incident timelines, and conversation-like state. Synced sources attach `syncedAt` automatically, and direct writes can also provide timestamps such as `updatedAt`, `publishedAt`, `effectiveAt`, or `syncedAt` in `metadata`.
+
+The default retrieval path is hybrid, not vector-only: semantic vector matches and lexical full-text matches are fused before recency is applied. This improves exact identifiers and mixed identifier-plus-natural-language lookups while keeping semantic-only queries working the same way.
 
 ### 7a. Ask A Code Question
 

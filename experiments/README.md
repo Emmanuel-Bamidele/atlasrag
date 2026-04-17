@@ -107,3 +107,14 @@ Generated outputs include:
 - The harness does not change AMV-L/TTL/LRU control logic.
 - All policy changes are per-run env overrides only.
 - Every run writes to a new timestamped directory; existing outputs are not overwritten.
+
+## Hybrid Retrieval Benchmark Fixture
+
+For the Phase 1 hybrid retrieval quality fixture, run:
+
+```bash
+cd gateway
+npm run benchmark:hybrid
+```
+
+This compares legacy weighted score fusion against the default reciprocal rank fusion on the curated fixture set in `experiments/fixtures/hybrid_retrieval_cases.json`.

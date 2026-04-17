@@ -60,6 +60,7 @@ Short version:
 Related repo docs:
 
 - SupaVector CLI install and onboard flow: [`../README.md`](../README.md)
+- Hybrid retrieval design note: [`hybrid-retrieval.md`](hybrid-retrieval.md)
 - Contributor starter backlog: [`good-first-issues.md`](good-first-issues.md)
 - Setup mode guide: [`setup-modes.md`](setup-modes.md)
 - Root quickstart: [`../README.md`](../README.md)

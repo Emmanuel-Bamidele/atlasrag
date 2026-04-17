@@ -1,0 +1,153 @@
+{
+  "cases": [
+    {
+      "name": "exact_identifier_short",
+      "query": "ARC17",
+      "relevantChunkId": "doc-arc17#0",
+      "chunks": [
+        {
+          "chunkId": "doc-ops#0",
+          "docId": "doc-ops",
+          "idx": 0,
+          "text": "Rollback checklist for incident response and deployment recovery playbooks."
+        },
+        {
+          "chunkId": "doc-noise#0",
+          "docId": "doc-noise",
+          "idx": 1,
+          "text": "Operational drill log for routine failover rehearsals and service ownership."
+        },
+        {
+          "chunkId": "doc-arc17#0",
+          "docId": "doc-arc17",
+          "idx": 2,
+          "text": "Incident ARC17 recovery reference with replication rollback sequencing and owner approvals."
+        }
+      ],
+      "vectorResults": [
+        {
+          "chunkId": "doc-ops#0",
+          "score": 0.98
+        },
+        {
+          "chunkId": "doc-noise#0",
+          "score": 0.9
+        },
+        {
+          "chunkId": "doc-arc17#0",
+          "score": 0.61
+        }
+      ],
+      "lexicalResults": [
+        {
+          "chunkId": "doc-arc17#0",
+          "score": 12.4
+        }
+      ]
+    },
+    {
+      "name": "semantic_only_explanation",
+      "query": "how to rotate database credentials safely",
+      "relevantChunkId": "doc-credentials#0",
+      "chunks": [
+        {
+          "chunkId": "doc-credentials#0",
+          "docId": "doc-credentials",
+          "idx": 0,
+          "text": "Rotate database credentials safely by minting a new secret, updating clients, verifying health checks, then revoking the old credential."
+        },
+        {
+          "chunkId": "doc-generic#0",
+          "docId": "doc-generic",
+          "idx": 1,
+          "text": "General deployment checklist for production service rollouts and smoke tests."
+        },
+        {
+          "chunkId": "doc-noise-2#0",
+          "docId": "doc-noise-2",
+          "idx": 2,
+          "text": "Meeting notes about dashboard polish, support triage, and unrelated roadmap discussion."
+        }
+      ],
+      "vectorResults": [
+        {
+          "chunkId": "doc-credentials#0",
+          "score": 0.97
+        },
+        {
+          "chunkId": "doc-generic#0",
+          "score": 0.72
+        },
+        {
+          "chunkId": "doc-noise-2#0",
+          "score": 0.43
+        }
+      ],
+      "lexicalResults": [
+        {
+          "chunkId": "doc-credentials#0",
+          "score": 6.2
+        }
+      ]
+    },
+    {
+      "name": "mixed_semantic_and_identifier",
+      "query": "rollback plan ARC17",
+      "relevantChunkId": "doc-arc17-plan#0",
+      "chunks": [
+        {
+          "chunkId": "doc-rollback#0",
+          "docId": "doc-rollback",
+          "idx": 0,
+          "text": "Rollback plan for release migrations with owner approval gates, smoke checks, and phased recovery."
+        },
+        {
+          "chunkId": "doc-ops-2#0",
+          "docId": "doc-ops-2",
+          "idx": 1,
+          "text": "Release command center guide for incident coordination and change windows."
+        },
+        {
+          "chunkId": "doc-noise-3#0",
+          "docId": "doc-noise-3",
+          "idx": 2,
+          "text": "Customer feedback summary about onboarding content and dashboard navigation."
+        },
+        {
+          "chunkId": "doc-arc17-plan#0",
+          "docId": "doc-arc17-plan",
+          "idx": 3,
+          "text": "ARC17 rollback plan for ledger replication with recovery checkpoints, traffic drain steps, and owner sign-off."
+        }
+      ],
+      "vectorResults": [
+        {
+          "chunkId": "doc-rollback#0",
+          "score": 0.99
+        },
+        {
+          "chunkId": "doc-ops-2#0",
+          "score": 0.88
+        },
+        {
+          "chunkId": "doc-noise-3#0",
+          "score": 0.74
+        },
+        {
+          "chunkId": "doc-arc17-plan#0",
+          "score": 0.62
+        }
+      ],
+      "lexicalResults": [
+        {
+          "chunkId": "doc-arc17-plan#0",
+          "score": 14.8
+        },
+        {
+          "chunkId": "doc-rollback#0",
+          "score": 5.1
+        }
+      ]
+    }
+  ]
+}
